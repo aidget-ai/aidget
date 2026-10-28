@@ -216,7 +216,14 @@ fn create_entry(path: &Path, source: &Path) -> Result<()> {
     // Match Magpie: a privileged symlink first, a junction when Windows
     // refuses the privilege, then a marked copy when neither link is possible.
     let link_error = match std::os::windows::fs::symlink_dir(source, path) {
-        Ok(()) => return Ok(()),
+        Ok(()) => match verify_created_link(path) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.raw_os_error() == Some(1314) => error,
+            Err(error) => {
+                let _ = remove_entry(path);
+                return Err(error.into());
+            }
+        },
         Err(error) => error,
     };
     if link_error.raw_os_error() == Some(1314) {
@@ -241,6 +248,22 @@ fn create_entry(path: &Path, source: &Path) -> Result<()> {
         let _ = remove_entry(path);
     }
     written
+}
+
+#[cfg(windows)]
+fn verify_created_link(path: &Path) -> std::io::Result<()> {
+    // Some security software reports success for symlink creation without
+    // materializing the reparse point, which would fail the later rename with
+    // NotFound. A missing link counts as a refused privilege so the junction
+    // and marked-copy fallbacks apply; any other metadata error keeps its
+    // original cause instead of being masked by a fallback.
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            Err(io::Error::from_raw_os_error(1314))
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(windows)]
@@ -374,3 +397,7 @@ fn sorted_entries(path: &Path) -> Result<Vec<fs::DirEntry>> {
     entries.sort_by_key(|entry| entry.file_name());
     Ok(entries)
 }
+
+#[cfg(all(test, windows))]
+#[path = "../../tests/agents/skill_created_link.rs"]
+mod created_link_tests;
