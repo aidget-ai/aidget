@@ -121,13 +121,30 @@ jobs:
         if: matrix.target == ''
         run: pnpm tauri build --ci --bundles "${{ matrix.bundles }}"
 
+      # The updater replaces the `.app` in place, so the release also carries the
+      # bundle as an archive that keeps its wrapper: `--keepParent` is what makes
+      # it one.
+      - name: Zip the macOS app for the updater
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          APP="target/${{ matrix.target }}/release/bundle/macos/aidget.app"
+          mkdir -p appzip
+          ditto -c -k --keepParent "$APP" "appzip/aidget_${VERSION}_${ARCH}.app.zip"
+
       - name: Upload macOS bundle
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v7.0.2
         with:
           name: ${{ matrix.name }}
           if-no-files-found: error
-          path: target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          path: |
+            target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            appzip/*.app.zip
 
       - name: Upload Windows bundle
         if: runner.os == 'Windows'
@@ -200,7 +217,7 @@ jobs:
             --title "aidget $TAG" \
             --notes-file release-notes.md
 
-          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 7
+          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 9
 
       - name: Publish latest
         env:

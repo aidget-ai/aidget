@@ -16,6 +16,16 @@ export function assetName(source, version) {
       return `aidget_${version}_x64.dmg`;
     }
   }
+  if (name.endsWith('.app.zip')) {
+    // The updater swaps this archive in, so it must keep the `.app` wrapper:
+    // pack it with `ditto -c -k --keepParent`.
+    if (/aarch64|arm64/i.test(name)) {
+      return `aidget_${version}_aarch64.app.zip`;
+    }
+    if (/x64|x86_64|amd64/i.test(name)) {
+      return `aidget_${version}_x64.app.zip`;
+    }
+  }
   if (name.endsWith('.exe')) {
     return `aidget_${version}_x64-setup.exe`;
   }
@@ -60,6 +70,8 @@ export async function collectAssets({ input, output, version }) {
   const expected = [
     `aidget_${version}_aarch64.dmg`,
     `aidget_${version}_x64.dmg`,
+    `aidget_${version}_aarch64.app.zip`,
+    `aidget_${version}_x64.app.zip`,
     `aidget_${version}_x64-setup.exe`,
     `aidget_${version}_amd64.AppImage`,
     `aidget_${version}_amd64.deb`,
