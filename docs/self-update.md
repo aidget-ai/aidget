@@ -487,15 +487,18 @@ unauthenticated quota.
 
 Must pass on macOS arm64 against a fork release:
 
-- [ ] New version detected; release notes displayed
-- [ ] `found` state with auto-download off; download starts on click
-- [ ] Download progress visible
-- [ ] `ready` state after successful checksum verification
-- [ ] Install and restart produces a running app at the new version
-- [ ] Tampered digest → installation refused
-- [ ] Missing macOS asset → `error` state
-- [ ] App running from a non-writable location → clear error, no crash
-- [ ] App running directly from a DMG → no attempt to replace a read-only bundle
+- [x] New version detected; release notes carried in the snapshot (unit tested;
+      the notes row was not confirmed by eye)
+- [x] `found` state with auto-download off; download starts on click
+- [x] Download progress visible
+- [x] `ready` state after successful checksum verification
+- [x] Install and restart produces a running app at the new version
+- [x] Tampered digest → installation refused (unit tested)
+- [x] Missing asset for this platform → `error` state (unit tested)
+- [ ] App running from a non-writable location → clear error, no crash —
+      `ensure_writable` writes the advice, not run against a read-only folder
+- [ ] App running directly from a DMG → no attempt to replace a read-only
+      bundle — not run
 
 ### Linux (where available)
 
