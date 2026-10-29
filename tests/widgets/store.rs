@@ -1,7 +1,7 @@
 use crate::common::utils::set_modified;
 use aidget::common::error::Error;
 use aidget::runtime::main_window_state;
-use aidget::widgets::model::{validate_id, WidgetFrame, WidgetPermission};
+use aidget::widgets::model::{validate_id, WidgetFrame, WidgetPermission, MAX_WIDGETS};
 use aidget::widgets::store::{
     patch_html_region, Store, WidgetEdit, AGENTS_FILE, CONFIG_FILE, HTML_FILE, SETTINGS_FILE,
 };
@@ -97,6 +97,26 @@ fn create_assigns_frame_and_revision() {
         },
     );
     assert!(duplicate.is_err());
+}
+
+#[test]
+fn fifty_widgets_are_allowed_and_the_fifty_first_is_rejected() {
+    let (_dir, store) = store();
+    assert_eq!(MAX_WIDGETS, 50);
+
+    for index in 0..MAX_WIDGETS {
+        store
+            .create(&format!("item-{index:02}"), "Item", WidgetEdit::default())
+            .unwrap();
+    }
+
+    let error = store
+        .create("item-50", "Item", WidgetEdit::default())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::InvalidParams(message) if message == "widget limit reached (50)"
+    ));
 }
 
 #[test]

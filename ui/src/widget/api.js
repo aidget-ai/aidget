@@ -83,6 +83,12 @@
     requestLocation: function () {
       return call('location');
     },
+    fetch: function (url, options) {
+      return call('fetch', { url: url, options: options === undefined ? null : options });
+    },
+    openUrl: function (url) {
+      return call('open_url', { url: url });
+    },
     storage: Object.freeze({
       getItem: function (key) {
         return call('storage_get', { key: key });

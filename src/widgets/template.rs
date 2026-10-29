@@ -9,42 +9,11 @@ use crate::common::{
     utils::atomic_write,
 };
 use include_dir::{include_dir, Dir};
-use serde::Serialize;
 use std::{fs, path::Path};
 static BUILTIN: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/widgets");
 
-/// Display metadata for a bundled widget package.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplateSummary {
-    pub id: String,
-    pub title: String,
-    pub description: String,
-    pub version: String,
-}
-
-/// Read every bundled manifest, reporting invalid bundled content explicitly.
-pub fn list() -> Result<Vec<TemplateSummary>> {
-    BUILTIN
-        .dirs()
-        .map(|dir| {
-            let id = dir
-                .path()
-                .file_name()
-                .and_then(|n| n.to_str())
-                .ok_or_else(|| Error::InvalidParams("invalid built-in directory".into()))?;
-            let (config, package) = metadata(id)?;
-            Ok(TemplateSummary {
-                id: config.id,
-                title: config.title,
-                description: package.description,
-                version: package.version,
-            })
-        })
-        .collect()
-}
 /// Read a built-in package's canonical portable metadata.
-pub fn metadata(id: &str) -> Result<(WidgetConfig, PackageManifest)> {
+fn metadata(id: &str) -> Result<(WidgetConfig, PackageManifest)> {
     super::model::validate_id(id)?;
     let dir = BUILTIN
         .get_dir(id)
@@ -60,7 +29,7 @@ pub fn metadata(id: &str) -> Result<(WidgetConfig, PackageManifest)> {
     Ok((config, package))
 }
 /// Install a complete bundled package using the same commit path as downloads.
-pub fn install(store: &Store, template_id: &str, target_id: &str) -> Result<WidgetMeta> {
+fn install(store: &Store, template_id: &str, target_id: &str) -> Result<WidgetMeta> {
     let (config, package) = metadata(template_id)?;
     let dir = BUILTIN
         .get_dir(template_id)
@@ -91,13 +60,6 @@ fn copy_tree(dir: &Dir<'_>, target: &Path) -> Result<()> {
         }
     }
     Ok(())
-}
-/// Author guidance bundled with this template.
-pub fn agents(id: &str) -> Option<String> {
-    BUILTIN
-        .get_file(Path::new(id).join("agents.md"))
-        .and_then(|f| f.contents_utf8())
-        .map(str::to_string)
 }
 /// Install the welcome package only when bootstrapping an empty data directory.
 pub fn bootstrap_welcome(store: &Store) -> Result<()> {

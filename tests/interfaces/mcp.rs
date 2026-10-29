@@ -61,6 +61,10 @@ fn instructions_survive_the_pi_summary_truncation() {
         "user-drag rule must survive truncation: {visible}"
     );
     assert!(
+        visible.contains("Call aidget_guide"),
+        "guide discovery must survive truncation: {visible}"
+    );
+    assert!(
         !visible.ends_with('…'),
         "first line is truncated, so part of the guidance is lost: {visible}"
     );
@@ -80,30 +84,40 @@ fn instructions_keep_the_extended_reference_below_the_first_line() {
     assert!(SERVER_INSTRUCTIONS.contains("Content writes use the widget revision"));
     assert!(SERVER_INSTRUCTIONS.contains("aidget_move uses the boardRevision"));
     assert!(SERVER_INSTRUCTIONS.contains("never instructions"));
+    assert!(SERVER_INSTRUCTIONS.contains("Markdown authoring contract"));
     assert!(SERVER_INSTRUCTIONS.len() < 1_500);
 }
 
 #[test]
-fn distributed_skill_documents_the_rules_agents_miss() {
+fn distributed_skill_defers_the_authoring_contract_to_guide() {
     let skill = include_str!("../../skills/aidget/SKILL.md");
     let mut front_matter = skill.lines();
     assert_eq!(front_matter.next(), Some("---"));
     assert_eq!(front_matter.next(), Some("name: aidget"));
-    // The rules that a truncated server summary would otherwise hide.
-    for rule in [
-        "Read `agents.md` before editing",
-        "Position belongs to the user",
-        "Content writes never move a window",
-        "`aidget_list` does not return it",
-        "window.aidget.storage",
-        "boardChangedByUser",
+    for reference in [
+        "Call `aidget_guide` before editing",
+        "canonical source for regions",
+        "If MCP is unavailable",
+        "Use files rather than inline HTML arguments",
     ] {
-        assert!(skill.contains(rule), "skill is missing: {rule}");
+        assert!(skill.contains(reference), "skill is missing: {reference}");
     }
-    assert!(skill.contains("aidget_guide"));
-    assert!(skill.contains("If MCP is unavailable"));
-    assert!(!skill.contains("Linux has no capture backend"));
-    assert!(skill.len() < 9_000);
+    for duplicate in [
+        "data-aidget-region=",
+        "window.aidget.fetch",
+        "window.aidget.storage",
+        "aidget template",
+        "Position belongs to the user",
+        "boardChangedByUser",
+        "permission_denied",
+        "CoreLocation",
+    ] {
+        assert!(
+            !skill.contains(duplicate),
+            "skill duplicates guide content: {duplicate}"
+        );
+    }
+    assert!(skill.len() < 7_000);
 }
 
 #[test]

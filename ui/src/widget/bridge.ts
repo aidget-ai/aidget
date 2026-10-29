@@ -108,6 +108,8 @@ export function errorMessage(id: string, error: BridgeFailure) {
 /** Methods the host will serve; anything else is refused without an IPC call. */
 export const SERVED_METHODS = [
   'location',
+  'fetch',
+  'open_url',
   'storage_get',
   'storage_set',
   'storage_remove',
@@ -135,6 +137,56 @@ export function routeRequest(
   switch (method) {
     case 'location':
       return { command: 'widget_location', args: {} };
+    case 'fetch': {
+      const url = stringParam(params, 'url');
+      if (!url) {
+        return invalidUrl();
+      }
+      const options = params?.options;
+      if (
+        options !== undefined &&
+        options !== null &&
+        (typeof options !== 'object' || Array.isArray(options))
+      ) {
+        return invalidFetch('fetch options must be an object or null');
+      }
+      const candidate = (options ?? {}) as Record<string, unknown>;
+      const method = candidate.method;
+      if (method !== undefined && (typeof method !== 'string' || !method.trim())) {
+        return invalidFetch('fetch method must be a non-empty string');
+      }
+      const rawHeaders = candidate.headers;
+      if (
+        rawHeaders !== undefined &&
+        rawHeaders !== null &&
+        (typeof rawHeaders !== 'object' ||
+          Array.isArray(rawHeaders) ||
+          Object.values(rawHeaders).some((value) => typeof value !== 'string'))
+      ) {
+        return invalidFetch('fetch headers must map strings to strings');
+      }
+      const body = candidate.body;
+      if (body !== undefined && body !== null && typeof body !== 'string') {
+        return invalidFetch('fetch body must be a string or null');
+      }
+      const headers = (rawHeaders ?? {}) as Record<string, string>;
+      return {
+        command: 'widget_fetch',
+        args: {
+          url,
+          method: typeof method === 'string' ? method : 'GET',
+          headers,
+          body: typeof body === 'string' ? body : null,
+        },
+      };
+    }
+    case 'open_url': {
+      const url = stringParam(params, 'url');
+      if (!url) {
+        return invalidUrl();
+      }
+      return { command: 'widget_open_url', args: { url } };
+    }
     case 'storage_get':
     case 'storage_remove': {
       const key = stringParam(params, 'key');
@@ -176,6 +228,24 @@ function invalidKey(): BridgeRoute {
     error: {
       code: 'invalid_params',
       message: 'storage key must be a non-empty string',
+    },
+  };
+}
+
+function invalidUrl(): BridgeRoute {
+  return {
+    error: {
+      code: 'invalid_params',
+      message: 'url must be a non-empty string',
+    },
+  };
+}
+
+function invalidFetch(message: string): BridgeRoute {
+  return {
+    error: {
+      code: 'invalid_params',
+      message,
     },
   };
 }

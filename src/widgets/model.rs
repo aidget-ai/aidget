@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use crate::common::error::{Error, Result};
 use schemars::JsonSchema;
 
-pub const MAX_WIDGETS: usize = 12;
+pub const MAX_WIDGETS: usize = 50;
 pub const MAX_PAYLOAD: usize = 256 * 1024;
 
 pub fn validate_id(id: &str) -> Result<()> {

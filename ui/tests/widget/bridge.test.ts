@@ -112,6 +112,8 @@ describe('host messages', () => {
 describe('isServed', () => {
   it('only serves the methods the host implements', () => {
     expect(SERVED_METHODS).toContain('location');
+    expect(SERVED_METHODS).toContain('fetch');
+    expect(SERVED_METHODS).toContain('open_url');
     expect(SERVED_METHODS).toContain('storage_get');
     expect(SERVED_METHODS).toContain('storage_set');
     expect(SERVED_METHODS).toContain('storage_remove');
@@ -126,6 +128,37 @@ describe('routeRequest', () => {
     expect(routeRequest('location', undefined)).toEqual({
       command: 'widget_location',
       args: {},
+    });
+    expect(routeRequest('fetch', { url: 'https://api.example.com/items' })).toEqual({
+      command: 'widget_fetch',
+      args: {
+        url: 'https://api.example.com/items',
+        method: 'GET',
+        headers: {},
+        body: null,
+      },
+    });
+    expect(
+      routeRequest('fetch', {
+        url: 'https://api.example.com/items',
+        options: {
+          method: 'POST',
+          headers: { Accept: 'application/vnd.example+json', 'X-Token': 'secret' },
+          body: '{"ok":true}',
+        },
+      }),
+    ).toEqual({
+      command: 'widget_fetch',
+      args: {
+        url: 'https://api.example.com/items',
+        method: 'POST',
+        headers: { Accept: 'application/vnd.example+json', 'X-Token': 'secret' },
+        body: '{"ok":true}',
+      },
+    });
+    expect(routeRequest('open_url', { url: 'https://www.example.com/story' })).toEqual({
+      command: 'widget_open_url',
+      args: { url: 'https://www.example.com/story' },
     });
     expect(routeRequest('storage_get', { key: 'todo' })).toEqual({
       command: 'widget_storage_get',
@@ -156,6 +189,45 @@ describe('routeRequest', () => {
       error: {
         code: 'invalid_params',
         message: 'storage value must be a string',
+      },
+    });
+    expect(routeRequest('fetch', { url: '' })).toEqual({
+      error: {
+        code: 'invalid_params',
+        message: 'url must be a non-empty string',
+      },
+    });
+    expect(
+      routeRequest('fetch', {
+        url: 'https://api.example.com/items',
+        options: { method: 1 },
+      }),
+    ).toEqual({
+      error: {
+        code: 'invalid_params',
+        message: 'fetch method must be a non-empty string',
+      },
+    });
+    expect(
+      routeRequest('fetch', {
+        url: 'https://api.example.com/items',
+        options: { headers: { Authorization: 1 } },
+      }),
+    ).toEqual({
+      error: {
+        code: 'invalid_params',
+        message: 'fetch headers must map strings to strings',
+      },
+    });
+    expect(
+      routeRequest('fetch', {
+        url: 'https://api.example.com/items',
+        options: { body: 1 },
+      }),
+    ).toEqual({
+      error: {
+        code: 'invalid_params',
+        message: 'fetch body must be a string or null',
       },
     });
     expect(routeRequest('camera', undefined)).toBeNull();

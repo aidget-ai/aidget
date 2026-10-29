@@ -11,7 +11,6 @@ use crate::widgets::model::{
     WidgetListing, WidgetPermission,
 };
 use crate::widgets::store::{Store, WidgetEdit, CONFIG_FILE, CSS_FILE, HTML_FILE};
-use crate::widgets::template;
 
 #[derive(Parser)]
 #[command(name = "aidget", version, about = "Agent-controllable desktop widgets")]
@@ -48,11 +47,6 @@ pub enum Command {
     },
     /// List the displays available to board move.
     Displays,
-    /// List and install built-in widget templates.
-    Template {
-        #[command(subcommand)]
-        command: TemplateCommand,
-    },
     /// Browse reviewed widgets or install a complete npm package.
     Community {
         #[command(subcommand)]
@@ -69,7 +63,7 @@ pub enum Command {
     },
     /// Check data directory, socket and widgets.
     Doctor,
-    /// Print the widget schema, conventions and error codes.
+    /// Print the Markdown widget authoring guide.
     Guide,
 }
 
@@ -108,7 +102,7 @@ pub struct CreateArgs {
     /// Start dragging from ordinary content or only the top handle.
     #[arg(long, value_enum)]
     pub drag_mode: Option<WidgetDragMode>,
-    /// Comma-separated host capabilities: `location` and `storage`.
+    /// Comma-separated host capabilities.
     #[arg(long)]
     pub permissions: Option<String>,
     #[arg(long)]
@@ -130,7 +124,7 @@ pub struct UpdateArgs {
     /// Replace the window drag policy; omitted keeps the current mode.
     #[arg(long, value_enum)]
     pub drag_mode: Option<WidgetDragMode>,
-    /// Comma-separated host capabilities; `none` clears every declaration.
+    /// Comma-separated host capabilities; `none` clears them.
     #[arg(long)]
     pub permissions: Option<String>,
     #[arg(long)]
@@ -172,18 +166,6 @@ pub enum BoardCommand {
         h: Option<f64>,
         #[arg(long)]
         revision: u64,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum TemplateCommand {
-    /// List built-in templates.
-    List,
-    /// Install a built-in template.
-    Install {
-        template: String,
-        #[arg(long = "as")]
-        target: Option<String>,
     },
 }
 
@@ -230,12 +212,14 @@ pub fn run(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
-        Command::Template { command } => template_command(&store, command, json),
         Command::Screenshot { widget, out, scale } => {
             screenshot_command(&store, &widget, out, scale, json)
         }
         Command::Doctor => doctor_command(&store, json),
-        Command::Guide => crate::interfaces::guide::print(json),
+        Command::Guide if json => Err(Error::InvalidParams(
+            "guide always prints Markdown; omit --json".to_string(),
+        )),
+        Command::Guide => crate::interfaces::guide::print(),
     }
 }
 
@@ -250,7 +234,7 @@ fn widget_command(store: &Store, command: WidgetCommand, json: bool) -> Result<(
                     eprintln!("broken {}: {}", broken.id, broken.error);
                 }
                 if listing.widgets.is_empty() {
-                    println!("no widgets yet — run `aidget template install welcome`");
+                    println!("no widgets yet");
                 }
                 for widget in listing.widgets {
                     let frame = widget
@@ -477,41 +461,6 @@ fn displays_command(store: &Store, json: bool) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn template_command(store: &Store, command: TemplateCommand, json: bool) -> Result<()> {
-    match command {
-        TemplateCommand::List => {
-            let templates = template::list()?;
-            if json {
-                print_json(&templates)?;
-            } else {
-                for item in templates {
-                    println!("{:<16} {:<8} {}", item.id, item.version, item.title);
-                    if !item.description.is_empty() {
-                        println!("{:22}{}", "", item.description);
-                    }
-                }
-            }
-            Ok(())
-        }
-        TemplateCommand::Install { template, target } => {
-            let target = target.unwrap_or_else(|| template.clone());
-            let meta = template::install(store, &template, &target)?;
-            if json {
-                print_json(&store.ack(&meta)?)?;
-            } else {
-                println!(
-                    "installed {} as {} revision={}",
-                    template, meta.id, meta.revision
-                );
-                if let Some(agents) = template::agents(&template) {
-                    println!("\n--- agents.md ---\n{agents}");
-                }
-            }
-            Ok(())
-        }
-    }
 }
 
 fn screenshot_command(

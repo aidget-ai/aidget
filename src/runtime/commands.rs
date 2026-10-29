@@ -1,4 +1,6 @@
 //! Tauri command endpoints behind the native window authorization boundary.
+use std::collections::BTreeMap;
+
 use crate::runtime::{command_access, ui};
 use crate::settings::UiPreferences;
 use crate::widgets::store::Store;
@@ -29,6 +31,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         widget_storage_set,
         widget_storage_remove,
         widget_storage_clear,
+        widget_fetch,
+        widget_open_url,
         integration_state,
         set_agent_integration,
         set_preferences,
@@ -330,6 +334,47 @@ fn widget_storage_clear(
     let (store, id) = widget_storage_context(&app, &window)?;
     crate::widgets::storage::clear(&store, &id)
         .map_err(|error| crate::widgets::storage::StorageFailure::from(&error))
+}
+
+#[tauri::command]
+async fn widget_fetch(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    url: String,
+    method: String,
+    headers: BTreeMap<String, String>,
+    body: Option<String>,
+) -> std::result::Result<serde_json::Value, crate::runtime::network::NetworkFailure> {
+    let id = ui::widget_id(&window).map_err(crate::runtime::network::NetworkFailure::from)?;
+    let root = app.state::<ui::UiState>().root.lock().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::runtime::network::fetch_json(
+            &Store::new(root),
+            &id,
+            &url,
+            &crate::runtime::network::FetchOptions {
+                method,
+                headers,
+                body,
+            },
+        )
+    })
+    .await
+    .map_err(|error| crate::runtime::network::NetworkFailure {
+        code: "unavailable",
+        message: error.to_string(),
+    })?
+}
+
+#[tauri::command]
+fn widget_open_url(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    url: String,
+) -> std::result::Result<(), crate::runtime::network::NetworkFailure> {
+    let id = ui::widget_id(&window).map_err(crate::runtime::network::NetworkFailure::from)?;
+    let root = app.state::<ui::UiState>().root.lock().unwrap().clone();
+    crate::runtime::network::open_url(&app, &Store::new(root), &id, &url)
 }
 
 /// Load a pinned official main snapshot on a blocking HTTP worker.

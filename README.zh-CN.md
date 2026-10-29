@@ -146,7 +146,7 @@ cargo test
 | `aidget_move`       | 在用户要求时以 boardRevision CAS 移动或缩放小组件。         |
 | `aidget_screenshot` | 将渲染后的小组件截为 PNG，并等待页面就绪。                   |
 | `aidget_delete`     | 将小组件移动到回收站。                                      |
-| `aidget_guide`      | 读取完整创作规范。                                          |
+| `aidget_guide`      | 读取完整的 Markdown 创作规范。                              |
 
 ### CLI 程序
 
@@ -156,10 +156,9 @@ aidget mcp
 aidget widget list|show|create|update|patch|delete
 aidget board show|move
 aidget displays
-aidget template list|install
 aidget screenshot <id> [--scale N] [--out FILE]
 aidget doctor
-aidget guide [--json]
+aidget guide
 aidget community list --json
 aidget community install @aidget-community/<id> --json
 ```

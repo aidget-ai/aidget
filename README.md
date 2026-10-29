@@ -146,7 +146,7 @@ cargo test
 | `aidget_move` | Move or resize with board revision CAS when the user asks. |
 | `aidget_screenshot` | Capture the rendered widget as PNG and wait briefly for readiness. |
 | `aidget_delete` | Move a widget to the trash. |
-| `aidget_guide` | Read the complete authoring contract. |
+| `aidget_guide` | Read the complete Markdown authoring guide. |
 
 ### CLI
 
@@ -156,10 +156,9 @@ aidget mcp
 aidget widget list|show|create|update|patch|delete
 aidget board show|move
 aidget displays
-aidget template list|install
 aidget screenshot <id> [--scale N] [--out FILE]
 aidget doctor
-aidget guide [--json]
+aidget guide
 aidget community list --json
 aidget community install @aidget-community/<id> --json
 ```

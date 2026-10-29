@@ -17,6 +17,8 @@
     "allow-widget-storage-get",
     "allow-widget-storage-set",
     "allow-widget-storage-remove",
-    "allow-widget-storage-clear"
+    "allow-widget-storage-clear",
+    "allow-widget-fetch",
+    "allow-widget-open-url"
   ]
 }

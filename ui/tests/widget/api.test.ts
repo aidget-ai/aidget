@@ -10,6 +10,8 @@ interface Harness {
     permissions: string[];
     ready: () => void;
     requestLocation: () => Promise<unknown>;
+    fetch: (url: unknown, options?: unknown) => Promise<unknown>;
+    openUrl: (url: unknown) => Promise<unknown>;
     storage: {
       getItem: (key: unknown) => Promise<unknown>;
       setItem: (key: unknown, value: unknown) => Promise<unknown>;
@@ -72,6 +74,8 @@ describe('widget api installation', () => {
     expect(harness.api?.permissions).toEqual([]);
     expect(typeof harness.api?.ready).toBe('function');
     expect(typeof harness.api?.requestLocation).toBe('function');
+    expect(typeof harness.api?.fetch).toBe('function');
+    expect(typeof harness.api?.openUrl).toBe('function');
     expect(typeof harness.api?.storage.getItem).toBe('function');
   });
 
@@ -240,5 +244,85 @@ describe('storage', () => {
       message: 'storage not declared',
     });
     await expect(clear).resolves.toBeNull();
+  });
+});
+
+describe('network and links', () => {
+  it('posts JSON and external-link requests with their URL', async () => {
+    const harness = install();
+
+    const json = harness.api!.fetch('https://api.example.com/items');
+    expect(harness.posted[0]).toMatchObject({
+      source: 'aidget-widget',
+      method: 'fetch',
+      params: { url: 'https://api.example.com/items', options: null },
+    });
+    harness.send({
+      source: 'aidget-host',
+      id: harness.posted[0].id,
+      ok: true,
+      result: { items: [] },
+    });
+    await expect(json).resolves.toEqual({ items: [] });
+
+    const opened = harness.api!.openUrl('https://www.example.com/story');
+    expect(harness.posted[1]).toMatchObject({
+      source: 'aidget-widget',
+      method: 'open_url',
+      params: { url: 'https://www.example.com/story' },
+    });
+    harness.send({
+      source: 'aidget-host',
+      id: harness.posted[1].id,
+      ok: true,
+      result: null,
+    });
+    await expect(opened).resolves.toBeNull();
+  });
+
+  it('forwards fetch method, headers and body', async () => {
+    const harness = install();
+
+    const pending = harness.api!.fetch('https://api.example.com/items', {
+      method: 'POST',
+      headers: { Accept: 'application/vnd.example+json', 'X-Token': 'secret' },
+      body: '{"ok":true}',
+    });
+
+    expect(harness.posted[0]).toMatchObject({
+      source: 'aidget-widget',
+      method: 'fetch',
+      params: {
+        url: 'https://api.example.com/items',
+        options: {
+          method: 'POST',
+          headers: { Accept: 'application/vnd.example+json', 'X-Token': 'secret' },
+          body: '{"ok":true}',
+        },
+      },
+    });
+    harness.send({
+      source: 'aidget-host',
+      id: harness.posted[0].id,
+      ok: true,
+      result: { ok: true },
+    });
+    await expect(pending).resolves.toEqual({ ok: true });
+  });
+
+  it('surfaces host network failures', async () => {
+    const harness = install();
+    const pending = harness.api!.fetch('https://api.example.com/items');
+    harness.send({
+      source: 'aidget-host',
+      id: harness.posted[0].id,
+      ok: false,
+      error: { code: 'http_error', message: 'HTTP 403' },
+    });
+
+    await expect(pending).rejects.toMatchObject({
+      code: 'http_error',
+      message: 'HTTP 403',
+    });
   });
 });

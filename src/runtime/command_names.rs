@@ -22,5 +22,6 @@ command_groups! {
         "widget_state", "widget_loaded", "widget_ready", "persist_window_position",
         "begin_widget_drag", "start_widget_drag", "end_widget_drag", "widget_location",
         "widget_storage_get", "widget_storage_set", "widget_storage_remove", "widget_storage_clear",
+        "widget_fetch", "widget_open_url",
     ],
 }
