@@ -178,7 +178,7 @@ fn release_with_asset() -> String {
     let digest = super::sha256(body);
     let release = format!(
         r#"{{"tag_name": "v99.0.0", "html_url": "", "assets": [
-            {{"name": "aidget_v99.0.0_aarch64.app.zip", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
+            {{"name": "__ASSET__", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
         ]}}"#,
         body.len()
     );
@@ -212,7 +212,7 @@ fn a_failed_check_keeps_a_downloaded_update_installable() {
     let digest = super::sha256(body);
     let release = format!(
         r#"{{"tag_name": "v99.0.0", "html_url": "", "assets": [
-            {{"name": "aidget_v99.0.0_aarch64.app.zip", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
+            {{"name": "__ASSET__", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
         ]}}"#,
         body.len()
     );
@@ -260,7 +260,7 @@ fn a_check_that_finds_the_same_version_keeps_the_download_installable() {
     let digest = super::sha256(body);
     let release = format!(
         r#"{{"tag_name": "v99.0.0", "html_url": "", "assets": [
-            {{"name": "aidget_v99.0.0_aarch64.app.zip", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
+            {{"name": "__ASSET__", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
         ]}}"#,
         body.len()
     );
@@ -290,7 +290,7 @@ fn a_release_brings_its_notes_and_keeps_them_while_downloading() {
     let digest = super::sha256(body);
     let release = format!(
         r#"{{"tag_name": "v99.0.0", "html_url": "", "body": "  Fixes the updater.\n\n- one\n- two  ", "assets": [
-            {{"name": "aidget_v99.0.0_aarch64.app.zip", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
+            {{"name": "__ASSET__", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
         ]}}"#,
         body.len()
     );
@@ -331,7 +331,7 @@ fn a_download_is_reported_as_installable_before_it_is_installed() {
     let digest = super::sha256(body);
     let release = format!(
         r#"{{"tag_name": "v99.0.0", "html_url": "", "assets": [
-            {{"name": "aidget_v99.0.0_aarch64.app.zip", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
+            {{"name": "__ASSET__", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
         ]}}"#,
         body.len()
     );
@@ -361,7 +361,7 @@ fn a_download_is_reported_as_installable_before_it_is_installed() {
 fn a_failed_download_leaves_the_release_downloadable_again() {
     // The asset says one thing, the checksum says another: verification fails.
     let release = r#"{"tag_name": "v99.0.0", "html_url": "", "assets": [
-        {"name": "aidget_v99.0.0_aarch64.app.zip", "browser_download_url": "__BASE__/asset", "size": 4, "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"}
+        {"name": "__ASSET__", "browser_download_url": "__BASE__/asset", "size": 4, "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"}
     ]}"#;
     let base = super::serve_routes(vec![
         ("/releases/latest", release.as_bytes().to_vec()),
@@ -387,7 +387,7 @@ fn a_failed_install_keeps_the_download_ready_to_try_again() {
     let digest = super::sha256(body);
     let release = format!(
         r#"{{"tag_name": "v99.0.0", "html_url": "", "assets": [
-            {{"name": "aidget_v99.0.0_aarch64.app.zip", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
+            {{"name": "__ASSET__", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
         ]}}"#,
         body.len()
     );
@@ -435,7 +435,7 @@ fn an_empty_repository_keeps_a_downloaded_update_installable() {
     let digest = super::sha256(body);
     let release = format!(
         r#"{{"tag_name": "v99.0.0", "html_url": "", "assets": [
-            {{"name": "aidget_v99.0.0_aarch64.app.zip", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
+            {{"name": "__ASSET__", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
         ]}}"#,
         body.len()
     );

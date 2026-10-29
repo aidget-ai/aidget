@@ -13,7 +13,7 @@ fn a_verified_download_leaves_the_file_staged_and_ready() {
 
     let snapshot = block_on(service.download(None));
 
-    assert_eq!(snapshot.state, UpdateState::Ready);
+    assert_eq!(snapshot.state, UpdateState::Ready, "{snapshot:?}");
     let staged = service.staged().expect("a staged download");
     assert_eq!(std::fs::read(&staged).unwrap(), BODY);
     remove_download(staged);
@@ -28,7 +28,8 @@ fn a_mismatched_checksum_fails_and_leaves_nothing_staged() {
     let snapshot = block_on(service.download(None));
 
     assert_eq!(snapshot.state, UpdateState::Error);
-    assert!(snapshot.error.unwrap().contains("checksum mismatch"));
+    let error = snapshot.error.expect("a failure to report");
+    assert!(error.contains("checksum mismatch"), "{error}");
     assert!(service.staged().is_none());
 }
 
@@ -38,12 +39,12 @@ fn a_release_without_a_digest_uses_the_sums_file() {
     let digest = super::sha256(body);
     let release = format!(
         r#"{{"tag_name": "v99.0.0", "html_url": "", "assets": [
-            {{"name": "aidget_v99.0.0_aarch64.app.zip", "browser_download_url": "__BASE__/asset", "size": {}, "digest": null}},
+            {{"name": "__ASSET__", "browser_download_url": "__BASE__/asset", "size": {}, "digest": null}},
             {{"name": "SHA256SUMS", "browser_download_url": "__BASE__/SHA256SUMS", "size": 100, "digest": null}}
         ]}}"#,
         body.len()
     );
-    let sums = format!("{digest}  aidget_v99.0.0_aarch64.app.zip\n");
+    let sums = format!("{digest}  __ASSET__\n");
     let base = super::serve_routes(vec![
         ("/releases/latest", release.into_bytes()),
         ("SHA256SUMS", sums.into_bytes()),
@@ -75,7 +76,7 @@ fn release_server(digest: &str) -> String {
     let body_len = BODY.len();
     let release = format!(
         r#"{{"tag_name": "v99.0.0", "html_url": "", "assets": [
-            {{"name": "aidget_v99.0.0_aarch64.app.zip", "browser_download_url": "__BASE__/asset", "size": {body_len}, "digest": "sha256:{digest}"}}
+            {{"name": "__ASSET__", "browser_download_url": "__BASE__/asset", "size": {body_len}, "digest": "sha256:{digest}"}}
         ]}}"#
     );
     super::serve_routes(vec![
@@ -130,4 +131,36 @@ fn a_loopback_server_is_allowed_for_the_tests() {
 
     assert_eq!(std::fs::read_to_string(&dest).unwrap(), "bytes");
     assert_eq!(digest.len(), 64);
+}
+
+#[test]
+fn a_download_from_a_multi_route_server_lands_on_disk() {
+    // The service tests that download go through a server that answers more than
+    // one request. This pins that pairing on its own, so a failure there says
+    // whether the server or the service is at fault.
+    let base = super::serve_routes(vec![("/asset", b"bytes".to_vec())]);
+    let root = tempfile::TempDir::new().unwrap();
+    let dest = root.path().join("asset");
+
+    let digest =
+        aidget::update::download::to_file(&format!("{base}/asset"), None, &dest, &mut |_, _| {})
+            .unwrap();
+
+    assert_eq!(std::fs::read(&dest).unwrap(), b"bytes");
+    assert_eq!(digest, super::sha256(b"bytes"));
+}
+
+#[test]
+fn two_downloads_from_one_server_both_land() {
+    // The second request reuses nothing on our side; if the mock server stopped
+    // after the first answer, this is where it would show.
+    let base = super::serve_routes(vec![("/asset", b"bytes".to_vec())]);
+    let root = tempfile::TempDir::new().unwrap();
+
+    for round in 0..2 {
+        let dest = root.path().join(format!("asset-{round}"));
+        aidget::update::download::to_file(&format!("{base}/asset"), None, &dest, &mut |_, _| {})
+            .unwrap_or_else(|error| panic!("round {round}: {error}"));
+        assert_eq!(std::fs::read(&dest).unwrap(), b"bytes");
+    }
 }

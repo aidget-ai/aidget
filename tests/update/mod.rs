@@ -59,6 +59,13 @@ pub fn serve_slow(delay: std::time::Duration, body: &str) -> String {
 }
 
 /// Replace every occurrence of `needle` in `haystack`.
+/// Fill the placeholders a mock body may carry: the server's own address, and the
+/// asset name this machine would install.
+fn fill(body: &[u8], address: std::net::SocketAddr) -> Vec<u8> {
+    let body = replace_bytes(body, b"__BASE__", format!("http://{address}").as_bytes());
+    replace_bytes(&body, b"__ASSET__", release_asset_name().as_bytes())
+}
+
 fn replace_bytes(haystack: &[u8], needle: &[u8], with: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(haystack.len());
     let mut rest = haystack;
@@ -94,7 +101,7 @@ pub fn serve_routes(routes: Vec<(&'static str, Vec<u8>)>) -> String {
             // A served document can point back at this server without knowing
             // its address when the test was written. Replaced on the raw bytes:
             // an asset body need not be UTF-8, and decoding it would corrupt it.
-            let body = replace_bytes(&body, b"__BASE__", format!("http://{address}").as_bytes());
+            let body = fill(&body, address);
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()
@@ -127,11 +134,7 @@ pub fn serve_feed_then(status: u16, message: &str, body: &str, asset: Vec<u8>) -
             let path = request.split_whitespace().nth(1).unwrap_or("").to_string();
             let (status, extra, payload) = if path.contains("/releases/latest") {
                 if hits.fetch_add(1, Ordering::SeqCst) == 0 {
-                    let body = replace_bytes(
-                        body.as_bytes(),
-                        b"__BASE__",
-                        format!("http://{address}").as_bytes(),
-                    );
+                    let body = fill(body.as_bytes(), address);
                     (200, String::new(), body)
                 } else if status == 403 || status == 429 {
                     (
@@ -172,3 +175,17 @@ pub fn sha256(bytes: &[u8]) -> String {
         .map(|byte| format!("{byte:02x}"))
         .collect()
 }
+
+/// The asset name a release would carry for the machine running the test.
+///
+/// A release published for this platform, so a test that downloads goes through
+/// the same asset selection the app does. Hard-coding one platform's name made
+/// every download test fail elsewhere, with the service correctly refusing an
+/// asset that does not belong to the machine.
+pub fn release_asset_name() -> String {
+    let target = aidget::update::target::current().expect("this platform has an install shape");
+    format!("aidget_{VERSION}_{}{}", target.arch, target.kind.suffix())
+}
+
+/// The version the mock releases claim.
+pub const VERSION: &str = "v99.0.0";
