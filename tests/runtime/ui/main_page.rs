@@ -79,7 +79,14 @@ fn main_window_lists_all_widgets_and_marks_enabled_state() {
     assert!(state.widgets[0].enabled);
     assert!(!state.widgets[1].enabled);
     assert_eq!(state.widgets[1].width, 360.0);
-    assert_eq!(state.version, env!("CARGO_PKG_VERSION"));
+    // The stamp, not the crate version: a build from a working tree reports
+    // `0.1.0-5-gabc1234`, which is what the update row's "cannot replace itself"
+    // refers to.
+    assert_eq!(
+        state.version,
+        aidget::update::version::build_stamp(),
+        "the About page names this build, not the number in Cargo.toml"
+    );
 }
 
 #[test]
@@ -200,6 +207,7 @@ fn main_state_exposes_widget_metadata_in_camel_case() {
         github_token: Some(GithubTokenSummary {
             masked: "ghp_…WXYZ".to_string(),
         }),
+        auto_download: true,
     })
     .unwrap();
 
@@ -213,6 +221,7 @@ fn main_state_exposes_widget_metadata_in_camel_case() {
     assert_eq!(value["theme"], "dark");
     assert_eq!(value["language"], "zh-CN");
     assert_eq!(value["trayClickAction"], "window");
+    assert_eq!(value["autoDownload"], true);
     assert_eq!(value["lastPage"], "integrations");
     assert_eq!(value["githubToken"]["masked"], "ghp_…WXYZ");
     assert!(!value

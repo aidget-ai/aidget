@@ -165,7 +165,7 @@ impl TrayClickAction {
 }
 
 /// Preferences edited by the main window and persisted in `settings.toml`.
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UiPreferences {
     /// Main-window color theme.
@@ -176,6 +176,21 @@ pub struct UiPreferences {
     pub tray_click_action: TrayClickAction,
     /// Most recently opened main-window destination.
     pub last_page: MainPage,
+    /// Whether a newer release is downloaded before the user asks.
+    #[serde(default = "auto_download_default")]
+    pub auto_download: bool,
+}
+
+impl Default for UiPreferences {
+    fn default() -> Self {
+        UiPreferences {
+            theme: Theme::default(),
+            language: Language::default(),
+            tray_click_action: TrayClickAction::default(),
+            last_page: MainPage::default(),
+            auto_download: auto_download_default(),
+        }
+    }
 }
 
 /// User-editable settings stored at the root of the aidget data directory.
@@ -201,6 +216,15 @@ pub struct Settings {
     /// Optional GitHub personal access token used only for GitHub API requests.
     #[serde(default)]
     pub github_token: Option<GithubToken>,
+    /// Whether a newer release is downloaded before the user asks.
+    #[serde(default = "auto_download_default")]
+    pub auto_download: bool,
+}
+
+/// Downloading an update without asking is on by default, the way Magpie ships
+/// it; the toggle in the About page turns it off.
+fn auto_download_default() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -215,6 +239,7 @@ impl Default for Settings {
             tray_click_action: TrayClickAction::default(),
             last_page: MainPage::default(),
             github_token: None,
+            auto_download: auto_download_default(),
         }
     }
 }
@@ -227,6 +252,7 @@ impl Settings {
             language: self.language,
             tray_click_action: self.tray_click_action,
             last_page: self.last_page,
+            auto_download: self.auto_download,
         }
     }
 }
@@ -253,6 +279,7 @@ pub fn ensure(root: &Path) -> Result<()> {
         TrayClickAction::Window.as_str(),
     );
     insert_missing(&mut document, "last_page", MainPage::Integrations.as_str());
+    insert_missing(&mut document, "auto_download", auto_download_default());
     let next = document.to_string();
     if next != text {
         atomic_write_private(&path, next.as_bytes())?;
@@ -281,6 +308,7 @@ pub fn save_preferences(root: &Path, preferences: UiPreferences) -> Result<()> {
     document["language"] = value(preferences.language.as_str());
     document["tray_click_action"] = value(preferences.tray_click_action.as_str());
     document["last_page"] = value(preferences.last_page.as_str());
+    document["auto_download"] = value(preferences.auto_download);
     atomic_write_private(&path, document.to_string().as_bytes())
 }
 
@@ -304,7 +332,7 @@ fn settings_path(root: &Path) -> PathBuf {
     root.join(SETTINGS_FILE)
 }
 
-fn insert_missing(document: &mut DocumentMut, key: &str, value: &str) {
+fn insert_missing(document: &mut DocumentMut, key: &str, value: impl Into<toml_edit::Value>) {
     if !document.contains_key(key) {
         document[key] = toml_edit::value(value);
     }
@@ -329,6 +357,9 @@ tray_click_action = \"window\"\n\
 \n\
 # Main-window destination restored on launch.\n\
 last_page = \"integrations\"\n\
+\n\
+# Download a newer release as soon as it is found: true or false.\n\
+auto_download = true\n\
 \n\
 # Optional GitHub personal access token for authenticated API requests.\n\
 # This value is stored in plain text if configured.\n"

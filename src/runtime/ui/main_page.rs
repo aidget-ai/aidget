@@ -80,6 +80,8 @@ pub struct MainState {
     pub tray_click_action: TrayClickAction,
     pub last_page: MainPage,
     pub github_token: Option<GithubTokenSummary>,
+    /// Whether the About page's toggle leaves automatic downloading on.
+    pub auto_download: bool,
 }
 
 /// List every valid widget, including widgets that are currently archived.
@@ -120,12 +122,16 @@ pub fn main_widgets(store: &Store) -> Result<MainState> {
             broken.extend(crate::widgets::migration::trash_errors(store)?);
             broken
         },
-        version: env!("CARGO_PKG_VERSION").to_string(),
+        // The stamp, not the crate version: a build from a working tree reads as
+        // `0.1.0-5-gabc1234`, which is what explains the update row saying it
+        // cannot replace itself. For a release the two are the same number.
+        version: crate::update::version::build_stamp().to_string(),
         theme: preferences.theme,
         language: preferences.language,
         tray_click_action: preferences.tray_click_action.effective(),
         last_page: preferences.last_page,
         github_token,
+        auto_download: preferences.auto_download,
     })
 }
 
