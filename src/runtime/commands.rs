@@ -2,8 +2,7 @@
 use std::collections::BTreeMap;
 
 use crate::runtime::{command_access, ui, update};
-use crate::settings::{self, UiPreferences};
-use crate::update::{UpdateService, UpdateSnapshot};
+use crate::settings::UiPreferences;
 use crate::widgets::store::Store;
 use tauri::Manager;
 
@@ -42,65 +41,11 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         community_media,
         community_install,
         community_downloads,
-        update_state,
-        update_check,
-        update_download,
-        update_install
+        update::update_state,
+        update::update_check,
+        update::update_download,
+        update::update_install
     ])
-}
-
-#[tauri::command]
-fn update_state(
-    window: tauri::WebviewWindow,
-    app: tauri::AppHandle,
-) -> std::result::Result<UpdateSnapshot, String> {
-    ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
-    Ok(app.state::<UpdateService>().inner().snapshot())
-}
-
-#[tauri::command]
-async fn update_check(
-    window: tauri::WebviewWindow,
-    app: tauri::AppHandle,
-) -> std::result::Result<UpdateSnapshot, String> {
-    ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
-    let service = app.state::<UpdateService>().inner().clone();
-    let settings = settings::load(&update::root_of(&app)).map_err(|error| error.to_string())?;
-    let token = settings
-        .github_token
-        .map(|token| token.as_str().to_string());
-    Ok(update::check_and_maybe_download(service, token.as_deref(), settings.auto_download).await)
-}
-
-#[tauri::command]
-async fn update_download(
-    window: tauri::WebviewWindow,
-    app: tauri::AppHandle,
-) -> std::result::Result<UpdateSnapshot, String> {
-    ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
-    let service = app.state::<UpdateService>().inner().clone();
-    let settings = settings::load(&update::root_of(&app)).map_err(|error| error.to_string())?;
-    let token = settings
-        .github_token
-        .map(|token| token.as_str().to_string());
-    // Returns on `Downloading` so the window can draw progress; the work goes on
-    // in the background. This must stay `async`: a synchronous command runs on the
-    // main thread, where `tokio::spawn` panics and aborts the process.
-    Ok(service.start_download(token.as_deref()))
-}
-
-#[tauri::command]
-async fn update_install(
-    window: tauri::WebviewWindow,
-    app: tauri::AppHandle,
-) -> std::result::Result<UpdateSnapshot, String> {
-    ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
-    let service = app.state::<UpdateService>().inner().clone();
-    let snapshot = service.install().await;
-    if snapshot.error.is_none() {
-        update::relaunch_and_exit(&app).map_err(|error| error.to_string())?;
-    }
-    Ok(snapshot)
 }
 
 #[tauri::command]

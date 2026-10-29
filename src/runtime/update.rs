@@ -125,3 +125,57 @@ fn needs_administrator() -> bool {
 pub fn root_of(app: &tauri::AppHandle) -> std::path::PathBuf {
     app.state::<ui::UiState>().root.lock().unwrap().clone()
 }
+
+#[tauri::command]
+pub(crate) fn update_state(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+) -> std::result::Result<UpdateSnapshot, String> {
+    ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
+    Ok(app.state::<UpdateService>().inner().snapshot())
+}
+
+#[tauri::command]
+pub(crate) async fn update_check(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+) -> std::result::Result<UpdateSnapshot, String> {
+    ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
+    let service = app.state::<UpdateService>().inner().clone();
+    let settings = settings::load(&root_of(&app)).map_err(|error| error.to_string())?;
+    let token = settings
+        .github_token
+        .map(|token| token.as_str().to_string());
+    Ok(check_and_maybe_download(service, token.as_deref(), settings.auto_download).await)
+}
+
+#[tauri::command]
+pub(crate) async fn update_download(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+) -> std::result::Result<UpdateSnapshot, String> {
+    ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
+    let service = app.state::<UpdateService>().inner().clone();
+    let settings = settings::load(&root_of(&app)).map_err(|error| error.to_string())?;
+    let token = settings
+        .github_token
+        .map(|token| token.as_str().to_string());
+    // Returns on `Downloading` so the window can draw progress; the work goes on
+    // in the background. This must stay `async`: a synchronous command runs on the
+    // main thread, where `tokio::spawn` panics and aborts the process.
+    Ok(service.start_download(token.as_deref()))
+}
+
+#[tauri::command]
+pub(crate) async fn update_install(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+) -> std::result::Result<UpdateSnapshot, String> {
+    ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
+    let service = app.state::<UpdateService>().inner().clone();
+    let snapshot = service.install().await;
+    if snapshot.error.is_none() {
+        relaunch_and_exit(&app).map_err(|error| error.to_string())?;
+    }
+    Ok(snapshot)
+}
