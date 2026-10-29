@@ -33,6 +33,7 @@ export interface MainState {
   trayClickAction: TrayClickAction;
   lastPage: MainPage;
   githubToken: GithubTokenSummary | null;
+  autoDownload: boolean;
 }
 
 export interface GithubTokenSummary {
