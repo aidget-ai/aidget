@@ -6,6 +6,7 @@ import type { EventCallback } from '@tauri-apps/api/event';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import type { IntegrationInfo } from '../../src/main/integration';
+import { translate } from '../../src/main/locale';
 import type { MainState } from '../../src/main/model';
 
 const mocks = vi.hoisted(() => ({
@@ -137,6 +138,27 @@ beforeEach(() => {
   mocks.listen.mockClear();
   mocks.openUrl.mockReset().mockResolvedValue(undefined);
   prepareDocument();
+});
+
+describe('update row', () => {
+  it('labels every button the About page can show', () => {
+    prepareDocument();
+
+    // The locale pass is the only thing that names a button here: a button
+    // without a key renders with no text at all, which is how the install button
+    // shipped empty once.
+    for (const selector of [
+      '[data-update-check]',
+      '[data-update-download]',
+      '[data-update-install]',
+    ]) {
+      const button = document.querySelector<HTMLButtonElement>(selector);
+      expect(button, selector).not.toBeNull();
+      const key = button!.dataset.message;
+      expect(key, `${selector} needs a data-message key`).toBeTruthy();
+      expect(translate('en', key as never), `${selector} key ${key} has no text`).not.toBe('');
+    }
+  });
 });
 
 describe('main window navigation', () => {
