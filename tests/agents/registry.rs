@@ -1,4 +1,5 @@
-use aidget::agents::registry::{builtin_agents, AgentSpec};
+use aidget::agents::registry::{builtin_agents, dsh_mcp_path, AgentSpec};
+use std::path::Path;
 use tempfile::tempdir;
 
 #[test]
@@ -71,4 +72,10 @@ fn detection_accepts_a_config_path_without_a_cli() {
     assert!(!agent.detected());
     std::fs::write(config, "{}").unwrap();
     assert!(agent.detected());
+}
+
+#[test]
+fn dsh_mcp_path_is_the_home_level_patch_file() {
+    let home = Path::new("custom-home");
+    assert_eq!(dsh_mcp_path(home), home.join("cordis.patch.yml"));
 }
