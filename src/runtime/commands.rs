@@ -98,7 +98,7 @@ async fn update_install(
     let service = app.state::<UpdateService>().inner().clone();
     let snapshot = service.install().await;
     if snapshot.error.is_none() {
-        update::relaunch_and_exit(&app);
+        update::relaunch_and_exit(&app).map_err(|error| error.to_string())?;
     }
     Ok(snapshot)
 }

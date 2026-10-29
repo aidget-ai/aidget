@@ -97,10 +97,19 @@ pub fn install_on_quit(handle: &tauri::AppHandle) {
 }
 
 /// Start the version that was just swapped in, then leave.
-pub fn relaunch_and_exit(app: &tauri::AppHandle) {
+///
+/// A failure here would leave the app running the old binary while the bundle on
+/// disk is the new one, so it is reported instead of swallowed: the install itself
+/// is done, and the only thing left for the user to do is start aidget again.
+pub fn relaunch_and_exit(app: &tauri::AppHandle) -> crate::common::error::Result<()> {
     match crate::update::install::relaunch() {
-        Ok(()) => app.exit(0),
-        Err(error) => eprintln!("aidget: cannot relaunch: {error}"),
+        Ok(()) => {
+            app.exit(0);
+            Ok(())
+        }
+        Err(error) => Err(crate::common::error::Error::Other(format!(
+            "the update is in place but could not be started ({error}); quit and start aidget again"
+        ))),
     }
 }
 
