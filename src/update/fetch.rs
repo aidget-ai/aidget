@@ -63,9 +63,15 @@ pub fn ensure_secure(url: &str) -> crate::common::error::Result<()> {
 
     let parsed =
         reqwest::Url::parse(url).map_err(|error| Error::Other(format!("download: {error}")))?;
+    // An IPv6 literal keeps its brackets in `host_str`, so `[::1]` has to lose
+    // them before it can be parsed as an address.
     let loopback = parsed.host_str().is_some_and(|host| {
-        host == "localhost"
-            || host
+        let bare = host
+            .strip_prefix('[')
+            .and_then(|rest| rest.strip_suffix(']'))
+            .unwrap_or(host);
+        bare == "localhost"
+            || bare
                 .parse::<std::net::IpAddr>()
                 .is_ok_and(|address| address.is_loopback())
     });

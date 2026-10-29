@@ -101,27 +101,6 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
 }
 
 #[test]
-fn a_plaintext_download_from_the_network_is_refused() {
-    let root = tempfile::TempDir::new().unwrap();
-    let dest = root.path().join("asset");
-
-    // Nothing listens there: the refusal has to happen before any request.
-    let error = aidget::update::download::to_file(
-        "http://downloads.example.com/aidget.zip",
-        None,
-        &dest,
-        &mut |_, _| {},
-    )
-    .unwrap_err();
-
-    assert!(
-        error.to_string().contains("refusing to download"),
-        "{error}"
-    );
-    assert!(!dest.exists());
-}
-
-#[test]
 fn a_loopback_server_is_allowed_for_the_tests() {
     let base = super::serve_once(200, "bytes");
     let root = tempfile::TempDir::new().unwrap();

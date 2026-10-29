@@ -1,4 +1,5 @@
 mod download;
+mod fetch;
 mod github;
 mod install;
 mod service;
