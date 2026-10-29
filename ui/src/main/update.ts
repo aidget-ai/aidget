@@ -71,9 +71,8 @@ export function createUpdatePage(
   let poll: number | undefined;
 
   function render() {
-    checkButton.textContent = t('checkNow');
-    downloadButton.textContent = t('downloadUpdate');
-    installButton.textContent = t('installUpdate');
+    // The three buttons carry `data-message`, so the locale pass names them; only
+    // the switch needs its accessible name here.
     autoDownloadSwitch.setAttribute('aria-checked', String(autoDownload));
     autoDownloadSwitch.setAttribute('aria-label', t('autoDownload'));
 
