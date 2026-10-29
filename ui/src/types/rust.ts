@@ -8,8 +8,13 @@ export type PackageAuthor = string | { name: string, email: string | null, url: 
 export type PackageRepository = string | { type: string, url: string, directory: string | null, };
 export type PackageManifest = { name: string, version: string, description: string, author: PackageAuthor | null, repository: PackageRepository | null, license: string | null, files: Array<string>, };
 export type FileDigest = { path: string, size: number, sha256: string, };
-export type RegistryEntry = { package: PackageManifest, config: WidgetConfig, files: Array<FileDigest>, };
+export type RegistryEntry = {
+/**
+ * First inclusion in the reviewed community catalogue, in UTC RFC3339.
+ */
+publishedAt: string, package: PackageManifest, config: WidgetConfig, files: Array<FileDigest>, };
 export type Registry = { widgets: Array<RegistryEntry>, };
 export type CommunityEntry = { entry: RegistryEntry, installed: boolean, idConflict: boolean, supported: boolean, };
 export type CommunitySnapshot = { commit: string, widgets: Array<CommunityEntry>, };
 export type DownloadCount = { package: string, weekly: number | null, error: string | null, };
+export type LocalWidgetDetails = { config: WidgetConfig, description: string | null, preview: string | null, };

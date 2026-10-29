@@ -35,6 +35,10 @@ vi.mock('lucide', () => {
   return {
     Archive: icon,
     ArrowUpDown: icon,
+    ArrowDown: icon,
+    ArrowUp: icon,
+    RefreshCw: icon,
+    ExternalLink: icon,
     Info: icon,
     LayoutGrid: icon,
     Minus: icon,
@@ -470,4 +474,71 @@ describe('main window navigation', () => {
         .classList.contains('is-on'),
     ).toBe(true);
   });
+});
+
+it('opens local details from the card, preview or title without intercepting card actions', async () => {
+  const initial = state('local-widgets');
+  initial.language = 'zh-CN';
+  initial.widgets = [
+    {
+      id: 'clock',
+      title: 'Clock',
+      packageName: null,
+      revision: 1,
+      token: 'token',
+      width: 360,
+      height: 220,
+      enabled: false,
+      createdAt: 1,
+    },
+  ];
+  await loadMain(initial);
+  const details = {
+    config: {
+      id: 'clock',
+      title: 'Clock',
+      logo: null,
+      screenshots: [],
+      platforms: ['macos'],
+      size: { width: 360, height: 220 },
+      dragMode: 'all',
+      permissions: [],
+      network: [],
+    },
+    description: null,
+    preview: null,
+  };
+  mocks.invoke.mockImplementation((command: string) =>
+    Promise.resolve(
+      command === 'main_widget_details' ? details : command === 'main_state' ? initial : null,
+    ),
+  );
+  const card = document.querySelector<HTMLElement>('[data-widget="clock"]')!;
+  card.click();
+  await vi.waitFor(() =>
+    expect(mocks.invoke).toHaveBeenCalledWith('main_widget_details', { id: 'clock' }),
+  );
+  await vi.waitFor(() =>
+    expect(document.querySelector<HTMLDialogElement>('.local-widget-dialog')?.open).toBe(true),
+  );
+  const dialog = document.querySelector<HTMLDialogElement>('.local-widget-dialog')!;
+  expect(dialog.querySelector('.community-detail-identity')).toBeNull();
+  expect(dialog.querySelector('.community-dialog-header button')).toBeNull();
+  expect(dialog.querySelector('.community-permissions-empty')?.textContent).toBe('无特殊权限');
+  dialog.querySelector<HTMLButtonElement>('.community-dialog-close')!.click();
+  expect(dialog.open).toBe(false);
+  const count = mocks.invoke.mock.calls.filter(
+    ([command]) => command === 'main_widget_details',
+  ).length;
+  card.querySelector<HTMLButtonElement>('.switch')!.click();
+  await Promise.resolve();
+  expect(
+    mocks.invoke.mock.calls.filter(([command]) => command === 'main_widget_details'),
+  ).toHaveLength(count);
+  card.querySelector<HTMLButtonElement>('.preview-stage')!.click();
+  await vi.waitFor(() => expect(dialog.open).toBe(true));
+  dialog.querySelector<HTMLButtonElement>('.community-dialog-close')!.click();
+  card.querySelector<HTMLButtonElement>('.widget-title')!.click();
+  await vi.waitFor(() => expect(dialog.open).toBe(true));
+  dialog.querySelector<HTMLButtonElement>('.community-dialog-close')!.click();
 });

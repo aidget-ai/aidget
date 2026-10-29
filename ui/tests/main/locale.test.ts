@@ -21,9 +21,7 @@ describe('main window locale', () => {
   it('translates GitHub token network settings in both supported languages', () => {
     expect(translate('zh', 'network')).toBe('网络');
     expect(translate('zh', 'githubToken')).toBe('GitHub 令牌');
-    expect(translate('zh', 'githubTokenDescription')).toBe(
-      '用于社区组件读取和安装，当由于 Github API 限制无法拉取社区组件时配置。',
-    );
+    expect(translate('zh', 'githubTokenDescription')).toBe('用于社区组件的拉取和安装。');
     expect(translate('zh', 'githubTokenPlaceholder')).toBe('ghp_xxx');
     expect(translate('zh', 'communityGithubTokenHint')).toContain('配置 GitHub 令牌');
     expect(translate('en', 'network')).toBe('Network');

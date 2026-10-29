@@ -1,0 +1,16 @@
+.sort-arrows {
+  display: block;
+  flex: none;
+  inline-size: 18px;
+  block-size: 18px;
+  pointer-events: none;
+}
+.sort-arrows [data-arrow] {
+  color: var(--muted);
+  opacity: 0.5;
+}
+[data-direction='asc'] > .sort-arrows > [data-arrow='asc'],
+[data-direction='desc'] > .sort-arrows > [data-arrow='desc'] {
+  color: var(--accent);
+  opacity: 1;
+}

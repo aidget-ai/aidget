@@ -1,3 +1,6 @@
+@import './community-sort.css';
+@import './sort-icon.css';
+
 :root {
   color-scheme: light dark;
   --page: #f4f4f6;
@@ -25,6 +28,7 @@
   --agent-color-icon-opacity: 0.5;
   --agent-mono-icon-opacity: 0.78;
   --header-height: 50px;
+  --hover-surface: color-mix(in srgb, var(--text) 8%, var(--surface));
 }
 
 :root[data-theme='light'] {
@@ -255,7 +259,7 @@ body[data-platform='windows'] .navigation {
 }
 
 .nav-item:hover {
-  background: var(--nav-hover);
+  background: var(--hover-surface);
 }
 .nav-item.is-active {
   border-color: var(--line);
@@ -372,7 +376,7 @@ body[data-platform='windows'] .navigation {
   gap: 2px;
   padding: 3px;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--text) 6%, transparent);
+  background: var(--nav-hover);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -440,10 +444,6 @@ body[data-platform='windows'] .navigation {
 
 .sort-filter:hover {
   color: var(--text);
-}
-.sort-filter svg {
-  width: 14px;
-  height: 14px;
 }
 
 .recycle-filter {
@@ -614,7 +614,7 @@ body[data-platform='windows'] .navigation {
 }
 
 .secondary-button:not(:disabled):hover {
-  background: var(--nav-hover);
+  background: var(--hover-surface);
 }
 .secondary-button:disabled {
   cursor: default;
@@ -850,7 +850,7 @@ body[data-platform='windows'] .navigation {
 }
 .agent-chip:hover,
 .agent-chip:focus-visible {
-  background: var(--nav-hover);
+  background: var(--hover-surface);
 }
 .agent-chip img {
   width: 18px;
@@ -1001,7 +1001,6 @@ body[data-platform='windows'] .navigation {
 
 .settings-segmented {
   border-radius: 9px;
-  background: var(--page);
 }
 .settings-segmented .segment-button {
   height: 28px;
@@ -1179,7 +1178,6 @@ body[data-platform='windows'] .navigation {
   }
 }
 
-.community-heading,
 .community-card-footer,
 .community-dialog-header {
   display: flex;
@@ -1187,18 +1185,69 @@ body[data-platform='windows'] .navigation {
   gap: 12px;
 }
 .community-heading {
-  justify-content: space-between;
-  margin-block-end: 20px;
+  margin-block-end: 0;
 }
 .community-heading h1 {
   margin: 0;
   font-size: 21px;
 }
+.community-banner {
+  position: relative;
+  margin: 0 0 20px;
+  padding: 14px 44px 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.9;
+}
+.community-banner-close {
+  position: absolute;
+  inset-block-start: 10px;
+  inset-inline-end: 10px;
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.community-banner-close:hover {
+  background: var(--hover-surface);
+  color: var(--text);
+}
+.community-repository {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--nav-hover);
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.community-repository:hover {
+  background: var(--line);
+}
+.community-repository:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .community-status {
+  margin: 0;
   color: var(--muted);
   font-size: 13px;
   overflow-wrap: anywhere;
   white-space: pre-line;
+}
+.community-status:not(:empty) {
+  margin-block-end: 20px;
 }
 .community-status:empty {
   display: none;
@@ -1255,16 +1304,21 @@ body[data-platform='windows'] .navigation {
   flex: none;
 }
 .community-install {
+  --install-background: color-mix(in srgb, var(--accent) 11%, var(--surface));
   flex: none;
   margin-inline-start: auto;
   padding: 6px 10px;
   border: 0;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 11%, var(--surface));
+  background: var(--install-background);
   color: var(--accent);
   font-weight: 600;
   font-size: 12px;
   cursor: pointer;
+}
+.community-install:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  color: color-mix(in srgb, var(--accent) 70%, var(--text));
 }
 .community-install:disabled {
   opacity: 0.6;
@@ -1360,7 +1414,7 @@ body[data-platform='windows'] .navigation {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 22px 20px 6px 26px;
+  padding: 22px 20px 10px 26px;
 }
 .community-dialog-header h2 {
   min-inline-size: 0;
@@ -1442,7 +1496,7 @@ body[data-platform='windows'] .navigation {
   font-size: 13px;
 }
 .community-dialog-close:hover {
-  background: var(--nav-hover);
+  background: var(--hover-surface);
   color: var(--text);
 }
 .community-install-error {
@@ -1451,4 +1505,39 @@ body[data-platform='windows'] .navigation {
 }
 .community-install-error:empty {
   display: none;
+}
+
+@container (max-width: 650px) {
+  .community-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container (max-width: 420px) {
+  .community-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.local-widget-preview {
+  cursor: pointer;
+}
+.local-widget-title {
+  display: block;
+  max-inline-size: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+.community-permissions-empty {
+  margin: 0;
+  color: var(--muted);
+}
+.community-dialog:modal {
+  overscroll-behavior: contain;
+}
+.community-dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
 }

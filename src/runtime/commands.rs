@@ -17,6 +17,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         main_state,
         main_painted,
         main_widget_cached_preview,
+        main_widget_details,
         set_widget_enabled,
         delete_widget,
         restore_widget,
@@ -141,6 +142,21 @@ async fn main_widget_cached_preview(
     ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
     let root = app.state::<ui::UiState>().root.lock().unwrap().clone();
     tauri::async_runtime::spawn_blocking(move || ui::cached_preview(&Store::new(root), &id))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())
+}
+
+/// Read installed metadata and the saved preview for the main-window details dialog.
+#[tauri::command]
+async fn main_widget_details(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    id: String,
+) -> std::result::Result<ui::LocalWidgetDetails, String> {
+    ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
+    let root = app.state::<ui::UiState>().root.lock().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || ui::local_widget_details(&Store::new(root), &id))
         .await
         .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())

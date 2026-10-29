@@ -159,6 +159,7 @@ fn fixture_named(server: &Server, name: &str) -> (RegistryEntry, Vec<u8>, String
     let archive = builder.into_inner().unwrap().finish().unwrap();
     let integrity = format!("sha512-{}", STANDARD.encode(Sha512::digest(&archive)));
     let entry = RegistryEntry {
+        published_at: "2026-10-25T06:49:57Z".into(),
         package: serde_json::from_value(package).unwrap(),
         config,
         files: files

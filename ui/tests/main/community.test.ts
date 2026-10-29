@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import type { CommunitySnapshot } from '../../src/types/rust';
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
+import type { CommunitySnapshot, DownloadCount } from '../../src/types/rust';
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), openUrl: vi.fn() }));
+vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: mocks.openUrl }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 import { createCommunityPage, weeklyDownloads } from '../../src/main/community';
 const snapshot: CommunitySnapshot = {
@@ -10,6 +11,7 @@ const snapshot: CommunitySnapshot = {
   widgets: [
     {
       entry: {
+        publishedAt: '2026-10-25T06:49:57Z',
         package: {
           name: '@aidget-community/clock',
           version: '1.0.0',
@@ -40,7 +42,9 @@ const snapshot: CommunitySnapshot = {
 };
 beforeEach(() => {
   document.body.replaceChildren();
+  localStorage.removeItem('aidget.communityBannerDismissed');
   mocks.invoke.mockReset();
+  mocks.openUrl.mockReset().mockResolvedValue(undefined);
   vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function (
     this: HTMLDialogElement,
   ) {
@@ -119,12 +123,14 @@ describe('community cards', () => {
     const refresh = root.querySelector<HTMLButtonElement>('.community-refresh')!;
     refresh.click();
 
-    expect(refresh.textContent).toBe('Refreshing');
+    expect(refresh.textContent).toBe('');
+    expect(refresh.getAttribute('aria-label')).toBe('Refreshing');
+    expect(refresh.querySelector('svg')).toBeTruthy();
     expect(refresh.disabled).toBe(true);
     expect(root.querySelector('.community-status')?.textContent).toBe('');
 
     resolveRefresh(structuredClone(snapshot));
-    await vi.waitFor(() => expect(refresh.textContent).toBe('Refresh'));
+    await vi.waitFor(() => expect(refresh.getAttribute('aria-label')).toBe('Refresh'));
     expect(refresh.disabled).toBe(false);
   });
   it('requires details confirmation and sends the pinned main SHA', async () => {
@@ -209,10 +215,12 @@ describe('community cards', () => {
     );
     const { root } = page();
     await vi.waitFor(() => expect(root.querySelector('.community-name')).toBeTruthy());
-    expect(root.querySelector('article')?.textContent).not.toContain('No host permissions');
+    expect(root.querySelector('article')?.textContent).not.toContain('No special permissions');
     (root.querySelector('.community-install') as HTMLButtonElement).click();
     const dialog = root.querySelector('dialog')!;
-    expect(dialog.textContent).toContain('No host permissions');
+    expect(dialog.textContent).toContain('No special permissions');
+    expect(dialog.querySelector('ul.community-permissions')).toBeNull();
+    expect(dialog.querySelector('.community-permissions-empty')?.tagName).toBe('P');
     expect(dialog.querySelector('ul.community-network')).toBeNull();
     const network = dialog.querySelector('.community-network-empty')!;
     expect(network.tagName).toBe('P');
@@ -312,6 +320,224 @@ describe('community cards', () => {
     });
     expect(root.querySelector('.community-status')?.textContent).not.toContain(
       'configure a GitHub token',
+    );
+  });
+});
+
+describe('community discovery controls', () => {
+  it('hides refresh and announces first loading, then exposes retry after failure', async () => {
+    let reject!: (error: Error) => void;
+    mocks.invoke.mockReturnValue(
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+    );
+    const { root } = page();
+    const refresh = root.querySelector<HTMLButtonElement>('.community-refresh')!;
+    const status = root.querySelector('.community-status')!;
+    expect(refresh.hidden).toBe(true);
+    expect(status.textContent).toBe('Fetching data...');
+    expect(root.querySelector('.community-toolbar')?.nextElementSibling).toBe(status);
+    expect(status.nextElementSibling).toBe(root.querySelector('.widget-grid'));
+    expect(status.closest('.community-heading')).toBeNull();
+    expect(status.getAttribute('role')).toBe('status');
+    reject(new Error('offline'));
+    await vi.waitFor(() => expect(status.textContent).toContain('offline'));
+    expect(refresh.hidden).toBe(false);
+    expect(refresh.disabled).toBe(false);
+    mocks.invoke.mockImplementation((command: string) =>
+      Promise.resolve(command === 'community_list' ? structuredClone(snapshot) : []),
+    );
+    refresh.click();
+    expect(refresh.hidden).toBe(true);
+    await vi.waitFor(() => expect(root.querySelector('article')).toBeTruthy());
+    expect(refresh.hidden).toBe(false);
+    expect(status.textContent).toBe('');
+  });
+
+  it('renders and translates the banner and opens its repository link', async () => {
+    const root = document.createElement('section');
+    document.body.append(root);
+    let locale: 'en' | 'zh-CN' = 'zh-CN';
+    const controller = createCommunityPage(
+      root,
+      () => locale,
+      async () => {},
+      () => false,
+    );
+    controller.show();
+    expect(root.querySelector('.community-status')?.textContent).toBe('正在拉取数据...');
+    const banner = root.querySelector('.community-banner')!;
+    expect(banner.textContent).toBe(
+      '这里是由 aidget 社区经过安全评审的小组件，你可前往 组件仓库 了解如何发布社区组件。',
+    );
+    const link = banner.querySelector<HTMLAnchorElement>('a')!;
+    expect(link.href).toBe('https://github.com/aidget-ai/widgets');
+    expect(link.lastElementChild?.tagName.toLowerCase()).toBe('svg');
+    link.click();
+    await vi.waitFor(() => expect(mocks.openUrl).toHaveBeenCalledWith(link.href));
+    locale = 'en';
+    controller.render();
+    expect(link.textContent).toBe('widget repository');
+    expect(banner.textContent).toContain('security-reviewed');
+    expect(root.querySelector('.community-sort')?.getAttribute('aria-label')).toBe('Sort');
+    expect(root.querySelectorAll('.community-sort button')).toHaveLength(2);
+  });
+
+  it('places the banner above the title and remembers dismissal across page instances', () => {
+    const { root, page: controller } = page();
+    const banner = root.querySelector<HTMLElement>('.community-banner')!;
+    expect(root.firstElementChild).toBe(banner);
+    expect(banner.nextElementSibling?.className).toBe('community-heading');
+    const close = banner.querySelector<HTMLButtonElement>('button')!;
+    expect(close.getAttribute('aria-label')).toBe('Dismiss community introduction');
+    expect(banner.hidden).toBe(false);
+    close.click();
+    expect(banner.hidden).toBe(true);
+    expect(localStorage.getItem('aidget.communityBannerDismissed')).toBe('true');
+    controller.render();
+    expect(banner.hidden).toBe(true);
+    const next = page();
+    expect(next.root.querySelector<HTMLElement>('.community-banner')!.hidden).toBe(true);
+    localStorage.removeItem('aidget.communityBannerDismissed');
+    expect(page().root.querySelector<HTMLElement>('.community-banner')!.hidden).toBe(false);
+  });
+
+  it('exposes the sorting group beside refresh and switches metric and direction', async () => {
+    const { root } = page();
+    await vi.waitFor(() => expect(root.querySelector('article')).toBeTruthy());
+    const group = root.querySelector<HTMLElement>('.community-sort')!;
+    const refresh = root.querySelector<HTMLButtonElement>('.community-refresh')!;
+    expect(group.nextElementSibling).toBe(refresh);
+    expect(root.querySelector('[role="menu"]')).toBeNull();
+    const rows = [...group.querySelectorAll<HTMLButtonElement>('button')];
+    expect(rows.map((row) => row.textContent)).toEqual(['Weekly downloads', 'Published']);
+    expect(rows[0].dataset.direction).toBe('desc');
+    rows[0].click();
+    expect(rows[0].dataset.direction).toBe('asc');
+    rows[1].click();
+    expect(rows[1].dataset.direction).toBe('desc');
+    expect(rows[0].getAttribute('aria-pressed')).toBe('false');
+    expect(rows[1].getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('reports a repository open failure without losing the catalogue', async () => {
+    const { root } = page();
+    await vi.waitFor(() => expect(root.querySelector('article')).toBeTruthy());
+    mocks.openUrl.mockRejectedValueOnce(new Error('browser unavailable'));
+    root.querySelector<HTMLAnchorElement>('.community-banner a')!.click();
+    await vi.waitFor(() =>
+      expect(root.querySelector('.community-status')?.textContent).toContain('browser unavailable'),
+    );
+    expect(root.querySelector('article')).toBeTruthy();
+  });
+
+  it('sorts by both metrics in both directions and retains selection through lifecycle changes', async () => {
+    const entries = ['alpha', 'beta', 'gamma', 'delta', 'epsilon'].map((id, index) => {
+      const entry = structuredClone(snapshot.widgets[0]);
+      entry.entry.config.id = id;
+      entry.entry.config.title = id;
+      entry.entry.package.name = `@aidget-community/${id}`;
+      entry.entry.publishedAt = `2026-10-${String(25 + (index % 3)).padStart(2, '0')}T00:00:00Z`;
+      return entry;
+    });
+    const catalogue: CommunitySnapshot = { commit: snapshot.commit, widgets: entries };
+    let resolveCounts!: (counts: DownloadCount[]) => void;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === 'community_list') {
+        return Promise.resolve(catalogue);
+      }
+      if (command === 'community_downloads') {
+        return new Promise<DownloadCount[]>((resolve) => {
+          resolveCounts = resolve;
+        });
+      }
+      return Promise.resolve();
+    });
+    const { root, page: controller, installed } = page();
+    await vi.waitFor(() => expect(root.querySelectorAll('article')).toHaveLength(5));
+    const group = root.querySelector<HTMLElement>('.community-sort')!;
+    const selectedSort = () => {
+      const active = group.querySelector<HTMLElement>('[aria-pressed="true"]')!;
+      return `${active.dataset.sort}-${active.dataset.direction}`;
+    };
+    expect(selectedSort()).toBe('downloads-desc');
+    const order = () =>
+      [...root.querySelectorAll<HTMLElement>('article')].map(
+        (card) => card.dataset.package!.split('/')[1],
+      );
+    const choose = (value: string) => {
+      const [metric, direction] = value.split('-');
+      const item = group.querySelector<HTMLButtonElement>(`[data-sort="${metric}"]`)!;
+      item.click();
+      if (item.dataset.direction !== direction) {
+        item.click();
+      }
+    };
+    choose('published-desc');
+    expect(order()).toEqual(['gamma', 'beta', 'epsilon', 'alpha', 'delta']);
+    resolveCounts(
+      entries.map((entry, i) => ({
+        package: entry.entry.package.name,
+        weekly: [0, 50, null, 50, null][i],
+        error: null,
+      })),
+    );
+    await vi.waitFor(() => expect(root.textContent).toContain('50/week'));
+    expect(order()).toEqual(['gamma', 'beta', 'epsilon', 'alpha', 'delta']);
+    choose('downloads-desc');
+    expect(order()).toEqual(['beta', 'delta', 'alpha', 'epsilon', 'gamma']);
+    choose('downloads-asc');
+    expect(order()).toEqual(['alpha', 'beta', 'delta', 'epsilon', 'gamma']);
+    choose('published-asc');
+    expect(order()).toEqual(['alpha', 'delta', 'beta', 'epsilon', 'gamma']);
+    expect(catalogue.widgets.map((e) => e.entry.config.id)).toEqual([
+      'alpha',
+      'beta',
+      'gamma',
+      'delta',
+      'epsilon',
+    ]);
+    controller.show();
+    expect(selectedSort()).toBe('published-asc');
+    root.querySelector<HTMLButtonElement>('.community-install')!.click();
+    root.querySelector<HTMLButtonElement>('dialog .community-install')!.click();
+    await vi.waitFor(() => expect(installed).toHaveBeenCalled());
+    expect(selectedSort()).toBe('published-asc');
+    root.querySelector<HTMLButtonElement>('.community-refresh')!.click();
+    expect(order()).toEqual(['alpha', 'delta', 'beta', 'epsilon', 'gamma']);
+    await vi.waitFor(() => expect(root.getAttribute('aria-busy')).toBe('false'));
+    expect(selectedSort()).toBe('published-asc');
+    controller.invalidate();
+    controller.show();
+    await vi.waitFor(() => expect(root.getAttribute('aria-busy')).toBe('false'));
+    expect(selectedSort()).toBe('published-asc');
+  });
+
+  it('reorders the default popularity sort when delayed counts arrive', async () => {
+    const catalogue = structuredClone(snapshot);
+    const second = structuredClone(catalogue.widgets[0]);
+    second.entry.package.name = '@aidget-community/zebra';
+    catalogue.widgets.push(second);
+    let resolveCounts!: (counts: DownloadCount[]) => void;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === 'community_list') {
+        return Promise.resolve(catalogue);
+      }
+      if (command === 'community_downloads') {
+        return new Promise((resolve) => {
+          resolveCounts = resolve;
+        });
+      }
+      return Promise.resolve();
+    });
+    const { root } = page();
+    await vi.waitFor(() => expect(root.querySelectorAll('article')).toHaveLength(2));
+    resolveCounts([{ package: second.entry.package.name, weekly: 10, error: null }]);
+    await vi.waitFor(() =>
+      expect(root.querySelector<HTMLElement>('article')?.dataset.package).toBe(
+        second.entry.package.name,
+      ),
     );
   });
 });

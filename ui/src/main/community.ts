@@ -1,15 +1,17 @@
 import { invoke } from '@tauri-apps/api/core';
-import { createElement, LayoutGrid, ShieldCheck } from 'lucide';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { createElement, ExternalLink, LayoutGrid, RefreshCw, ShieldCheck, X } from 'lucide';
 
 import type {
   CommunityEntry,
   CommunitySnapshot,
   DownloadCount,
   PackageAuthor,
-  WidgetPlatform,
 } from '../types/rust';
+import { createCommunitySort } from './community-sort';
 import { translate, type Locale, type MessageKey } from './locale';
 import { resolvedLocale } from './preferences';
+import { renderWidgetDetailsContent } from './widget-details';
 
 /** Format npm's count without confusing an absent response with a real zero. */
 export function weeklyDownloads(value: number | null, locale: string) {
@@ -25,12 +27,6 @@ export function weeklyDownloads(value: number | null, locale: string) {
 function authorName(author: PackageAuthor | null) {
   return typeof author === 'string' ? author : (author?.name ?? '');
 }
-const platformNames: Record<WidgetPlatform, string> = {
-  macos: 'macOS',
-  windows: 'Windows',
-  linux: 'Linux',
-};
-
 /** Render a community catalogue. Remote HTML never enters this document. */
 export function createCommunityPage(
   root: HTMLElement,
@@ -45,6 +41,7 @@ export function createCommunityPage(
   let installing: string | undefined;
   let selected: { entry: CommunityEntry; commit: string } | undefined;
   let installError = '';
+  let linkError = '';
   const counts = new Map<string, DownloadCount>();
   const media = new Map<string, Promise<string>>();
   const t = (key: MessageKey) => translate(resolvedLocale(locale()), key);
@@ -52,20 +49,56 @@ export function createCommunityPage(
   header.className = 'community-heading';
   const heading = document.createElement('h1');
   heading.id = 'community-widgets-title';
+  heading.className = 'visually-hidden';
   const refresh = document.createElement('button');
   refresh.type = 'button';
-  refresh.className = 'community-refresh secondary-button';
+  refresh.className = 'community-refresh';
+  refresh.append(createElement(RefreshCw, { width: 15, height: 15, 'aria-hidden': 'true' }));
   const status = document.createElement('p');
   status.className = 'community-status';
   status.setAttribute('role', 'status');
+  const banner = document.createElement('p');
+  banner.className = 'community-banner';
+  banner.hidden = localStorage.getItem('aidget.communityBannerDismissed') === 'true';
+  const introduction = document.createTextNode('');
+  const invitation = document.createTextNode('');
+  const repository = document.createElement('a');
+  repository.className = 'community-repository';
+  repository.href = 'https://github.com/aidget-ai/widgets';
+  const repositoryLabel = document.createElement('span');
+  repository.append(
+    repositoryLabel,
+    createElement(ExternalLink, { width: 13, height: 13, 'aria-hidden': 'true' }),
+  );
+  const dismissBanner = document.createElement('button');
+  dismissBanner.type = 'button';
+  dismissBanner.className = 'community-banner-close';
+  dismissBanner.append(createElement(X, { width: 14, height: 14, 'aria-hidden': 'true' }));
+  dismissBanner.addEventListener('click', () => {
+    localStorage.setItem('aidget.communityBannerDismissed', 'true');
+    banner.hidden = true;
+  });
+  banner.append(introduction, repository, invitation, dismissBanner);
+  repository.addEventListener('click', (event) => {
+    event.preventDefault();
+    linkError = '';
+    void openUrl(repository.href).catch((error: unknown) => {
+      linkError = `${t('openLinkFailed')}: ${String(error)}`;
+      render();
+    });
+  });
+  const toolbar = document.createElement('div');
+  toolbar.className = 'community-toolbar';
+  const sort = createCommunitySort(locale, renderGrid);
+  toolbar.append(sort.element, refresh);
   const grid = document.createElement('div');
   grid.className = 'widget-grid community-grid';
   const dialog = document.createElement('dialog');
   dialog.className = 'community-dialog';
   dialog.tabIndex = -1;
   dialog.setAttribute('aria-labelledby', 'community-detail-title');
-  header.append(heading, refresh);
-  root.replaceChildren(header, status, grid, dialog);
+  header.append(heading);
+  root.replaceChildren(banner, header, toolbar, status, grid, dialog);
   refresh.addEventListener('click', () => void load());
   dialog.addEventListener('close', () => {
     selected = undefined;
@@ -165,26 +198,6 @@ export function createCommunityPage(
     });
     return button;
   }
-  function permissions(entry: CommunityEntry) {
-    const list = document.createElement('ul');
-    list.className = 'community-badges community-permissions';
-    const names: Record<string, MessageKey> = {
-      script: 'permissionScript',
-      location: 'permissionLocation',
-      storage: 'permissionStorage',
-    };
-    for (const permission of entry.entry.config.permissions) {
-      const item = document.createElement('li');
-      item.textContent = t(names[permission]);
-      list.append(item);
-    }
-    if (!list.children.length) {
-      const item = document.createElement('li');
-      item.textContent = t('communityNoPermissions');
-      list.append(item);
-    }
-    return list;
-  }
   function renderCard(entry: CommunityEntry) {
     const { config, package: pkg } = entry.entry;
     const card = document.createElement('article');
@@ -244,66 +257,72 @@ export function createCommunityPage(
   }
   function render() {
     heading.textContent = t('communityWidgetsTitle');
-    refresh.textContent = t(loading ? 'communityRefreshing' : 'communityRefresh');
+    refresh.title = t(loading ? 'communityRefreshing' : 'communityRefresh');
+    refresh.setAttribute('aria-label', refresh.title);
+    refresh.setAttribute('aria-busy', String(loading));
     refresh.disabled = loading || !!installing;
+    refresh.hidden = loading && !snapshot;
+    introduction.textContent = t('communityIntroduction');
+    repositoryLabel.textContent = t('communityRepository');
+    invitation.textContent = t('communityInvitation');
+    dismissBanner.title = t('communityDismissBanner');
+    dismissBanner.setAttribute('aria-label', dismissBanner.title);
+    sort.render(!snapshot || loading || !!installing);
     root.setAttribute('aria-busy', String(loading));
     if (loading) {
-      status.textContent = '';
+      status.textContent = snapshot ? '' : t('communityFetching');
     } else if (snapshot) {
       status.textContent =
-        installError && !dialog.open
-          ? installError
+        linkError || (installError && !dialog.open)
+          ? linkError || installError
           : snapshot.widgets.length
             ? ''
             : t('communityEmpty');
     }
-    grid.replaceChildren(...(snapshot?.widgets.map(renderCard) ?? []));
+    renderGrid();
     if (selected && dialog.open) {
       renderDetails(selected.entry, selected.commit);
     }
+  }
+  function renderGrid() {
+    const widgets = snapshot?.widgets.slice() ?? [];
+    widgets.sort((a, b) => {
+      const left = sort.value.startsWith('published')
+        ? Date.parse(a.entry.publishedAt)
+        : counts.get(a.entry.package.name)?.weekly;
+      const right = sort.value.startsWith('published')
+        ? Date.parse(b.entry.publishedAt)
+        : counts.get(b.entry.package.name)?.weekly;
+      // Missing telemetry always follows real counts, including a real zero.
+      if (left == null || right == null) {
+        if (left != null) {
+          return -1;
+        }
+        if (right != null) {
+          return 1;
+        }
+      } else if (left !== right) {
+        return (left - right) * (sort.value.endsWith('asc') ? 1 : -1);
+      }
+      return a.entry.package.name.localeCompare(b.entry.package.name, 'en');
+    });
+    grid.replaceChildren(...widgets.map(renderCard));
   }
   function renderDetails(entry: CommunityEntry, commit: string) {
     const { config, package: pkg } = entry.entry;
     const title = document.createElement('h2');
     title.id = 'community-detail-title';
     title.textContent = config.title;
-    const description = document.createElement('p');
-    description.className = 'community-detail-description';
-    description.textContent = pkg.description;
     const identity = document.createElement('p');
     identity.className = 'community-detail-identity';
     identity.textContent = `${authorName(pkg.author)} · ${pkg.name} · v${pkg.version}`;
-    const permissionsTitle = document.createElement('h3');
-    permissionsTitle.textContent = t('communityPermissions');
-    const platformsTitle = document.createElement('h3');
-    platformsTitle.textContent = t('communityPlatforms');
-    const platforms = document.createElement('ul');
-    platforms.className = 'community-badges community-platforms';
-    for (const platform of config.platforms) {
-      const item = document.createElement('li');
-      item.textContent = platformNames[platform];
-      platforms.append(item);
-    }
-    const networkTitle = document.createElement('h3');
-    networkTitle.textContent = t('communityNetwork');
-    let network: HTMLElement;
-    if (config.network.length) {
-      const list = document.createElement('ul');
-      list.className = 'community-network';
-      for (const origin of config.network) {
-        const item = document.createElement('li');
-        item.textContent = origin;
-        list.append(item);
-      }
-      network = list;
-    } else {
-      network = document.createElement('p');
-      network.className = 'community-network-empty';
-      network.textContent = t('communityNoNetwork');
-    }
-    const images = document.createElement('div');
-    images.className = 'community-detail-images';
-    images.append(...config.screenshots.map((path) => screenshot(entry, path, commit)));
+    const content = renderWidgetDetailsContent(
+      config,
+      pkg.description,
+      config.screenshots.map((path) => screenshot(entry, path, commit)),
+      locale(),
+    );
+    content.prepend(identity);
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'community-dialog-close';
@@ -316,19 +335,6 @@ export function createCommunityPage(
     const header = document.createElement('div');
     header.className = 'community-dialog-header';
     header.append(title, installAction(entry, true, commit));
-    const content = document.createElement('div');
-    content.className = 'community-dialog-content';
-    content.append(
-      identity,
-      images,
-      description,
-      platformsTitle,
-      platforms,
-      permissionsTitle,
-      permissions(entry),
-      networkTitle,
-      network,
-    );
     const footer = document.createElement('div');
     footer.className = 'community-dialog-footer';
     footer.append(error, close);
@@ -367,7 +373,7 @@ export function createCommunityPage(
     const current = ++generation;
     requested = true;
     loading = true;
-    counts.clear();
+    linkError = '';
     media.clear();
     render();
     try {
@@ -376,6 +382,7 @@ export function createCommunityPage(
         return;
       }
       snapshot = next;
+      counts.clear();
       void invoke<DownloadCount[]>('community_downloads', {
         packages: next.widgets.map((e) => e.entry.package.name),
       })
@@ -386,9 +393,7 @@ export function createCommunityPage(
           for (const value of values) {
             counts.set(value.package, value);
           }
-          grid
-            .querySelectorAll<HTMLElement>('[data-download-count]')
-            .forEach((element) => renderCount(element, element.dataset.downloadCount!));
+          renderGrid();
         })
         .catch((error) => {
           status.title = `${t('communityDownloadsUnavailable')}: ${String(error)}`;

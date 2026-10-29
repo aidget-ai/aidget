@@ -31,6 +31,27 @@ pub struct WidgetSummary {
     pub created_at: u64,
 }
 
+/// Installed widget metadata and its optional static preview for the local details dialog.
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalWidgetDetails {
+    pub config: crate::widgets::package::WidgetConfig,
+    pub description: Option<String>,
+    pub preview: Option<String>,
+}
+
+/// Read details from the installed widget, including archived widgets, without opening a WebView.
+pub fn local_widget_details(store: &Store, id: &str) -> Result<LocalWidgetDetails> {
+    let config = store.load_meta(id)?.config;
+    let description = store.load_package(id)?.map(|package| package.description);
+    let preview = main_window_state::load_preview(store.root(), id)?.map(preview_data_url);
+    Ok(LocalWidgetDetails {
+        config,
+        description,
+        preview,
+    })
+}
+
 /// Non-secret state used to identify the configured GitHub token in the main window.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct GithubTokenSummary {

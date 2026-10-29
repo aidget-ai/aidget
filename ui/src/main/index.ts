@@ -5,7 +5,6 @@ import { disable, enable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   Archive,
-  ArrowUpDown,
   createElement,
   createIcons,
   Info,
@@ -50,11 +49,14 @@ import {
 import { applyTheme, resolvedLocale, type Theme } from './preferences';
 import { createPreviewRefresh } from './preview-refresh';
 import { createSegmentedControl } from './segmented-control';
+import { createSortIcon } from './sort-icon';
 import { createMainStartup } from './startup';
 import { renderMiddleEllipsis } from './text-ellipsis';
+import { createLocalWidgetDetails } from './widget-details';
 
 interface WidgetView {
   root: HTMLElement;
+  stage: HTMLButtonElement;
   image: HTMLImageElement;
   placeholder: HTMLElement;
   title: HTMLElement;
@@ -186,13 +188,10 @@ const themeControl = createSegmentedControl(themeControlRoot, (value) => {
 const trayClickControl = createSegmentedControl(trayClickControlRoot, (value) => {
   void setTrayClickAction(value as TrayClickAction);
 });
-widgetSortButton.prepend(
-  createElement(ArrowUpDown, {
-    width: 14,
-    height: 14,
-    'stroke-width': 1.8,
-    'aria-hidden': 'true',
-  }),
+widgetSortButton.prepend(createSortIcon());
+const localDetails = createLocalWidgetDetails(
+  document.querySelector<HTMLElement>('[data-view="local-widgets"]')!,
+  () => locale,
 );
 
 function t(key: MessageKey) {
@@ -228,6 +227,11 @@ function applyLocale() {
 }
 
 function renderPage() {
+  if (page === 'local-widgets') {
+    localDetails.render();
+  } else {
+    localDetails.close();
+  }
   document.querySelectorAll<HTMLButtonElement>('[data-page]').forEach((button) => {
     const selected = button.dataset.page === page;
     button.classList.toggle('is-active', selected);
@@ -367,6 +371,7 @@ function renderFilters() {
   const deleted = filter === 'deleted';
   recycleFilter.classList.toggle('is-active', deleted);
   recycleFilter.setAttribute('aria-pressed', String(deleted));
+  widgetSortButton.dataset.direction = widgetSort === 'oldest' ? 'asc' : 'desc';
   widgetSortLabel.textContent = t(widgetSort === 'newest' ? 'sortNewest' : 'sortOldest');
   widgetSortButton.setAttribute(
     'aria-label',
@@ -592,8 +597,9 @@ function createView(widget: WidgetSummary): WidgetView {
   root.className = 'widget-card';
   root.dataset.widget = widget.id;
 
-  const stage = document.createElement('div');
-  stage.className = 'preview-stage';
+  const stage = document.createElement('button');
+  stage.type = 'button';
+  stage.className = 'preview-stage local-widget-preview';
   const image = document.createElement('img');
   image.className = 'preview-image';
   image.alt = '';
@@ -609,8 +615,9 @@ function createView(widget: WidgetSummary): WidgetView {
   info.className = 'widget-info';
   const copy = document.createElement('div');
   copy.className = 'widget-copy';
-  const title = document.createElement('h2');
-  title.className = 'widget-title';
+  const title = document.createElement('button');
+  title.type = 'button';
+  title.className = 'widget-title local-widget-title';
   const size = document.createElement('p');
   size.className = 'widget-size';
   copy.append(title, size);
@@ -642,6 +649,7 @@ function createView(widget: WidgetSummary): WidgetView {
 
   const view = {
     root,
+    stage,
     image,
     placeholder,
     title,
@@ -651,11 +659,20 @@ function createView(widget: WidgetSummary): WidgetView {
     widget,
     previewRequest: 0,
   };
+  root.addEventListener('click', (event) => {
+    if (event.target instanceof Element && event.target.closest('.widget-actions')) {
+      return;
+    }
+    void localDetails.show(view.widget.id).catch((error: unknown) => {
+      showFault(`${t('widgetDetailsFailed')}: ${String(error)}`);
+    });
+  });
   updateView(view, widget);
   return view;
 }
 
 function updateView(view: WidgetView, widget: WidgetSummary) {
+  view.stage.setAttribute('aria-label', `${t('communityDetails')}: ${widget.title || widget.id}`);
   view.placeholder.textContent = t('previewUnavailable');
   view.title.textContent = widget.title || widget.id;
   view.size.textContent = `${Math.round(widget.width)} × ${Math.round(widget.height)}`;

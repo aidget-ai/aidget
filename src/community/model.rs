@@ -6,7 +6,6 @@ use ts_rs::TS;
 
 /// One immutable file in the npm package, hashed before packing.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(deny_unknown_fields)]
 pub struct FileDigest {
     pub path: String,
     pub size: u64,
@@ -14,15 +13,19 @@ pub struct FileDigest {
 }
 /// A reviewed package and the exact content displayed before installation.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct RegistryEntry {
+    /// First inclusion in the reviewed community catalogue, in UTC RFC3339.
+    #[serde(with = "published_at")]
+    #[schemars(with = "String", extend("format" = "date-time"))]
+    #[ts(as = "String")]
+    pub published_at: String,
     pub package: PackageManifest,
     pub config: WidgetConfig,
     pub files: Vec<FileDigest>,
 }
 /// Deterministically generated discovery document on main.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(deny_unknown_fields)]
 pub struct Registry {
     pub widgets: Vec<RegistryEntry>,
 }
@@ -48,4 +51,27 @@ pub struct DownloadCount {
     pub package: String,
     pub weekly: Option<u64>,
     pub error: Option<String>,
+}
+
+mod published_at {
+    use serde::{Deserialize, Serialize};
+
+    pub(super) fn serialize<S: serde::Serializer>(
+        value: &str,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        value.serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<String, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        chrono::DateTime::parse_from_rfc3339(&value)
+            .map_err(|error| serde::de::Error::custom(format!("invalid publishedAt: {error}")))?;
+        if !value.ends_with('Z') {
+            return Err(serde::de::Error::custom("publishedAt must use UTC (Z)"));
+        }
+        Ok(value)
+    }
 }

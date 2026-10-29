@@ -303,3 +303,34 @@ fn main_state_tracks_current_package_identity_without_a_source_badge() {
     let value = serde_json::to_value(state).unwrap();
     assert!(value["widgets"][0].get("source").is_none());
 }
+
+#[test]
+fn local_details_reads_installed_config_description_and_cached_preview() {
+    let dir = TempDir::new().unwrap();
+    let store = Store::new(dir.path());
+    store.ensure_layout().unwrap();
+    store
+        .create("note", "Local note", WidgetEdit::default())
+        .unwrap();
+    let details = aidget::runtime::ui::local_widget_details(&store, "note").unwrap();
+    assert_eq!(details.config.title, "Local note");
+    assert_eq!(details.description, None);
+    assert_eq!(details.preview, None);
+    std::fs::write(
+        store.widget_dir("note").unwrap().join("package.json"),
+        br#"{"name":"@someone/note","version":"1.0.0","description":"My local widget"}"#,
+    )
+    .unwrap();
+    main_window_state::save_preview(store.root(), "note", b"png bytes").unwrap();
+    main_window_state::set_archived(store.root(), &store.widget_ids().unwrap(), "note", true)
+        .unwrap();
+    let details = aidget::runtime::ui::local_widget_details(&store, "note").unwrap();
+    assert_eq!(details.description.as_deref(), Some("My local widget"));
+    assert_eq!(
+        details.preview.as_deref(),
+        Some("data:image/png;base64,cG5nIGJ5dGVz")
+    );
+    assert_eq!(details.config, store.load_meta("note").unwrap().config);
+    assert!(aidget::runtime::ui::local_widget_details(&store, "missing").is_err());
+    assert!(aidget::runtime::ui::local_widget_details(&store, "../outside").is_err());
+}

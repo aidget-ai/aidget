@@ -7,6 +7,7 @@
     "allow-main-state",
     "allow-main-painted",
     "allow-main-widget-cached-preview",
+    "allow-main-widget-details",
     "allow-integration-state",
     "allow-set-agent-integration",
     "allow-set-preferences",
@@ -32,6 +33,9 @@
       "allow": [
         {
           "url": "https://github.com/aidget-ai/aidget"
+        },
+        {
+          "url": "https://github.com/aidget-ai/widgets"
         }
       ]
     }
