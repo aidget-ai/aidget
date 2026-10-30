@@ -78,12 +78,7 @@ pub fn install(staged: &Path, bundle: &Path) -> Result<()> {
 pub fn relaunch() -> Result<()> {
     let exe = std::env::current_exe()?;
     let log = std::env::temp_dir().join("aidget-relaunch.log");
-    let script = format!(
-        "while kill -0 {} 2>/dev/null; do sleep 0.2; done; exec {} >>{} 2>&1",
-        std::process::id(),
-        quote(&exe),
-        quote(&log)
-    );
+    let script = super::relaunch_script(&exe, std::process::id(), &log);
     Command::new("/bin/sh").arg("-c").arg(script).spawn()?;
     Ok(())
 }
@@ -119,9 +114,4 @@ fn find_app(dir: &Path) -> Option<PathBuf> {
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .find(|path| path.extension().is_some_and(|extension| extension == "app"))
-}
-
-/// Single-quote a path for `/bin/sh`, so spaces and quotes survive.
-fn quote(path: &Path) -> String {
-    format!("'{}'", path.display().to_string().replace('\'', r"'\''"))
 }

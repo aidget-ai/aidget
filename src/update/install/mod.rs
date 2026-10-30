@@ -77,3 +77,23 @@ pub fn relaunch() -> Result<()> {
         ))
     }
 }
+
+/// A shell command that waits for `pid` to exit, then replaces itself with `exe`
+/// and appends whatever the new process prints to `log`.
+///
+/// Replacing a running bundle or binary is fine, but starting the new one while the
+/// old process is still alive can hand the launch to the dying process — and on
+/// Linux the new process can find the old instance over IPC, ask it to reopen, and
+/// exit, leaving nothing running. Both platforms share this shape.
+pub fn relaunch_script(exe: &Path, pid: u32, log: &Path) -> String {
+    format!(
+        "while kill -0 {pid} 2>/dev/null; do sleep 0.2; done; exec {} >>{} 2>&1",
+        sh_quote(exe),
+        sh_quote(log)
+    )
+}
+
+/// Single-quote a path for `/bin/sh`, so spaces and quotes survive.
+pub fn sh_quote(path: &Path) -> String {
+    format!("'{}'", path.display().to_string().replace('\'', r"'\''"))
+}

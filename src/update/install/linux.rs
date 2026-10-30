@@ -35,10 +35,13 @@ pub fn install(staged: &Path, kind: PackageKind) -> Result<()> {
 /// An AppImage runs from the file that was replaced; a distribution package puts
 /// the new binary at the path the old one had.
 pub fn relaunch(exe: &Path) -> Result<()> {
-    Command::new(exe)
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| Error::Other(format!("cannot start {}: {error}", exe.display())))
+    // Started only once this process is gone: until then the old instance still
+    // owns the IPC endpoint, and the new one would find it, ask it to reopen, and
+    // exit — leaving nothing running.
+    let log = std::env::temp_dir().join("aidget-relaunch.log");
+    let script = super::relaunch_script(exe, std::process::id(), &log);
+    Command::new("/bin/sh").arg("-c").arg(script).spawn()?;
+    Ok(())
 }
 
 /// Replace `appimage` with `staged`, keeping its permission bits.
