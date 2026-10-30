@@ -65,10 +65,12 @@ jobs:
           - name: macos-arm64
             os: macos-latest
             target: aarch64-apple-darwin
+            arch: aarch64
             bundles: dmg
           - name: macos-x64
             os: macos-15-intel
             target: x86_64-apple-darwin
+            arch: x64
             bundles: dmg
           - name: windows-x64
             os: windows-2022
@@ -132,9 +134,14 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
+          # An empty ARCH silently produced `aidget_0.1.3_.app.zip`, which the
+          # collector then refuses — and the whole release is blocked after four
+          # platforms have been built.
+          test -n "$ARCH"
           APP="target/${{ matrix.target }}/release/bundle/macos/aidget.app"
           mkdir -p appzip
           ditto -c -k --keepParent "$APP" "appzip/aidget_${VERSION}_${ARCH}.app.zip"
+          test -f "appzip/aidget_${VERSION}_${ARCH}.app.zip"
 
       - name: Upload macOS bundle
         if: runner.os == 'macOS'
