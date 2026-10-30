@@ -32,15 +32,17 @@ pub fn is_newer(candidate: &str, current: &str) -> bool {
 
 /// Whether this build came from a release tag rather than a working tree.
 ///
-/// The stamp is the crate version for a release and a `git describe` string
-/// (`0.1.0-5-gabc1234`, `0.1.0-dirty`) for anything else. A pre-release tag is
-/// still a tag, so only the two describe shapes rule a build out.
+/// The stamp is the tag for a release, a `git describe` string
+/// (`0.1.0-5-gabc1234`, `0.1.0-dirty`) for a working tree, and
+/// `<version>-untagged` when provenance could not be established at all. A
+/// pre-release tag is still a tag, so only the describe shapes and `untagged` rule
+/// a build out.
 pub fn is_released(version: &str) -> bool {
     let Some(parsed) = parse(version) else {
         return false;
     };
     let pre = parsed.pre.as_str();
-    !pre.contains("dirty") && !looks_like_describe(pre)
+    !pre.contains("dirty") && pre != "untagged" && !looks_like_describe(pre)
 }
 
 /// Whether a pre-release part is `git describe`'s `<commits>-g<hash>`.

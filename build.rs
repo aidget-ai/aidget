@@ -8,8 +8,8 @@ mod command_names;
 ///
 /// Three cases, most specific first: HEAD on a tag is that release; a working tree
 /// reports `git describe`, so `0.1.0-5-gabc1234` and `0.1.0-dirty` are
-/// recognisable as builds from source; anything else falls back to the crate
-/// version, which the release workflow injects from the tag.
+/// recognisable as builds from source; anything else — no tag, no describe, as in a
+/// shallow checkout — is `<version>-untagged`, which is honest about not knowing.
 fn build_stamp() -> String {
     // A release is built at a tag, and the workflow writes the version into the
     // manifests before building — which dirties the tree. So an exact tag decides,
@@ -19,10 +19,17 @@ fn build_stamp() -> String {
     if let Some(tag) = exact_tag() {
         return tag;
     }
-    let base = std::env::var("CARGO_PKG_VERSION").unwrap_or_default();
-    described()
-        .filter(|stamp| stamp.contains("-g") || stamp.ends_with("-dirty"))
-        .unwrap_or(base)
+    if let Some(stamp) =
+        described().filter(|stamp| stamp.contains("-g") || stamp.ends_with("-dirty"))
+    {
+        return stamp;
+    }
+    // Neither a tag nor a describe: provenance cannot be established, so the build
+    // must not claim to be a release. A pre-release suffix keeps it parseable and
+    // keeps `is_released` false — a shallow checkout without tags used to fall back
+    // to a bare version number and pass for a release.
+    let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_default();
+    format!("{version}-untagged")
 }
 
 /// The tag HEAD sits on, when it sits on one.
@@ -61,7 +68,13 @@ fn described() -> Option<String> {
 fn main() {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     println!("cargo:rerun-if-env-changed=AIDGET_CHECK_TARGET");
+    // HEAD alone misses a commit on a branch: it points at the ref, and the ref is
+    // what changes. Missing any of these leaves the previous stamp baked in, which
+    // is how an acceptance build once kept a stale `describe` result.
     println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rerun-if-changed=.git/refs/heads");
+    println!("cargo:rerun-if-changed=.git/refs/tags");
+    println!("cargo:rerun-if-changed=.git/packed-refs");
     // Before the cross-target early return: the updater's "only a release may
     // replace itself" rule reads this, and a type check should see it too.
     println!("cargo:rustc-env=AIDGET_BUILD_STAMP={}", build_stamp());

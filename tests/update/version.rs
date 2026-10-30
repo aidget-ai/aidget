@@ -74,3 +74,16 @@ fn only_release_tags_update_themselves() {
     assert!(!is_released("0.1.0-dirty"));
     assert!(!is_released("0.1.0-3-g0bcb2cc-dirty"));
 }
+
+#[test]
+fn a_build_without_provenance_never_updates_itself() {
+    // What `build.rs` emits when neither a tag nor a describe is available, as in a
+    // shallow checkout: honest about not knowing, and not a release.
+    assert!(!is_released("0.1.0-untagged"));
+    assert!(!is_released("v0.1.0-untagged"));
+    // It still parses, and as a pre-release of its own version the release it leads
+    // to counts as newer — which is exactly why `is_released` has to gate the
+    // comparison: a build without provenance must not act on it.
+    assert!(is_newer("0.1.1", "0.1.0-untagged"));
+    assert!(is_newer("0.1.0", "0.1.0-untagged"));
+}
