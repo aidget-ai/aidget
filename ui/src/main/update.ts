@@ -169,12 +169,13 @@ export function createUpdatePage(
   downloadButton.addEventListener('click', () => void run('update_download'));
   installButton.addEventListener('click', () => void run('update_install'));
   autoDownloadSwitch.addEventListener('click', () => {
+    if (autoDownloadSwitch.disabled) {
+      return;
+    }
     const next = !autoDownload;
     autoDownloadSwitch.disabled = true;
     void onAutoDownload(next)
-      .then(() => {
-        autoDownload = next;
-      })
+      .catch((error: unknown) => onFault(String(error)))
       .finally(() => {
         autoDownloadSwitch.disabled = false;
         render();

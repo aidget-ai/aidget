@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { createUpdatePage, type UpdateSnapshot } from '../../src/main/update';
+import stagedContract from '../fixtures/update-staged.json';
 
 type Handler = (event: { payload: UpdateSnapshot }) => void;
 
@@ -107,4 +108,17 @@ describe('update row', () => {
     mocks.handlers.get('aidget://update')!({ payload: snapshot('latest', { latest: '0.1.0' }) });
     expect(notesRow.hidden).toBe(true);
   });
+});
+
+it('renders the same staged contract verified by the backend policy caller', async () => {
+  mount();
+  // Rust runtime::update compares its real held-v2 snapshot with this fixture.
+  mocks.handlers.get('aidget://update')!({ payload: { ...stagedContract, state: 'ready' } });
+  expect(document.querySelector('[data-update-status]')!.textContent).toContain('2.0.0');
+  expect(document.querySelector('[data-update-notes]')!.textContent).toBe('v2 notes');
+  const install = document.querySelector<HTMLButtonElement>('[data-update-install]')!;
+  expect(install.hidden).toBe(false);
+  install.click();
+  await Promise.resolve();
+  expect(mocks.invoke).toHaveBeenCalledWith('update_install');
 });

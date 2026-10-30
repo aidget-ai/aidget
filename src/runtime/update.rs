@@ -11,7 +11,8 @@ use tauri::{Emitter, Manager};
 use crate::runtime::ui;
 use crate::settings;
 use crate::update::github::PackageKind;
-use crate::update::{UpdateService, UpdateSnapshot, UpdateState};
+use crate::update::service::InstallOutcome;
+use crate::update::{UpdateService, UpdateSnapshot};
 
 /// The event a published snapshot is announced on.
 pub const UPDATE_EVENT: &str = "aidget://update";
@@ -60,10 +61,7 @@ pub async fn check_and_maybe_download(
     auto_download: bool,
 ) -> UpdateSnapshot {
     let started = std::time::Instant::now();
-    let mut snapshot = service.check(token).await;
-    if snapshot.state == UpdateState::Found && auto_download {
-        snapshot = service.download(token).await;
-    }
+    let snapshot = service.check_with_policy(token, auto_download).await;
     let repository = crate::update::github::repository();
     match &snapshot.error {
         Some(error) => println!(
@@ -100,10 +98,17 @@ pub fn install_on_quit(handle: &tauri::AppHandle) {
         );
         return;
     }
-    let snapshot = service.install_blocking();
-    match &snapshot.error {
-        Some(error) => eprintln!("aidget: cannot install on quit: {error}"),
-        None => println!("aidget: installed the downloaded update on quit"),
+    match service.install_blocking() {
+        InstallOutcome::Completed(..) => {
+            println!("aidget: installed the downloaded update on quit")
+        }
+        InstallOutcome::NotStarted(_) => {
+            println!("aidget: skipped install on quit: another update operation is active")
+        }
+        InstallOutcome::Failed(snapshot) => eprintln!(
+            "aidget: cannot install on quit: {}",
+            snapshot.error.unwrap()
+        ),
     }
 }
 
@@ -112,8 +117,11 @@ pub fn install_on_quit(handle: &tauri::AppHandle) {
 /// A failure here would leave the app running the old binary while the bundle on
 /// disk is the new one, so it is reported instead of swallowed: the install itself
 /// is done, and the only thing left for the user to do is start aidget again.
-pub fn relaunch_and_exit(app: &tauri::AppHandle) -> crate::common::error::Result<()> {
-    match crate::update::install::relaunch() {
+pub fn relaunch_and_exit(
+    app: &tauri::AppHandle,
+    installation: &crate::update::install::Installation,
+) -> crate::common::error::Result<()> {
+    match installation.relaunch() {
         Ok(()) => {
             app.exit(0);
             Ok(())
@@ -185,8 +193,22 @@ pub(crate) async fn update_install(
     ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
     let service = app.state::<UpdateService>().inner().clone();
     let snapshot = service.install().await;
-    if snapshot.error.is_none() {
-        relaunch_and_exit(&app).map_err(|error| error.to_string())?;
+    complete_install(snapshot, |installation| {
+        relaunch_and_exit(&app, installation)
+    })
+    .map_err(|error| error.to_string())
+}
+
+/// Authorize process exit only for the request that completed installation.
+pub(crate) fn complete_install(
+    outcome: InstallOutcome,
+    relaunch: impl FnOnce(&crate::update::install::Installation) -> crate::Result<()>,
+) -> crate::Result<UpdateSnapshot> {
+    match outcome {
+        InstallOutcome::Completed(snapshot, installation) => {
+            relaunch(&installation)?;
+            Ok(snapshot)
+        }
+        InstallOutcome::NotStarted(snapshot) | InstallOutcome::Failed(snapshot) => Ok(snapshot),
     }
-    Ok(snapshot)
 }

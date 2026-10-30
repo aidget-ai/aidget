@@ -5,8 +5,11 @@
 
 use std::path::Path;
 
+#[cfg(target_os = "linux")]
 use super::target;
-use crate::common::error::{Error, Result};
+#[cfg(not(target_os = "macos"))]
+use crate::common::error::Error;
+use crate::common::error::Result;
 
 // The Linux and Windows installers only use the standard library, so they are
 // compiled everywhere: a cross-target mistake is a compile error here instead of
@@ -16,65 +19,71 @@ pub mod linux;
 pub mod macos;
 pub mod windows;
 
-/// Replace the running install with the downloaded update at `staged`.
-///
-/// The process keeps running on the old image until it exits; the next launch is
-/// the new one. `restart` says whether the new version should come up by itself:
-/// a Windows installer has to be told, while an install that happens on quit must
-/// not bring the app back.
-pub fn apply(staged: &Path, restart: bool) -> Result<()> {
+/// Immutable installation and restart paths captured before any replacement.
+#[derive(Debug)]
+pub enum Installation {
+    /// A real macOS bundle and its canonical executable.
+    Mac {
+        bundle: std::path::PathBuf,
+        executable: std::path::PathBuf,
+    },
+    /// A Linux package or the outer AppImage, never its mounted executable.
+    Linux {
+        kind: super::github::PackageKind,
+        executable: std::path::PathBuf,
+    },
+    /// NSIS owns replacement and optional restart on Windows.
+    Windows,
+}
+
+/// Resolve the running installation before a package manager can unlink it.
+pub fn prepare() -> Result<Installation> {
+    let exe = std::env::current_exe()?;
     #[cfg(target_os = "macos")]
     {
-        let _ = restart;
-        let exe = std::env::current_exe()?;
-        let bundle = macos::bundle_of(&exe).ok_or_else(|| {
-            Error::Other("this copy of aidget is not inside an .app bundle".to_string())
-        })?;
-        macos::install(staged, &bundle)
-    }
-    #[cfg(target_os = "windows")]
-    {
-        windows::install(staged, restart)
+        macos::prepare(&exe)
     }
     #[cfg(target_os = "linux")]
     {
         let target = target::current()
-            .ok_or_else(|| Error::Other("this install cannot update itself".to_string()))?;
-        linux::install(staged, target.kind)
+            .ok_or_else(|| Error::Other("this install cannot update itself".into()))?;
+        linux::prepare(&exe, std::env::var_os("APPIMAGE").as_deref(), target.kind)
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    #[cfg(target_os = "windows")]
     {
-        let _ = (staged, restart);
+        let _ = exe;
+        Ok(Installation::Windows)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        let _ = exe;
         Err(Error::Other(
-            "in-place update is not implemented on this platform".to_string(),
+            "in-place update is not implemented on this platform".into(),
         ))
     }
 }
 
-/// Start the installed version once this process has exited.
-pub fn relaunch() -> Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        macos::relaunch()
+impl Installation {
+    /// Replace the captured installation. Quit never requests a restart.
+    pub fn apply(&self, staged: &Path, restart: bool) -> Result<()> {
+        match self {
+            #[cfg(target_os = "macos")]
+            Self::Mac { bundle, .. } => macos::install(staged, bundle),
+            Self::Linux { kind, executable } => linux::install(staged, *kind, executable),
+            Self::Windows => windows::install(staged, restart),
+            #[cfg(not(target_os = "macos"))]
+            Self::Mac { .. } => Err(Error::Other("macOS installation requires macOS".into())),
+        }
     }
-    #[cfg(target_os = "windows")]
-    {
-        // The installer was told to start it (`/R`); there is nothing to start
-        // here, and an app quitting after an update must stay quit.
-        Ok(())
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let exe = std::env::current_exe()?;
-        let started =
-            target::appimage_path(&exe, std::env::var_os("APPIMAGE").as_deref()).unwrap_or(exe);
-        linux::relaunch(&started)
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    {
-        Err(Error::Other(
-            "in-place update is not implemented on this platform".to_string(),
-        ))
+
+    /// Schedule restart using only paths saved before replacement.
+    pub fn relaunch(&self) -> Result<()> {
+        match self {
+            Self::Mac { executable, .. } | Self::Linux { executable, .. } => {
+                linux::relaunch(executable)
+            }
+            Self::Windows => Ok(()),
+        }
     }
 }
 

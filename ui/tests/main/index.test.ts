@@ -565,3 +565,91 @@ it('opens local details from the card, preview or title without intercepting car
   await vi.waitFor(() => expect(dialog.open).toBe(true));
   dialog.querySelector<HTMLButtonElement>('.community-dialog-close')!.click();
 });
+
+describe('automatic download preference ownership', () => {
+  it.each([true, false])(
+    'restores failed persistence from %s after all completion microtasks and permits retry',
+    async (original) => {
+      const initial = state('about');
+      initial.autoDownload = original;
+      await loadMain(initial);
+      let rejectSave: (reason: Error) => void = () => {};
+      const save = new Promise<void>((_resolve, reject) => {
+        rejectSave = reject;
+      });
+      const persisted = { ...initial };
+      mocks.invoke.mockImplementation((command: string) => {
+        if (command === 'set_preferences') {
+          return save;
+        }
+        if (command === 'main_state') {
+          return Promise.resolve(persisted);
+        }
+        return Promise.resolve({ state: 'idle' });
+      });
+      const toggle = document.querySelector<HTMLButtonElement>('[data-update-auto-download]')!;
+      toggle.click();
+      toggle.click();
+      await Promise.resolve();
+      expect(toggle.disabled).toBe(true);
+      expect(mocks.invoke.mock.calls.filter(([c]) => c === 'set_preferences')).toHaveLength(1);
+      rejectSave(new Error('disk full'));
+      await vi.waitFor(() => expect(toggle.disabled).toBe(false));
+      for (let i = 0; i < 20; i++) {
+        await Promise.resolve();
+      }
+      expect(toggle.getAttribute('aria-checked')).toBe(String(original));
+      expect(document.querySelector<HTMLElement>('[data-fault]')!.textContent).toContain(
+        'disk full',
+      );
+      expect(persisted.autoDownload).toBe(original);
+      mocks.invoke.mockImplementation(
+        (command: string, args?: { preferences?: Pick<MainState, 'autoDownload'> }) => {
+          if (command === 'set_preferences' && args?.preferences) {
+            persisted.autoDownload = args.preferences.autoDownload;
+          }
+          return Promise.resolve({ state: 'idle' });
+        },
+      );
+      toggle.click();
+      await vi.waitFor(() => expect(toggle.disabled).toBe(false));
+      expect(toggle.getAttribute('aria-checked')).toBe(String(!original));
+      expect(persisted.autoDownload).toBe(!original);
+      // A queued page write reads actual in-memory preferences, not the switch.
+      pageButton('general').click();
+      await vi.waitFor(() =>
+        expect(mocks.invoke).toHaveBeenLastCalledWith(
+          'set_preferences',
+          expect.objectContaining({
+            preferences: expect.objectContaining({ autoDownload: !original }),
+          }),
+        ),
+      );
+    },
+  );
+});
+
+it('keeps a refreshed preference when the pending component callback finishes', async () => {
+  const initial = state('about');
+  initial.autoDownload = false;
+  await loadMain(initial);
+  let finishSave: () => void = () => {};
+  const pending = new Promise<void>((resolve) => {
+    finishSave = resolve;
+  });
+  mocks.invoke.mockImplementation((command: string) =>
+    command === 'set_preferences' ? pending : Promise.resolve({ state: 'idle' }),
+  );
+  const toggle = document.querySelector<HTMLButtonElement>('[data-update-auto-download]')!;
+  toggle.click();
+  await Promise.resolve();
+  const render = mocks.listen.mock.calls.find(([event]) => event === 'aidget://main')![1];
+  render({ event: 'aidget://main', id: 1, payload: initial });
+  expect(toggle.getAttribute('aria-checked')).toBe('false');
+  finishSave();
+  await vi.waitFor(() => expect(toggle.disabled).toBe(false));
+  for (let i = 0; i < 20; i++) {
+    await Promise.resolve();
+  }
+  expect(toggle.getAttribute('aria-checked')).toBe('false');
+});

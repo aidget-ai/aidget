@@ -6,9 +6,10 @@ use tempfile::TempDir;
 #[test]
 fn a_bundle_is_recognised_from_the_executable_inside_it() {
     let root = TempDir::new().unwrap();
-    let exe = root.path().join("aidget.app/Contents/MacOS/aidget");
+    let bundle = fake_bundle(root.path(), "aidget.app", "old");
+    let exe = bundle.join("Contents/MacOS/aidget");
 
-    assert_eq!(bundle_of(&exe).unwrap(), root.path().join("aidget.app"));
+    assert_eq!(bundle_of(&exe).unwrap(), bundle.canonicalize().unwrap());
 }
 
 #[test]
@@ -80,4 +81,74 @@ fn ditto(args: &[&str], from: &Path, to: &Path) {
 
 fn payload(bundle: &Path) -> String {
     std::fs::read_to_string(bundle.join("Contents/payload.txt")).unwrap()
+}
+
+#[test]
+fn a_symlink_launch_resolves_the_real_bundle_before_installation() {
+    use std::os::unix::fs::symlink;
+    let root = TempDir::new().unwrap();
+    let bundle = fake_bundle(root.path(), "it's aidget.app", "old");
+    let exe = bundle.join("Contents/MacOS/aidget");
+    let link = root.path().join("launch link");
+    symlink(&exe, &link).unwrap();
+    assert_eq!(bundle_of(&link), Some(bundle.canonicalize().unwrap()));
+}
+
+#[test]
+fn native_direct_and_symlink_launch_capture_the_same_real_bundle() {
+    use aidget::update::install::{macos::prepare, Installation};
+    use std::os::unix::fs::symlink;
+    use std::process::Command;
+    let root = TempDir::new().unwrap();
+    let bundle = fake_bundle(root.path(), "it's a native probe.app", "old");
+    let executable = bundle.join("Contents/MacOS/aidget");
+    let source = root.path().join("probe.rs");
+    std::fs::write(
+        &source,
+        "fn main() { println!(\"{}\", std::env::current_exe().unwrap().display()); }",
+    )
+    .unwrap();
+    assert!(Command::new("rustc")
+        .arg(source)
+        .arg("-o")
+        .arg(&executable)
+        .status()
+        .unwrap()
+        .success());
+    let link = root.path().join("external launch");
+    symlink(&executable, &link).unwrap();
+    let linked_bundle = root.path().join("linked.app");
+    symlink(&bundle, &linked_bundle).unwrap();
+    for launch in [
+        &executable,
+        &link,
+        &linked_bundle.join("Contents/MacOS/aidget"),
+    ] {
+        let output = Command::new(launch).output().unwrap();
+        assert!(output.status.success());
+        let reported = String::from_utf8(output.stdout).unwrap();
+        let prepared = prepare(Path::new(reported.trim())).unwrap();
+        let Installation::Mac {
+            bundle: captured,
+            executable: saved,
+        } = prepared
+        else {
+            panic!("wrong platform")
+        };
+        assert_eq!(captured, bundle.canonicalize().unwrap());
+        assert_eq!(saved, executable.canonicalize().unwrap());
+        println!("native launch {} => {}", launch.display(), saved.display());
+    }
+    assert!(prepare(&root.path().join("missing")).is_err());
+    let outside = root.path().join("outside");
+    std::fs::write(&outside, "outside").unwrap();
+    assert!(prepare(&outside).is_err());
+    let broken = root.path().join("broken");
+    symlink(root.path().join("gone"), &broken).unwrap();
+    assert!(prepare(&broken).is_err());
+    assert_eq!(payload(&bundle), "old");
+    let prepared = prepare(&link).unwrap();
+    let zip = zip_of(root.path(), "new");
+    prepared.apply(&zip, false).unwrap();
+    assert_eq!(payload(&bundle), "new");
 }

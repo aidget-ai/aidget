@@ -11,6 +11,7 @@ use crate::common::error::{Error, Result};
 
 /// The `.app` directory `exe` lives in, or `None` when it runs outside one.
 pub fn bundle_of(exe: &Path) -> Option<PathBuf> {
+    let exe = std::fs::canonicalize(exe).ok()?;
     let macos = exe.parent()?;
     let contents = macos.parent()?;
     let bundle = contents.parent()?;
@@ -64,23 +65,12 @@ pub fn install(staged: &Path, bundle: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Start the installed version once this process has exited.
-///
-/// The executable inside the bundle is started directly rather than with `open -a
-/// <bundle>`: LaunchServices resolves an application by its identifier, so with a
-/// copy of aidget already running from another folder it activates that one and
-/// the bundle just swapped in never starts. The path is the one this process ran
-/// from, which the swap has since replaced.
-///
-/// A detached shell waits on the pid first: starting the new one while the old one
-/// is still alive can hand the launch to the dying process. What it prints goes to
-/// a file, because nothing else would ever see it.
-pub fn relaunch() -> Result<()> {
-    let exe = std::env::current_exe()?;
-    let log = std::env::temp_dir().join("aidget-relaunch.log");
-    let script = super::relaunch_script(&exe, std::process::id(), &log);
-    Command::new("/bin/sh").arg("-c").arg(script).spawn()?;
-    Ok(())
+/// Resolve symlinks and reject non-bundle launches before touching the install.
+pub fn prepare(exe: &Path) -> Result<super::Installation> {
+    let executable = std::fs::canonicalize(exe)?;
+    let bundle = bundle_of(&executable)
+        .ok_or_else(|| Error::Other("this copy of aidget is not inside an .app bundle".into()))?;
+    Ok(super::Installation::Mac { bundle, executable })
 }
 
 /// Where an update is unpacked: beside the bundle, so the swap is a rename on

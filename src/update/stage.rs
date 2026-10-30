@@ -16,6 +16,8 @@ use crate::update::{download, verify};
 #[derive(Debug)]
 pub struct Download {
     pub asset: Asset,
+    /// Release identity frozen before network work begins.
+    pub version: String,
     /// Where `SHA256SUMS` lives, read only when the asset carries no digest.
     pub sums_url: Option<String>,
     pub path: PathBuf,
@@ -45,6 +47,7 @@ pub fn prepare(release: &Release, target: Target, previous: Option<&Path>) -> Re
     std::fs::create_dir_all(&dir)?;
 
     Ok(Download {
+        version: crate::update::version::normalised(&release.tag_name),
         path: dir.join(&asset.name),
         sums_url: release
             .sha256sums()

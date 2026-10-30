@@ -202,7 +202,11 @@ fn a_downloaded_update_is_the_one_install_tries_to_use() {
     );
 
     let installed = block_on(service.install());
-    let error = installed.error.expect("an error outside an .app bundle");
+    let error = installed
+        .snapshot()
+        .error
+        .clone()
+        .expect("an error outside an .app bundle");
     assert!(!error.contains("no downloaded update"), "{error}");
 }
 
@@ -403,9 +407,9 @@ fn a_failed_install_keeps_the_download_ready_to_try_again() {
     // install fails the way a real one would on a read-only or unusual install.
     let failed = block_on(service.install());
 
-    assert_eq!(failed.state, UpdateState::Error, "{failed:?}");
+    assert_eq!(failed.snapshot().state, UpdateState::Error, "{failed:?}");
     assert!(
-        failed.staged,
+        failed.snapshot().staged,
         "the verified download is still on disk, so it can be installed again"
     );
 
@@ -472,4 +476,27 @@ fn every_published_state_reaches_the_listener() {
     let states = seen.lock().unwrap().clone();
     assert!(states.contains(&UpdateState::Checking), "{states:?}");
     assert!(states.contains(&UpdateState::Found), "{states:?}");
+}
+
+#[test]
+fn an_install_refused_during_check_does_not_change_the_active_operation() {
+    let base = super::serve_once(200, r#"{"tag_name":"v99.0.0","html_url":"","assets":[]}"#);
+    let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
+    let (entered, waiting) = std::sync::mpsc::channel();
+    let (resume, resumed) = std::sync::mpsc::channel();
+    let resumed = std::sync::Mutex::new(resumed);
+    service.announce(move |snapshot| {
+        if snapshot.state == UpdateState::Checking {
+            entered.send(()).unwrap();
+            resumed.lock().unwrap().recv().unwrap();
+        }
+    });
+    let checking = service.clone();
+    let thread = std::thread::spawn(move || block_on(checking.check(None)));
+    waiting.recv().unwrap();
+    let refused = block_on(service.install());
+    assert_eq!(refused.snapshot().state, UpdateState::Checking);
+    assert_eq!(service.snapshot().state, UpdateState::Checking);
+    resume.send(()).unwrap();
+    assert_eq!(thread.join().unwrap().state, UpdateState::Found);
 }

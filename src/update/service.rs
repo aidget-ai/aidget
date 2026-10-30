@@ -1,13 +1,14 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::common::error::{Error, Result};
 use crate::update::github::{self, Release};
-use crate::update::install;
+mod install;
 use crate::update::snapshot::{notes_of, UpdateSnapshot, UpdateState};
 use crate::update::stage::{self, Download};
 use crate::update::target::Target;
 use crate::update::{target, version};
+pub use install::InstallOutcome;
 
 /// Holds the outcome of the last check.
 ///
@@ -108,24 +109,46 @@ impl UpdateService {
     /// flight is not repeated, so a click during the launch check reads the
     /// running one instead of starting a second request.
     pub async fn check(&self, token: Option<&str>) -> UpdateSnapshot {
+        self.check_with_policy(token, false).await
+    }
+
+    /// Check with download policy known before replacing a staged release target.
+    pub async fn check_with_policy(
+        &self,
+        token: Option<&str>,
+        auto_download: bool,
+    ) -> UpdateSnapshot {
         if !self.begin() {
             return self.snapshot();
         }
 
         let (base, repository) = (self.base.clone(), self.repository.clone());
-        let token = token.map(str::to_string);
+        let download_token = token.map(str::to_string);
+        let token = download_token.clone();
         let fetched = tokio::task::spawn_blocking(move || {
             github::latest(&base, &repository, token.as_deref())
         })
         .await;
 
         let settled = match fetched {
-            Ok(Ok(Some(release))) => self.settle(release),
+            Ok(Ok(Some(release))) => self.settle(release, auto_download),
             Ok(Ok(None)) => self.settle_nothing(),
             Ok(Err(error)) => self.fail_check(&error),
             Err(error) => self.fail_check(&Error::Other(format!("update check: {error}"))),
         };
-        self.set(settled);
+        if settled.state == UpdateState::Found && auto_download {
+            // Retain check ownership through the handoff: no install may claim
+            // the old staged object between feed settlement and revocation.
+            self.set(UpdateSnapshot {
+                state: UpdateState::Checking,
+                ..settled
+            });
+            if let Some(prepared) = self.prepare_claimed_download() {
+                return self.finish_download(prepared, download_token).await;
+            }
+        } else {
+            self.set(settled);
+        }
         self.snapshot()
     }
 
@@ -183,6 +206,13 @@ impl UpdateService {
     /// `None` means it did not start, and that the snapshot passed to `set` here
     /// already says why: the caller only has to read it back.
     fn begin_download(&self) -> Option<Download> {
+        if !self.begin() {
+            return None;
+        }
+        self.prepare_claimed_download()
+    }
+
+    fn prepare_claimed_download(&self) -> Option<Download> {
         let target = match self.prepare_allowed() {
             Ok(target) => target,
             Err(error) => {
@@ -190,9 +220,6 @@ impl UpdateService {
                 return None;
             }
         };
-        if !self.begin() {
-            return None;
-        }
         let prepared = match self.prepare_download(target) {
             Ok(prepared) => prepared,
             Err(error) => {
@@ -220,94 +247,15 @@ impl UpdateService {
     }
 
     async fn finish_download(&self, prepared: Download, token: Option<String>) -> UpdateSnapshot {
+        let version = prepared.version.clone();
         let progress = self.snapshot.clone();
         let outcome =
             tokio::task::spawn_blocking(move || prepared.run(&progress, token.as_deref())).await;
 
         let settled = match outcome {
-            Ok(Ok(path)) => self.settle_download(path),
+            Ok(Ok(path)) => self.settle_download(path, version),
             Ok(Err(error)) => self.fail(&error),
             Err(error) => self.fail(&Error::Other(format!("download: {error}"))),
-        };
-        self.set(settled);
-        self.snapshot()
-    }
-
-    /// Install the verified download and start the new version.
-    ///
-    /// The caller must not expect to keep running: the app exits once the swap
-    /// is done. A swap that fails leaves the previous install in place and the
-    /// state on `Error`.
-    pub async fn install(&self) -> UpdateSnapshot {
-        let staged = match self.begin_install() {
-            Some(staged) => staged,
-            None => return self.snapshot(),
-        };
-        let outcome = tokio::task::spawn_blocking(move || install::apply(&staged, true)).await;
-        self.settle_install(outcome)
-    }
-
-    /// Install without waiting, for the app's exit path.
-    ///
-    /// Same swap as [`install`], minus the async hop: nothing is left to await
-    /// once the process is going away.
-    pub fn install_blocking(&self) -> UpdateSnapshot {
-        let staged = match self.begin_install() {
-            Some(staged) => staged,
-            None => return self.snapshot(),
-        };
-        // On quit the new version must not come back: the user closed the app.
-        self.settle_install(Ok(install::apply(&staged, false)))
-    }
-
-    /// Mark an install as under way and return what to install.
-    ///
-    /// The path is handed back once: re-reading it later let a concurrent
-    /// download clear `staged` between the check and the swap.
-    fn begin_install(&self) -> Option<PathBuf> {
-        let staged = match self.staged() {
-            Some(staged) => staged,
-            None => {
-                let failed =
-                    self.fail(&Error::Other("no downloaded update to install".to_string()));
-                self.set(failed);
-                return None;
-            }
-        };
-        if !self.begin() {
-            return None;
-        }
-        self.set(UpdateSnapshot {
-            state: UpdateState::Installing,
-            error: None,
-            ..self.snapshot()
-        });
-        Some(staged)
-    }
-
-    fn settle_install(
-        &self,
-        outcome: std::result::Result<Result<()>, tokio::task::JoinError>,
-    ) -> UpdateSnapshot {
-        let settled = match outcome {
-            Ok(Ok(())) => {
-                if let Some(dir) = self
-                    .staged()
-                    .and_then(|path| path.parent().map(Path::to_path_buf))
-                {
-                    let _ = std::fs::remove_dir_all(dir);
-                }
-                *self.staged.lock().unwrap() = None;
-                // Stay on `Installing`: the process exits next, so a `Ready`
-                // here would only offer to install what is already in place.
-                UpdateSnapshot {
-                    state: UpdateState::Installing,
-                    error: None,
-                    ..self.snapshot()
-                }
-            }
-            Ok(Err(error)) => self.fail(&error),
-            Err(error) => self.fail(&Error::Other(format!("install: {error}"))),
         };
         self.set(settled);
         self.snapshot()
@@ -321,8 +269,13 @@ impl UpdateService {
             .unwrap()
             .clone()
             .ok_or_else(|| Error::Other("no release to download yet".to_string()))?;
-        let prepared = stage::prepare(&release, target, self.staged().as_deref())?;
-        *self.staged.lock().unwrap() = None;
+        let previous = self.staged.lock().unwrap().take();
+        if let Some(previous) = previous {
+            if let Some(dir) = previous.path.parent() {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        }
+        let prepared = stage::prepare(&release, target, None)?;
         Ok(prepared)
     }
 
@@ -367,23 +320,42 @@ impl UpdateService {
     }
 
     /// Decide what a fetched release means for this build.
-    fn settle(&self, release: Release) -> UpdateSnapshot {
+    fn settle(&self, release: Release, auto_download: bool) -> UpdateSnapshot {
         let latest = version::normalised(&release.tag_name);
         let notes = notes_of(&release);
         let current = self.build.to_string();
-        // A download already on disk stays installable while the feed names
-        // nothing newer, the way Magpie keeps `ready` in that case. Without
-        // this a check that finds the same version would take the install away.
         if let Some(downloaded) = self.staged_version() {
-            if !version::is_newer(&latest, &downloaded) {
-                *self.release.lock().unwrap() = Some(release);
+            if version::is_newer(&downloaded, &latest) {
+                // Channel regression revokes staging and reevaluates the feed.
+                if let Some(path) = self.staged() {
+                    if let Some(dir) = path.parent() {
+                        let _ = std::fs::remove_dir_all(dir);
+                    }
+                }
+                *self.staged.lock().unwrap() = None;
+            } else if latest == downloaded || !auto_download {
+                let mut kept = self.snapshot();
+                // Only missing notes from this exact version may supplement it.
+                if latest == downloaded && kept.notes.is_none() {
+                    if let Some(notes) = notes {
+                        if let Some(held) = self.release.lock().unwrap().as_mut() {
+                            held.body = notes.to_string();
+                        }
+                        kept.notes = Some(notes);
+                    }
+                }
                 return UpdateSnapshot {
                     state: UpdateState::Ready,
-                    latest: Some(downloaded),
                     error: None,
-                    notes: notes.or_else(|| self.snapshot().notes),
-                    ..self.snapshot()
+                    ..kept
                 };
+            } else {
+                // Replacement begins now: even preparation failure cannot offer
+                // the old archive under the newly selected version's metadata.
+                let previous = self.staged.lock().unwrap().take().unwrap();
+                if let Some(dir) = previous.path.parent() {
+                    let _ = std::fs::remove_dir_all(dir);
+                }
             }
         }
         // A build from a working tree cannot swap itself for a release, so the
@@ -414,8 +386,7 @@ impl UpdateService {
         }
     }
 
-    fn settle_download(&self, path: PathBuf) -> UpdateSnapshot {
-        let version = self.snapshot().latest.unwrap_or_default();
+    fn settle_download(&self, path: PathBuf, version: String) -> UpdateSnapshot {
         *self.staged.lock().unwrap() = Some(Staged { path, version });
         // `snapshot()` below derives `staged` from the field just written.
         UpdateSnapshot {

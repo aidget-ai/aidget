@@ -7,21 +7,29 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::target;
 use crate::common::error::{Error, Result};
 use crate::update::github::PackageKind;
+use crate::update::target;
 
-/// Install the downloaded `staged` file for `kind`.
-pub fn install(staged: &Path, kind: PackageKind) -> Result<()> {
+/// Capture the real outer AppImage or package executable before replacement.
+pub fn prepare(
+    exe: &Path,
+    appimage: Option<&std::ffi::OsStr>,
+    kind: PackageKind,
+) -> Result<super::Installation> {
+    let executable = if kind == PackageKind::AppImage {
+        target::appimage_path(exe, appimage)
+            .ok_or_else(|| Error::Other("this build does not run from an AppImage".into()))?
+    } else {
+        exe.to_path_buf()
+    };
+    Ok(super::Installation::Linux { kind, executable })
+}
+
+/// Install using the destination captured before replacing the running binary.
+pub fn install(staged: &Path, kind: PackageKind, executable: &Path) -> Result<()> {
     match kind {
-        PackageKind::AppImage => {
-            let exe = std::env::current_exe()?;
-            let appimage = target::appimage_path(&exe, std::env::var_os("APPIMAGE").as_deref())
-                .ok_or_else(|| {
-                    Error::Other("this build does not run from an AppImage".to_string())
-                })?;
-            replace_appimage(staged, &appimage)
-        }
+        PackageKind::AppImage => replace_appimage(staged, executable),
         PackageKind::Deb => run_package(PackageKind::Deb, "dpkg", staged),
         PackageKind::Rpm => run_package(PackageKind::Rpm, "rpm", staged),
         _ => Err(Error::Other(format!(
