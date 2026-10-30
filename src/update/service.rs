@@ -7,7 +7,7 @@ use crate::update::install;
 use crate::update::snapshot::{notes_of, UpdateSnapshot, UpdateState};
 use crate::update::stage::{self, Download};
 use crate::update::target::Target;
-use crate::update::{download, target, verify, version};
+use crate::update::{target, version};
 
 /// Holds the outcome of the last check.
 ///
@@ -27,6 +27,12 @@ pub struct UpdateService {
     release: Arc<Mutex<Option<Release>>>,
     /// A verified download waiting to install.
     staged: Arc<Mutex<Option<Staged>>>,
+    /// Where a published snapshot is reported.
+    ///
+    /// The launch check runs without anyone asking, so the window has to be told
+    /// when it settles — otherwise it keeps showing what it read before the check
+    /// started.
+    announce: Arc<Mutex<Option<Sink>>>,
 }
 
 impl Default for UpdateService {
@@ -65,6 +71,7 @@ impl UpdateService {
             build: Arc::from(build),
             release: Arc::new(Mutex::new(None)),
             staged: Arc::new(Mutex::new(None)),
+            announce: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -321,14 +328,19 @@ impl UpdateService {
 
     /// Mark a step as under way, unless one already is.
     fn begin(&self) -> bool {
-        let mut snapshot = self.snapshot.lock().unwrap();
-        if snapshot.state.in_flight() {
-            return false;
+        {
+            let mut snapshot = self.snapshot.lock().unwrap();
+            if snapshot.state.in_flight() {
+                return false;
+            }
+            snapshot.state = UpdateState::Checking;
+            snapshot.error = None;
+            snapshot.done = None;
+            snapshot.total = None;
         }
-        snapshot.state = UpdateState::Checking;
-        snapshot.error = None;
-        snapshot.done = None;
-        snapshot.total = None;
+        // Announced like any other publish: a check that starts without a caller
+        // asking is exactly the one the window cannot discover by itself.
+        self.notify();
         true
     }
 
@@ -423,68 +435,32 @@ impl UpdateService {
 
     fn set(&self, next: UpdateSnapshot) {
         *self.snapshot.lock().unwrap() = next;
+        self.notify();
+    }
+
+    /// Hand the current snapshot to the listener, if one is registered.
+    fn notify(&self) {
+        let sink = self.announce.lock().unwrap().clone();
+        if let Some(sink) = sink {
+            let published = self.snapshot();
+            sink(&published);
+        }
+    }
+
+    /// Report every snapshot this service publishes to `sink`.
+    ///
+    /// Registering more than one replaces the previous sink: one window reads this,
+    /// and a second listener would double every event.
+    pub fn announce(&self, sink: impl Fn(&UpdateSnapshot) + Send + Sync + 'static) {
+        *self.announce.lock().unwrap() = Some(Arc::new(sink));
     }
 }
+
+/// Where a published snapshot goes.
+type Sink = Arc<dyn Fn(&UpdateSnapshot) + Send + Sync>;
 
 /// A download that passed verification.
 struct Staged {
     path: PathBuf,
     version: String,
-}
-
-impl Download {
-    /// Fetch the asset, verify it, and return where it landed.
-    ///
-    /// A file that fails verification is removed: nothing unverified is left
-    /// looking installable, and a failed attempt takes its download directory
-    /// with it instead of leaving an empty folder in the temp directory.
-    fn run(self, progress: &Arc<Mutex<UpdateSnapshot>>, token: Option<&str>) -> Result<PathBuf> {
-        let path = self.path.clone();
-        let fetched = self.fetch(progress, token);
-        if fetched.is_err() {
-            if let Some(dir) = path.parent() {
-                let _ = std::fs::remove_dir_all(dir);
-            }
-        }
-        fetched
-    }
-
-    fn fetch(self, progress: &Arc<Mutex<UpdateSnapshot>>, token: Option<&str>) -> Result<PathBuf> {
-        if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let sums = match self.asset.digest {
-            Some(_) => None,
-            None => {
-                let url = self.sums_url.as_deref().ok_or_else(|| {
-                    Error::Other("the release publishes no SHA256SUMS".to_string())
-                })?;
-                Some(download::text(url, token)?)
-            }
-        };
-        let expected = verify::expected(&self.asset, sums.as_deref())?;
-
-        let progress = progress.clone();
-        let actual = download::to_file(
-            &self.asset.browser_download_url,
-            token,
-            &self.path,
-            &mut |done, total| {
-                let mut snapshot = progress.lock().unwrap();
-                snapshot.done = Some(done);
-                if total > 0 {
-                    snapshot.total = Some(total);
-                }
-            },
-        )?;
-
-        if actual != expected {
-            let _ = std::fs::remove_file(&self.path);
-            return Err(Error::Other(format!(
-                "{}: checksum mismatch, expected {expected}, got {actual}",
-                self.asset.name
-            )));
-        }
-        Ok(self.path)
-    }
 }

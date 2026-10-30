@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 import { translate, type Locale, type MessageKey } from './locale';
 import { resolvedLocale } from './preferences';
@@ -43,6 +44,9 @@ const stateMessages: Record<UpdateState, MessageKey> = {
 
 /** How often a running step is re-read, so progress and the settle appear. */
 const POLL_INTERVAL = 400;
+
+/** The event the backend announces every published snapshot on. */
+const UPDATE_EVENT = 'aidget://update';
 
 /**
  * The update row of the About page.
@@ -151,6 +155,15 @@ export function createUpdatePage(
       onFault(String(error));
     }
   }
+
+  // The launch check runs without anyone asking, so the window cannot discover it by
+  // polling: it is told. `refresh` still runs first, for a snapshot that settled
+  // before this module was listening.
+  void listen<UpdateSnapshot>(UPDATE_EVENT, (event) => {
+    snapshot = event.payload;
+    render();
+    watch();
+  });
 
   checkButton.addEventListener('click', () => void run('update_check'));
   downloadButton.addEventListener('click', () => void run('update_download'));

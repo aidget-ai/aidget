@@ -453,3 +453,23 @@ fn an_empty_repository_keeps_a_downloaded_update_installable() {
         super::cleanup(staged);
     }
 }
+
+#[test]
+fn every_published_state_reaches_the_listener() {
+    // The launch check runs without anyone asking, so the window learns about it
+    // through this listener rather than by polling from `idle`.
+    let base = super::serve_once(
+        200,
+        r#"{"tag_name": "v99.0.0", "html_url": "", "assets": []}"#,
+    );
+    let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    service.announce(move |snapshot| sink.lock().unwrap().push(snapshot.state.clone()));
+
+    block_on(service.check(None));
+
+    let states = seen.lock().unwrap().clone();
+    assert!(states.contains(&UpdateState::Checking), "{states:?}");
+    assert!(states.contains(&UpdateState::Found), "{states:?}");
+}

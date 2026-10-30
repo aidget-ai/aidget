@@ -125,9 +125,14 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
         .register_uri_scheme_protocol("aidget", move |ctx, request| {
             aidget::transport::server::protocol::handle(&ctx, request, &store_for_protocol)
         })
-        .manage(aidget::update::UpdateService::new())
         .invoke_handler(aidget::runtime::commands::handler())
         .setup(move |app| {
+            // Registered here rather than on the builder: the service has to be
+            // told where to report before anything can publish a snapshot.
+            let update_service = aidget::update::UpdateService::new();
+            aidget::runtime::update::announce(app.handle(), &update_service);
+            app.manage(update_service);
+
             #[cfg(target_os = "macos")]
             app.set_activation_policy(if show_main_window {
                 tauri::ActivationPolicy::Regular

@@ -4,10 +4,13 @@
 //! temporary directory is the download's own concern.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use crate::common::error::{Error, Result};
 use crate::update::github::{Asset, Release};
+use crate::update::snapshot::UpdateSnapshot;
 use crate::update::target::Target;
+use crate::update::{download, verify};
 
 /// One asset, ready to fetch.
 #[derive(Debug)]
@@ -53,4 +56,65 @@ pub fn prepare(release: &Release, target: Target, previous: Option<&Path>) -> Re
 /// A fresh directory for one download.
 fn download_dir() -> PathBuf {
     std::env::temp_dir().join(format!("aidget-update-{}", uuid::Uuid::new_v4()))
+}
+
+impl Download {
+    /// Fetch the asset, verify it, and return where it landed.
+    ///
+    /// A file that fails verification is removed: nothing unverified is left
+    /// looking installable, and a failed attempt takes its download directory
+    /// with it instead of leaving an empty folder in the temp directory.
+    pub fn run(
+        self,
+        progress: &Arc<Mutex<UpdateSnapshot>>,
+        token: Option<&str>,
+    ) -> Result<PathBuf> {
+        let path = self.path.clone();
+        let fetched = self.fetch(progress, token);
+        if fetched.is_err() {
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        }
+        fetched
+    }
+
+    fn fetch(self, progress: &Arc<Mutex<UpdateSnapshot>>, token: Option<&str>) -> Result<PathBuf> {
+        if let Some(dir) = self.path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let sums = match self.asset.digest {
+            Some(_) => None,
+            None => {
+                let url = self.sums_url.as_deref().ok_or_else(|| {
+                    Error::Other("the release publishes no SHA256SUMS".to_string())
+                })?;
+                Some(download::text(url, token)?)
+            }
+        };
+        let expected = verify::expected(&self.asset, sums.as_deref())?;
+
+        let progress = progress.clone();
+        let actual = download::to_file(
+            &self.asset.browser_download_url,
+            token,
+            &self.path,
+            &mut |done, total| {
+                let mut snapshot = progress.lock().unwrap();
+                snapshot.done = Some(done);
+                if total > 0 {
+                    snapshot.total = Some(total);
+                }
+            },
+        )?;
+
+        if actual != expected {
+            let _ = std::fs::remove_file(&self.path);
+            return Err(Error::Other(format!(
+                "{}: checksum mismatch, expected {expected}, got {actual}",
+                self.asset.name
+            )));
+        }
+        Ok(self.path)
+    }
 }

@@ -6,12 +6,23 @@
 
 use std::time::Duration;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::runtime::ui;
 use crate::settings;
 use crate::update::github::PackageKind;
 use crate::update::{UpdateService, UpdateSnapshot, UpdateState};
+
+/// The event a published snapshot is announced on.
+pub const UPDATE_EVENT: &str = "aidget://update";
+
+/// Forward every snapshot the service publishes to the main window.
+pub fn announce(app: &tauri::AppHandle, service: &UpdateService) {
+    let handle = app.clone();
+    service.announce(move |snapshot| {
+        let _ = handle.emit_to(ui::MAIN_LABEL, UPDATE_EVENT, snapshot);
+    });
+}
 
 /// Ask the release feed once, shortly after launch.
 ///
