@@ -102,6 +102,11 @@ three states, and none is an error.** A build from a working tree reports
 `NoRelease`. Any other 404 keeps its status, so a renamed repository does not read
 as "nothing to do".
 
+The About page's version row keeps reporting the crate version, as
+`docs/development.md` promises for the CLI, doctor, the MCP server, the main window
+and the bundle alike. The `Source` state is what says a build cannot replace
+itself; the version string is not asked to carry that.
+
 **HTTPS, loopback excepted.** A plaintext asset URL means the feed is not GitHub or
 was tampered with, so it is refused. Loopback is allowed because that is the local
 server the tests use, and what it serves still has to match a published checksum.

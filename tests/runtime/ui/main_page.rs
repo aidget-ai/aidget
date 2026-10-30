@@ -79,14 +79,9 @@ fn main_window_lists_all_widgets_and_marks_enabled_state() {
     assert!(state.widgets[0].enabled);
     assert!(!state.widgets[1].enabled);
     assert_eq!(state.widgets[1].width, 360.0);
-    // The stamp, not the crate version: a build from a working tree reports
-    // `0.1.0-5-gabc1234`, which is what the update row's "cannot replace itself"
-    // refers to.
-    assert_eq!(
-        state.version,
-        aidget::update::version::build_stamp(),
-        "the About page names this build, not the number in Cargo.toml"
-    );
+    // The documented contract: one version everywhere. Whether the build may update
+    // itself is the update row's answer, not the version string's.
+    assert_eq!(state.version, env!("CARGO_PKG_VERSION"));
 }
 
 #[test]

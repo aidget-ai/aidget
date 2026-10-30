@@ -122,10 +122,10 @@ pub fn main_widgets(store: &Store) -> Result<MainState> {
             broken.extend(crate::widgets::migration::trash_errors(store)?);
             broken
         },
-        // The stamp, not the crate version: a build from a working tree reads as
-        // `0.1.0-5-gabc1234`, which is what explains the update row saying it
-        // cannot replace itself. For a release the two are the same number.
-        version: crate::update::version::build_stamp().to_string(),
+        // The crate version, as `docs/development.md` promises: the same number the
+        // CLI, doctor, the MCP server and the bundle report. Whether this build may
+        // replace itself is the update row's business, not the version's.
+        version: env!("CARGO_PKG_VERSION").to_string(),
         theme: preferences.theme,
         language: preferences.language,
         tray_click_action: preferences.tray_click_action.effective(),
