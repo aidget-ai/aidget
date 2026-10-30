@@ -187,6 +187,21 @@ directory with its `mod.rs`, registered in `tests/main.rs`. Frontend tests live 
 
 Recorded so they are not rediscovered.
 
+- **A launch check cannot be discovered by polling.** The window reads the snapshot
+  when it loads, which is before the check starts, and `idle` stops the poll. Every
+  published snapshot is announced on `aidget://update` instead, so the window hears
+  about a check nobody asked for.
+- **Relaunch waits for the old process on every platform.** On Linux the new
+  instance finds the old one over IPC, asks it to reopen, and exits, leaving nothing
+  running; both platforms now wait on the pid before starting the replacement.
+- **`rerun-if-changed=.git/HEAD` misses a commit.** `HEAD` points at a ref, and the
+  ref is what changes, so a rebuild kept the previous stamp. Refs and
+  `packed-refs` are declared too, and a build with no tag and no describe reports
+  `<version>-untagged` rather than passing for a release.
+- **A matrix field that does not exist fails silently.** The zipped `.app` step read
+  `matrix.arch`, which the matrix never defined, so both archives were named
+  `aidget_<version>_.app.zip` — accepted by the workflow, rejected later by the
+  asset collector, after four platforms had been built.
 - **A Tauri command that spawns must be `async`.** A synchronous command runs on the
   main thread, which has no Tokio runtime, so `tokio::spawn` panics and the panic
   aborts the process. `update_download` answers with the `Downloading` snapshot at
