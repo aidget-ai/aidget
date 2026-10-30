@@ -36,6 +36,7 @@ export function createCommunityPage(
 ) {
   let snapshot: CommunitySnapshot | undefined;
   let loading = false;
+  let countsPending = false;
   let requested = false;
   let generation = 0;
   let installing: string | undefined;
@@ -89,7 +90,7 @@ export function createCommunityPage(
   });
   const toolbar = document.createElement('div');
   toolbar.className = 'community-toolbar';
-  const sort = createCommunitySort(locale, renderGrid);
+  const sort = createCommunitySort(locale, render);
   toolbar.append(sort.element, refresh);
   const grid = document.createElement('div');
   grid.className = 'widget-grid community-grid';
@@ -256,21 +257,23 @@ export function createCommunityPage(
     element.title = `${t('communityNpmDownloads')}${count?.weekly === null ? '' : `: ${count?.weekly ?? ''}`}`;
   }
   function render() {
+    const waitingForOrder = countsPending && sort.value.startsWith('downloads');
+    const busy = loading || waitingForOrder;
     heading.textContent = t('communityWidgetsTitle');
-    refresh.title = t(loading ? 'communityRefreshing' : 'communityRefresh');
+    refresh.title = t(busy ? 'communityRefreshing' : 'communityRefresh');
     refresh.setAttribute('aria-label', refresh.title);
-    refresh.setAttribute('aria-busy', String(loading));
-    refresh.disabled = loading || !!installing;
-    refresh.hidden = loading && !snapshot;
+    refresh.setAttribute('aria-busy', String(busy));
+    refresh.disabled = busy || !!installing;
+    refresh.hidden = busy && !grid.childElementCount;
     introduction.textContent = t('communityIntroduction');
     repositoryLabel.textContent = t('communityRepository');
     invitation.textContent = t('communityInvitation');
     dismissBanner.title = t('communityDismissBanner');
     dismissBanner.setAttribute('aria-label', dismissBanner.title);
     sort.render(!snapshot || loading || !!installing);
-    root.setAttribute('aria-busy', String(loading));
-    if (loading) {
-      status.textContent = snapshot ? '' : t('communityFetching');
+    root.setAttribute('aria-busy', String(busy));
+    if (busy) {
+      status.textContent = grid.childElementCount ? '' : t('communityFetching');
     } else if (snapshot) {
       status.textContent =
         linkError || (installError && !dialog.open)
@@ -285,6 +288,10 @@ export function createCommunityPage(
     }
   }
   function renderGrid() {
+    // Keep the previous list until the selected download order can be determined.
+    if (countsPending && sort.value.startsWith('downloads')) {
+      return;
+    }
     const widgets = snapshot?.widgets.slice() ?? [];
     widgets.sort((a, b) => {
       const left = sort.value.startsWith('published')
@@ -373,6 +380,7 @@ export function createCommunityPage(
     const current = ++generation;
     requested = true;
     loading = true;
+    countsPending = false;
     linkError = '';
     media.clear();
     render();
@@ -382,7 +390,7 @@ export function createCommunityPage(
         return;
       }
       snapshot = next;
-      counts.clear();
+      countsPending = true;
       void invoke<DownloadCount[]>('community_downloads', {
         packages: next.widgets.map((e) => e.entry.package.name),
       })
@@ -390,13 +398,21 @@ export function createCommunityPage(
           if (current !== generation) {
             return;
           }
+          countsPending = false;
+          counts.clear();
           for (const value of values) {
             counts.set(value.package, value);
           }
-          renderGrid();
+          render();
         })
-        .catch((error) => {
-          status.title = `${t('communityDownloadsUnavailable')}: ${String(error)}`;
+        .catch(() => {
+          if (current !== generation) {
+            return;
+          }
+          countsPending = false;
+          // Statistics are optional; a failed refresh must hide any stale counts.
+          counts.clear();
+          render();
         });
     } catch (error) {
       snapshot = undefined;

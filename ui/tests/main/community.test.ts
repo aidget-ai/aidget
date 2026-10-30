@@ -442,15 +442,18 @@ describe('community discovery controls', () => {
       return entry;
     });
     const catalogue: CommunitySnapshot = { commit: snapshot.commit, widgets: entries };
-    let resolveCounts!: (counts: DownloadCount[]) => void;
     mocks.invoke.mockImplementation((command: string) => {
       if (command === 'community_list') {
         return Promise.resolve(catalogue);
       }
       if (command === 'community_downloads') {
-        return new Promise<DownloadCount[]>((resolve) => {
-          resolveCounts = resolve;
-        });
+        return Promise.resolve(
+          entries.map((entry, i) => ({
+            package: entry.entry.package.name,
+            weekly: [0, 50, null, 50, null][i],
+            error: null,
+          })),
+        );
       }
       return Promise.resolve();
     });
@@ -475,15 +478,6 @@ describe('community discovery controls', () => {
       }
     };
     choose('published-desc');
-    expect(order()).toEqual(['gamma', 'beta', 'epsilon', 'alpha', 'delta']);
-    resolveCounts(
-      entries.map((entry, i) => ({
-        package: entry.entry.package.name,
-        weekly: [0, 50, null, 50, null][i],
-        error: null,
-      })),
-    );
-    await vi.waitFor(() => expect(root.textContent).toContain('50/week'));
     expect(order()).toEqual(['gamma', 'beta', 'epsilon', 'alpha', 'delta']);
     choose('downloads-desc');
     expect(order()).toEqual(['beta', 'delta', 'alpha', 'epsilon', 'gamma']);
@@ -514,30 +508,116 @@ describe('community discovery controls', () => {
     expect(selectedSort()).toBe('published-asc');
   });
 
-  it('reorders the default popularity sort when delayed counts arrive', async () => {
+  it('preserves the selected order and existing cards until refreshed counts arrive', async () => {
     const catalogue = structuredClone(snapshot);
     const second = structuredClone(catalogue.widgets[0]);
     second.entry.package.name = '@aidget-community/zebra';
     catalogue.widgets.push(second);
+    const values = catalogue.widgets.map((entry, index) => ({
+      package: entry.entry.package.name,
+      weekly: index * 10,
+      error: null,
+    }));
     let resolveCounts!: (counts: DownloadCount[]) => void;
+    let downloadsRequested = 0;
     mocks.invoke.mockImplementation((command: string) => {
       if (command === 'community_list') {
         return Promise.resolve(catalogue);
       }
       if (command === 'community_downloads') {
-        return new Promise((resolve) => {
-          resolveCounts = resolve;
-        });
+        downloadsRequested++;
+        return downloadsRequested === 1
+          ? Promise.resolve(values)
+          : new Promise<DownloadCount[]>((resolve) => {
+              resolveCounts = resolve;
+            });
       }
       return Promise.resolve();
     });
     const { root } = page();
     await vi.waitFor(() => expect(root.querySelectorAll('article')).toHaveLength(2));
-    resolveCounts([{ package: second.entry.package.name, weekly: 10, error: null }]);
+    const downloads = root.querySelector<HTMLButtonElement>('[data-sort="downloads"]')!;
+    downloads.click();
+    const cards = [...root.querySelectorAll('article')];
+    expect(cards[0].getAttribute('data-package')).toBe('@aidget-community/clock');
+    root.querySelector<HTMLButtonElement>('.community-refresh')!.click();
+    await vi.waitFor(() => expect(resolveCounts).toBeTypeOf('function'));
+    expect(root.getAttribute('aria-busy')).toBe('true');
+    expect(downloads.dataset.direction).toBe('asc');
+    expect([...root.querySelectorAll('article')].map((card) => card.dataset.package)).toEqual(
+      cards.map((card) => card.dataset.package),
+    );
+    expect(root.textContent).toContain('10/week');
+    resolveCounts(values.map((value) => ({ ...value, weekly: 10 - value.weekly })));
     await vi.waitFor(() =>
       expect(root.querySelector<HTMLElement>('article')?.dataset.package).toBe(
         second.entry.package.name,
       ),
     );
+    expect(downloads.dataset.direction).toBe('asc');
   });
+
+  it('shows the catalogue when download statistics fail and finishes loading', async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === 'community_list') {
+        return Promise.resolve(structuredClone(snapshot));
+      }
+      if (command === 'community_downloads') {
+        return Promise.reject(new Error('statistics offline'));
+      }
+      return Promise.resolve();
+    });
+    const { root } = page();
+    await vi.waitFor(() => expect(root.querySelector('article')).toBeTruthy());
+    expect(root.getAttribute('aria-busy')).toBe('false');
+    expect(root.querySelector('.community-status')?.getAttribute('title')).toBeNull();
+    expect(root.querySelector('.community-status')?.textContent).toBe('');
+    expect(root.querySelector<HTMLElement>('[data-download-count]')?.hidden).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>('.community-refresh')?.disabled).toBe(false);
+  });
+
+  it.each(['downloads', 'published'])(
+    'avoids intermediate ordering while fetching counts for the current %s sort',
+    async (metric) => {
+      const catalogue = structuredClone(snapshot);
+      const second = structuredClone(catalogue.widgets[0]);
+      second.entry.package.name = '@aidget-community/zebra';
+      second.entry.publishedAt = '2026-10-24T00:00:00Z';
+      catalogue.widgets.push(second);
+      let resolveCounts!: (counts: DownloadCount[]) => void;
+      mocks.invoke.mockImplementation((command: string) => {
+        if (command === 'community_list') {
+          return Promise.resolve(catalogue);
+        }
+        if (command === 'community_downloads') {
+          return new Promise((resolve) => {
+            resolveCounts = resolve;
+          });
+        }
+        return Promise.resolve();
+      });
+      const { root } = page();
+      await vi.waitFor(() => expect(resolveCounts).toBeTypeOf('function'));
+      expect(root.querySelectorAll('article')).toHaveLength(0);
+      expect(root.getAttribute('aria-busy')).toBe('true');
+      expect(root.querySelector('.community-status')?.textContent).toBe('Fetching data...');
+      if (metric === 'published') {
+        root.querySelector<HTMLButtonElement>('[data-sort="published"]')!.click();
+        expect(root.querySelectorAll('article')).toHaveLength(2);
+        expect(root.getAttribute('aria-busy')).toBe('false');
+        expect(root.querySelector<HTMLElement>('[data-download-count]')?.hidden).toBe(true);
+      }
+      resolveCounts([{ package: second.entry.package.name, weekly: 10, error: null }]);
+      await vi.waitFor(() => expect(root.textContent).toContain('10/week'));
+      expect(root.querySelector<HTMLElement>('article')?.dataset.package).toBe(
+        metric === 'published' ? '@aidget-community/clock' : second.entry.package.name,
+      );
+      if (metric === 'published') {
+        root.querySelector<HTMLButtonElement>('[data-sort="downloads"]')!.click();
+      }
+      expect(root.querySelector<HTMLElement>('article')?.dataset.package).toBe(
+        second.entry.package.name,
+      );
+    },
+  );
 });
