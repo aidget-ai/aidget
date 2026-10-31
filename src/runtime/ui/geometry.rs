@@ -90,6 +90,26 @@ pub fn place_frame(
     )
 }
 
+/// Build the persisted frame after a native window move. Widget windows are
+/// not resizable, so their logical size must not be inferred from native pixels:
+/// display sleep, topology changes, and backing-scale transitions can report a
+/// stale physical size.
+pub fn moved_frame(
+    current: &WidgetFrame,
+    display: String,
+    position: (i32, i32),
+    area_position: (i32, i32),
+    scale: f64,
+) -> WidgetFrame {
+    WidgetFrame {
+        display,
+        x: (position.0 - area_position.0) as f64 / scale,
+        y: (position.1 - area_position.1) as f64 / scale,
+        w: current.w,
+        h: current.h,
+    }
+}
+
 /// Choose the top-left-most visible position for a new widget.
 ///
 /// Candidate positions include the work-area edges and edges around existing

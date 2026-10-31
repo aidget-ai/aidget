@@ -1,5 +1,5 @@
 use aidget::runtime::ui::{
-    best_display_placement, centered_position, place_frame, place_in_work_area,
+    best_display_placement, centered_position, moved_frame, place_frame, place_in_work_area,
 };
 use aidget::widgets::model::WidgetFrame;
 use tauri::{
@@ -74,6 +74,29 @@ fn missing_display_frame_is_clamped_into_fallback() {
     };
     let (x, y) = place_frame(&frame, (0, 0), (3024, 1786), 2.0, false);
     assert_eq!((x, y), ((3024.0 - 720.0) as i32, 160));
+}
+
+#[test]
+fn moving_a_widget_does_not_infer_size_from_stale_native_pixels() {
+    let current = WidgetFrame {
+        display: "primary".to_string(),
+        x: 100.0,
+        y: 50.0,
+        w: 360.0,
+        h: 220.0,
+    };
+
+    let moved = moved_frame(
+        &current,
+        "Monitor #1".to_string(),
+        (-100, -1000),
+        (-536, -1410),
+        1.0,
+    );
+
+    assert_eq!(moved.w, current.w);
+    assert_eq!(moved.h, current.h);
+    assert_eq!((moved.x, moved.y), (436.0, 410.0));
 }
 
 #[test]

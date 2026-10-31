@@ -26,8 +26,8 @@ pub use drag::{begin_drag, end_drag, persist_position};
 #[cfg(target_os = "macos")]
 pub use drag::{set_dragging_cursor, wait_for_drag_release};
 pub use geometry::{
-    best_display_placement, centered_position, display_name, displays, physical_geometry,
-    place_frame, place_in_work_area, place_new_widget,
+    best_display_placement, centered_position, display_name, displays, moved_frame,
+    physical_geometry, place_frame, place_in_work_area, place_new_widget,
 };
 pub use main_page::{
     cached_preview, delete_widget, deleted_widget_preview, local_widget_details, main_payload,

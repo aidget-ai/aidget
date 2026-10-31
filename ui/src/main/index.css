@@ -1589,6 +1589,9 @@ body[data-platform='windows'] .navigation {
 .local-widget-preview {
   cursor: pointer;
 }
+.local-widget-dialog .community-dialog-header {
+  padding-block-end: 20px;
+}
 .local-widget-title {
   display: block;
   max-inline-size: 100%;
