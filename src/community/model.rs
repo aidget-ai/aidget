@@ -38,11 +38,19 @@ pub struct CommunityEntry {
     pub id_conflict: bool,
     pub supported: bool,
 }
-/// A page is tied to one reviewed main revision until explicitly refreshed.
+/// Catalogue metadata, media and installation share one reviewed main revision.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct CommunitySnapshot {
     pub commit: String,
     pub widgets: Vec<CommunityEntry>,
+}
+/// Last successfully checked catalogue, with current local installation availability.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CachedCommunitySnapshot {
+    pub snapshot: CommunitySnapshot,
+    /// Unix seconds of the last successful main-branch check.
+    pub checked_at: u64,
 }
 /// Optional npm telemetry. An unavailable count is distinct from zero.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

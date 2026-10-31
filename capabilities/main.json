@@ -19,6 +19,7 @@
     "allow-purge-deleted-widget",
     "allow-main-widget-preview",
     "allow-community-list",
+    "allow-community-cached",
     "allow-community-media",
     "allow-community-install",
     "allow-community-downloads",

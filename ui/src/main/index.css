@@ -486,6 +486,7 @@ body[data-platform='windows'] .navigation {
 .preview-stage {
   position: relative;
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
   width: 100%;
   aspect-ratio: 16 / 10;
   max-height: 240px;
@@ -519,6 +520,7 @@ body[data-platform='windows'] .navigation {
   display: block;
   width: 100%;
   height: 100%;
+  min-block-size: 0;
   object-fit: contain;
   filter: var(--preview-art-shadow);
 }
@@ -1272,7 +1274,8 @@ body[data-platform='windows'] .navigation {
   object-fit: contain;
 }
 .community-logo-default {
-  display: flex;
+  display: grid;
+  place-items: center;
   color: var(--accent);
 }
 .community-identity {
@@ -1336,15 +1339,28 @@ body[data-platform='windows'] .navigation {
   user-select: none;
   -webkit-user-select: none;
 }
+.community-media {
+  min-inline-size: 0;
+}
+.community-logo-stage {
+  display: grid;
+  inline-size: 32px;
+  block-size: 32px;
+  place-items: center;
+}
+.community-logo-stage > span:not(.community-logo-default) {
+  inline-size: 32px;
+  overflow: hidden;
+  font-size: 9px;
+  text-align: center;
+}
 .community-preview {
-  grid-template-rows: minmax(0, 1fr);
   color: var(--muted);
   font-size: 12px;
   user-select: none;
   -webkit-user-select: none;
 }
 .community-preview .preview-image {
-  min-block-size: 0;
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;

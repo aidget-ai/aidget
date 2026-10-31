@@ -85,11 +85,15 @@ function agentButton(
     .join(' ');
   button.dataset.agent = agent.id;
   button.setAttribute('aria-pressed', String(state.installed));
-  const action = state.installed ? labels.removeFrom : labels.installFor;
-  button.setAttribute('aria-label', `${action} ${agent.name}`);
+  const action = state.installed
+    ? `${labels.removeFrom} ${agent.name}`
+    : labels.installFor.replace('{agent}', agent.name);
+  button.setAttribute('aria-label', action);
   button.title = state.conflict
     ? `${agent.name}: ${state.conflict}`
-    : `${action} ${agent.name}\n${state.path}`;
+    : state.installed
+      ? `${action}\n${state.path}`
+      : `${action}${state.path}`;
   button.disabled = busy;
 
   const icon = agentIcon(agent.icon);

@@ -1,13 +1,16 @@
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { createElement, ExternalLink, LayoutGrid, RefreshCw, ShieldCheck, X } from 'lucide';
+import { createElement, ExternalLink, RefreshCw, X } from 'lucide';
 
 import type {
+  CachedCommunitySnapshot,
   CommunityEntry,
   CommunitySnapshot,
   DownloadCount,
   PackageAuthor,
 } from '../types/rust';
+import { createCommunityCard } from './community-card';
+import { createCommunityMedia } from './community-media';
 import { createCommunitySort } from './community-sort';
 import { translate, type Locale, type MessageKey } from './locale';
 import { resolvedLocale } from './preferences';
@@ -37,14 +40,23 @@ export function createCommunityPage(
   let snapshot: CommunitySnapshot | undefined;
   let loading = false;
   let countsPending = false;
+  let countsGeneration = 0;
   let requested = false;
+  let visible = false;
+  let checkedAt = 0;
+  let lastAttempt = -Infinity;
+  let forceCheck = false;
+  let loadError = '';
+  let detailLocale: Locale | undefined;
+  const cards = new Map<string, ReturnType<typeof createCommunityCard>>();
+  const media = createCommunityMedia(locale);
+  const detailMedia: ReturnType<typeof media.create>[] = [];
   let generation = 0;
   let installing: string | undefined;
   let selected: { entry: CommunityEntry; commit: string } | undefined;
   let installError = '';
   let linkError = '';
   const counts = new Map<string, DownloadCount>();
-  const media = new Map<string, Promise<string>>();
   const t = (key: MessageKey) => translate(resolvedLocale(locale()), key);
   const header = document.createElement('div');
   header.className = 'community-heading';
@@ -103,71 +115,11 @@ export function createCommunityPage(
   refresh.addEventListener('click', () => void load());
   dialog.addEventListener('close', () => {
     selected = undefined;
+    for (const view of detailMedia.splice(0)) {
+      view.dispose();
+    }
   });
 
-  function mediaUrl(entry: CommunityEntry, path: string, commit = snapshot!.commit) {
-    const key = `${commit}/${entry.entry.package.name}/${path}`;
-    let pending = media.get(key);
-    if (!pending) {
-      pending = invoke<string>('community_media', {
-        commit,
-        package: entry.entry.package.name,
-        path,
-      });
-      media.set(key, pending);
-    }
-    return pending;
-  }
-  function logo(entry: CommunityEntry) {
-    const box = document.createElement('span');
-    box.className = 'community-logo';
-    box.setAttribute('aria-hidden', 'true');
-    const placeholder = document.createElement('span');
-    placeholder.className = 'community-logo-default';
-    placeholder.append(createElement(LayoutGrid, { width: 24, height: 24, 'stroke-width': 1.6 }));
-    box.append(placeholder);
-    if (entry.entry.config.logo) {
-      const image = document.createElement('img');
-      image.alt = '';
-      image.width = 32;
-      image.height = 32;
-      void mediaUrl(entry, entry.entry.config.logo)
-        .then((url) => {
-          image.src = url;
-          box.replaceChildren(image);
-        })
-        .catch((error) => {
-          box.title = `${t('communityLogoFailed')}: ${String(error)}`;
-        });
-    }
-    return box;
-  }
-  function screenshot(entry: CommunityEntry, path: string, commit = snapshot!.commit) {
-    const box = document.createElement('div');
-    box.className = 'preview-stage community-preview';
-    const image = document.createElement('img');
-    image.alt = entry.entry.config.title;
-    image.className = 'preview-image';
-    image.width = 720;
-    image.height = 440;
-    image.decoding = 'async';
-    const message = document.createElement('span');
-    message.textContent = t('loading');
-    box.append(message);
-    void mediaUrl(entry, path, commit)
-      .then((url) => {
-        image.onload = () => box.replaceChildren(image);
-        image.onerror = () => {
-          message.textContent = t('communityScreenshotFailed');
-        };
-        image.src = url;
-      })
-      .catch((error) => {
-        message.textContent = t('communityScreenshotFailed');
-        message.title = String(error);
-      });
-    return box;
-  }
   function actionLabel(entry: CommunityEntry) {
     if (installing === entry.entry.package.name) {
       return t('communityInstalling');
@@ -183,71 +135,16 @@ export function createCommunityPage(
     }
     return t('communityInstall');
   }
-  function installAction(entry: CommunityEntry, confirm: boolean, commit = snapshot!.commit) {
+  function installAction(entry: CommunityEntry, commit: string) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'community-install secondary-button';
     button.textContent = actionLabel(entry);
-    button.disabled =
-      loading || !!installing || entry.installed || entry.idConflict || !entry.supported;
+    button.disabled = !!installing || entry.installed || entry.idConflict || !entry.supported;
     button.addEventListener('click', () => {
-      if (confirm) {
-        void install(entry, commit);
-      } else {
-        showDetails(entry);
-      }
+      void install(entry, commit);
     });
     return button;
-  }
-  function renderCard(entry: CommunityEntry) {
-    const { config, package: pkg } = entry.entry;
-    const card = document.createElement('article');
-    card.className = 'widget-card community-card';
-    card.dataset.package = pkg.name;
-    const top = document.createElement('div');
-    top.className = 'widget-info community-card-heading';
-    const identity = document.createElement('div');
-    identity.className = 'community-identity';
-    const name = document.createElement('button');
-    name.type = 'button';
-    name.className = 'widget-title community-name';
-    name.textContent = config.title;
-    name.disabled = loading || !!installing;
-    name.title = config.title;
-    name.addEventListener('click', () => showDetails(entry));
-    const by = document.createElement('span');
-    by.className = 'community-verified';
-    const verifiedLabel = document.createElement('span');
-    verifiedLabel.textContent = t('communityVerified');
-    by.append(
-      createElement(ShieldCheck, {
-        width: 13,
-        height: 13,
-        'stroke-width': 1.7,
-        'aria-hidden': 'true',
-      }),
-      verifiedLabel,
-    );
-    by.title = authorName(pkg.author);
-    identity.append(name, by);
-    top.append(logo(entry), identity, installAction(entry, false));
-    const preview = document.createElement('button');
-    preview.type = 'button';
-    preview.disabled = loading || !!installing;
-    preview.className = 'community-preview-button';
-    preview.setAttribute('aria-label', `${t('communityDetails')}: ${config.title}`);
-    preview.addEventListener('click', () => showDetails(entry));
-    preview.append(screenshot(entry, config.screenshots[0]));
-    const footer = document.createElement('div');
-    footer.className = 'community-card-footer';
-    const count = document.createElement('span');
-    count.dataset.downloadCount = pkg.name;
-    renderCount(count, pkg.name);
-    const version = document.createElement('span');
-    version.textContent = `v${pkg.version}`;
-    footer.append(count, version);
-    card.append(top, preview, footer);
-    return card;
   }
   function renderCount(element: HTMLElement, name: string) {
     const count = counts.get(name);
@@ -270,21 +167,36 @@ export function createCommunityPage(
     invitation.textContent = t('communityInvitation');
     dismissBanner.title = t('communityDismissBanner');
     dismissBanner.setAttribute('aria-label', dismissBanner.title);
-    sort.render(!snapshot || loading || !!installing);
+    sort.render(!snapshot || !!installing, countsPending);
     root.setAttribute('aria-busy', String(busy));
-    if (busy) {
-      status.textContent = grid.childElementCount ? '' : t('communityFetching');
-    } else if (snapshot) {
-      status.textContent =
-        linkError || (installError && !dialog.open)
-          ? linkError || installError
-          : snapshot.widgets.length
-            ? ''
-            : t('communityEmpty');
-    }
+    const cached =
+      snapshot && loadError
+        ? `${t('communityCached')} · ${t('communityLastChecked')}: ${new Date(checkedAt).toLocaleString(resolvedLocale(locale()))}\n`
+        : '';
+    status.textContent =
+      linkError ||
+      (installError && !dialog.open ? installError : '') ||
+      (loadError
+        ? cached + loadError
+        : busy && !grid.childElementCount
+          ? t('communityFetching')
+          : snapshot && !snapshot.widgets.length
+            ? t('communityEmpty')
+            : '');
     renderGrid();
+    media.render();
     if (selected && dialog.open) {
-      renderDetails(selected.entry, selected.commit);
+      if (detailLocale !== locale()) {
+        renderDetails(selected.entry, selected.commit);
+      }
+      const button = dialog.querySelector<HTMLButtonElement>('.community-install')!;
+      button.textContent = actionLabel(selected.entry);
+      button.disabled =
+        !!installing ||
+        selected.entry.installed ||
+        selected.entry.idConflict ||
+        !selected.entry.supported;
+      dialog.querySelector('.community-install-error')!.textContent = installError;
     }
   }
   function renderGrid() {
@@ -313,7 +225,34 @@ export function createCommunityPage(
       }
       return a.entry.package.name.localeCompare(b.entry.package.name, 'en');
     });
-    grid.replaceChildren(...widgets.map(renderCard));
+    const names = new Set(widgets.map((entry) => entry.entry.package.name));
+    for (const [name, view] of cards) {
+      if (!names.has(name)) {
+        view.dispose();
+        cards.delete(name);
+      }
+    }
+    for (const [index, entry] of widgets.entries()) {
+      const name = entry.entry.package.name;
+      let view = cards.get(name);
+      if (!view) {
+        view = createCommunityCard(entry, snapshot!.commit, media, root, locale, showDetails);
+        cards.set(name, view);
+      }
+      view.update(entry, snapshot!.commit, !!installing, actionLabel(entry));
+      renderCount(view.count, name);
+      if (grid.children[index] !== view.element) {
+        const focus = document.activeElement;
+        grid.insertBefore(view.element, grid.children[index] ?? null);
+        if (
+          focus instanceof HTMLElement &&
+          view.element.contains(focus) &&
+          document.activeElement !== focus
+        ) {
+          focus.focus({ preventScroll: true });
+        }
+      }
+    }
   }
   function renderDetails(entry: CommunityEntry, commit: string) {
     const { config, package: pkg } = entry.entry;
@@ -323,12 +262,22 @@ export function createCommunityPage(
     const identity = document.createElement('p');
     identity.className = 'community-detail-identity';
     identity.textContent = `${authorName(pkg.author)} · ${pkg.name} · v${pkg.version}`;
-    const content = renderWidgetDetailsContent(
-      config,
-      pkg.description,
-      config.screenshots.map((path) => screenshot(entry, path, commit)),
-      locale(),
-    );
+    detailLocale = locale();
+    const previousMedia = detailMedia.splice(0);
+    const content = renderWidgetDetailsContent(config, pkg.description, [], locale());
+    for (const [index, path] of config.screenshots.entries()) {
+      let view = previousMedia[index];
+      if (view) {
+        view.setRoot(content);
+      } else {
+        view = media.create(entry, path, commit, content, true);
+      }
+      detailMedia.push(view);
+      content.querySelector('.community-detail-images')!.append(view.element);
+    }
+    for (const view of previousMedia.slice(config.screenshots.length)) {
+      view.dispose();
+    }
     content.prepend(identity);
     const close = document.createElement('button');
     close.type = 'button';
@@ -341,17 +290,18 @@ export function createCommunityPage(
     error.setAttribute('role', 'alert');
     const header = document.createElement('div');
     header.className = 'community-dialog-header';
-    header.append(title, installAction(entry, true, commit));
+    header.append(title, installAction(entry, commit));
     const footer = document.createElement('div');
     footer.className = 'community-dialog-footer';
     footer.append(error, close);
     dialog.replaceChildren(header, content, footer);
   }
-  function showDetails(entry: CommunityEntry) {
+  function showDetails(entry: CommunityEntry, commit: string) {
     installError = '';
-    selected = { entry, commit: snapshot!.commit };
+    selected = { entry, commit };
     renderDetails(entry, selected.commit);
     dialog.showModal();
+    media.retryFailed(entry, selected.commit);
     dialog.focus();
   }
   async function install(entry: CommunityEntry, commit: string) {
@@ -364,6 +314,12 @@ export function createCommunityPage(
     try {
       await invoke('community_install', { commit, package: entry.entry.package.name });
       entry.installed = true;
+      const current = snapshot?.widgets.find(
+        (value) => value.entry.package.name === entry.entry.package.name,
+      );
+      if (current) {
+        current.installed = true;
+      }
       await installed();
       dialog.close();
     } catch (error) {
@@ -380,9 +336,10 @@ export function createCommunityPage(
     const current = ++generation;
     requested = true;
     loading = true;
-    countsPending = false;
     linkError = '';
-    media.clear();
+    loadError = '';
+    lastAttempt = Date.now();
+    forceCheck = false;
     render();
     try {
       const next = await invoke<CommunitySnapshot>('community_list');
@@ -390,52 +347,124 @@ export function createCommunityPage(
         return;
       }
       snapshot = next;
-      countsPending = true;
-      void invoke<DownloadCount[]>('community_downloads', {
-        packages: next.widgets.map((e) => e.entry.package.name),
-      })
-        .then((values) => {
-          if (current !== generation) {
-            return;
-          }
-          countsPending = false;
-          counts.clear();
-          for (const value of values) {
-            counts.set(value.package, value);
-          }
-          render();
-        })
-        .catch(() => {
-          if (current !== generation) {
-            return;
-          }
-          countsPending = false;
-          // Statistics are optional; a failed refresh must hide any stale counts.
-          counts.clear();
-          render();
-        });
+      checkedAt = Date.now();
+      fetchCounts(next);
     } catch (error) {
-      snapshot = undefined;
-      status.textContent = `${t('communityLoadFailed')}: ${String(error)}${
+      if (current !== generation) {
+        return;
+      }
+      loadError = `${t('communityLoadFailed')}: ${String(error)}${
         hasGithubToken() ? '' : `\n${t('communityGithubTokenHint')}`
       }`;
     } finally {
-      loading = false;
-      render();
+      if (current === generation) {
+        loading = false;
+        render();
+      }
+    }
+  }
+  function fetchCounts(next: CommunitySnapshot) {
+    const current = ++countsGeneration;
+    countsPending = true;
+    const onCount = new Channel<DownloadCount>((value) => {
+      if (current !== countsGeneration || !countsPending) {
+        return;
+      }
+      counts.set(value.package, value);
+      // Update only telemetry so incoming counts preserve card order and focus.
+      for (const element of grid.querySelectorAll<HTMLElement>('[data-download-count]')) {
+        if (element.dataset.downloadCount === value.package) {
+          renderCount(element, value.package);
+        }
+      }
+    });
+    void invoke<DownloadCount[]>('community_downloads', {
+      packages: next.widgets.map((e) => e.entry.package.name),
+      onCount,
+    })
+      .then((values) => {
+        if (current !== countsGeneration) {
+          return;
+        }
+        countsPending = false;
+        counts.clear();
+        for (const value of values) {
+          counts.set(value.package, value);
+        }
+        render();
+      })
+      .catch(() => {
+        if (current !== countsGeneration) {
+          return;
+        }
+        countsPending = false;
+        // Statistics are optional; a failed refresh must hide any stale counts.
+        counts.clear();
+        render();
+      });
+  }
+  async function restore() {
+    const current = ++generation;
+    requested = true;
+    loading = true;
+    render();
+    try {
+      const cached = await invoke<CachedCommunitySnapshot | null>('community_cached');
+      if (current !== generation) {
+        return;
+      }
+      if (cached) {
+        snapshot = cached.snapshot;
+        checkedAt = cached.checkedAt * 1000;
+        lastAttempt = Math.max(lastAttempt, checkedAt);
+        fetchCounts(snapshot);
+      }
+    } catch (error) {
+      if (current === generation) {
+        loadError = `${t('communityLoadFailed')}: ${String(error)}`;
+      }
+      return;
+    } finally {
+      if (current === generation) {
+        loading = false;
+        render();
+      }
+    }
+    if (current === generation && (forceCheck || Date.now() - lastAttempt >= 5 * 60_000)) {
+      void load();
     }
   }
   return {
-    /** Fetch on first visit; explicit refresh retrieves a new main snapshot. */
+    /** Restore cached content and check main only when entering or explicitly invalidated. */
     show() {
+      const entering = !visible;
+      visible = true;
+      media.setActive(true);
       if (!requested) {
+        void restore();
+      } else if (entering && Date.now() - lastAttempt >= 5 * 60_000) {
         void load();
       } else {
         render();
       }
     },
-    /** Local changes invalidate installed state and are reconciled on next visit. */
-    invalidate() {
+    /** Cancel queued work when leaving the community panel. */
+    hide() {
+      visible = false;
+      media.setActive(false);
+      if (dialog.open) {
+        dialog.close();
+      }
+    },
+    /** Recompute local availability; credentials additionally invalidate the check interval. */
+    invalidate(credentialsChanged = false) {
       requested = false;
+      if (credentialsChanged) {
+        forceCheck = true;
+      }
+      if (visible && !installing) {
+        void restore();
+      }
     },
     /** Update translated labels without an additional network request. */
     render,

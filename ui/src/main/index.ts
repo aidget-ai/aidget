@@ -253,6 +253,8 @@ function renderPage() {
   }
   if (page === 'community-widgets') {
     community.show();
+  } else {
+    community.hide();
   }
   renderIntegration();
   renderDescription();
@@ -557,7 +559,7 @@ async function saveGithubToken() {
     }
     state = { ...state, githubToken: summary };
     githubTokenInput.value = '';
-    community.invalidate();
+    community.invalidate(true);
   } catch (error) {
     githubTokenFailure = `${t('githubTokenSaveFailed')}: ${String(error)}`;
   } finally {
@@ -580,7 +582,7 @@ async function removeGithubToken() {
     await invoke<null>('set_github_token', { token: null });
     state = { ...state, githubToken: null };
     githubTokenInput.value = '';
-    community.invalidate();
+    community.invalidate(true);
   } catch (error) {
     githubTokenFailure = `${t('githubTokenRemoveFailed')}: ${String(error)}`;
   } finally {
@@ -961,7 +963,7 @@ function render(next: MainState) {
     community.invalidate();
   }
   if (state?.githubToken?.masked !== next.githubToken?.masked) {
-    community.invalidate();
+    community.invalidate(true);
   }
   state = next;
   if (next.broken.length) {

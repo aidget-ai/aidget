@@ -16,7 +16,7 @@ command_groups! {
         "set_github_token",
         "set_widget_enabled", "delete_widget", "restore_widget",
         "deleted_widget_preview", "purge_deleted_widget", "main_widget_preview",
-        "community_list", "community_media", "community_install", "community_downloads",
+        "community_list", "community_cached", "community_media", "community_install", "community_downloads",
     ],
     WIDGET_COMMANDS: [
         "widget_state", "widget_loaded", "widget_ready", "persist_window_position",

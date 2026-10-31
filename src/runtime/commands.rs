@@ -38,6 +38,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         set_preferences,
         set_github_token,
         community_list,
+        community_cached,
         community_media,
         community_install,
         community_downloads
@@ -392,6 +393,21 @@ async fn community_list(
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())
 }
+/// Restore the last successful official catalogue without network access.
+#[tauri::command]
+async fn community_cached(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+) -> std::result::Result<Option<crate::community::model::CachedCommunitySnapshot>, String> {
+    ui::require_main_window_label(window.label()).map_err(|e| e.to_string())?;
+    let root = app.state::<ui::UiState>().root.lock().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::community::service::Community::for_store(&root)?.cached(&Store::new(root))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
 /// Download declared screenshot/logo bytes without exposing remote package HTML.
 #[tauri::command]
 async fn community_media(
@@ -400,11 +416,18 @@ async fn community_media(
     commit: String,
     package: String,
     path: String,
+    refresh: Option<bool>,
 ) -> std::result::Result<String, String> {
     ui::require_main_window_label(window.label()).map_err(|e| e.to_string())?;
     let root = app.state::<ui::UiState>().root.lock().unwrap().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        crate::community::service::Community::for_store(&root)?.media(&commit, &package, &path)
+        crate::community::service::Community::for_store(&root)?.media(
+            &Store::new(root),
+            &commit,
+            &package,
+            &path,
+            refresh.unwrap_or(false),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -433,18 +456,26 @@ async fn community_install(
     ui::sync_widgets(&app);
     Ok(())
 }
-/// Counts are optional npm telemetry and never determine installation success.
+/// Stream each cached or completed npm count on `on_count`, then return the ordered batch.
+/// Counts are optional telemetry and never determine installation success.
 #[tauri::command]
 async fn community_downloads(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     packages: Vec<String>,
+    on_count: tauri::ipc::Channel<crate::community::model::DownloadCount>,
 ) -> std::result::Result<Vec<crate::community::model::DownloadCount>, String> {
     ui::require_main_window_label(window.label()).map_err(|e| e.to_string())?;
     let root = app.state::<ui::UiState>().root.lock().unwrap().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        crate::community::service::Community::for_store(&root)?
-            .downloads(&Store::new(root), &packages)
+        crate::community::service::Community::for_store(&root)?.downloads(
+            &Store::new(root),
+            &packages,
+            |count| {
+                on_count.send(count.clone())?;
+                Ok(())
+            },
+        )
     })
     .await
     .map_err(|e| e.to_string())?

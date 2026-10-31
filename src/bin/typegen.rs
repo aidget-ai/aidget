@@ -35,6 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Registry::decl(&cfg),
         CommunityEntry::decl(&cfg),
         CommunitySnapshot::decl(&cfg),
+        CachedCommunitySnapshot::decl(&cfg),
         DownloadCount::decl(&cfg),
         LocalWidgetDetails::decl(&cfg),
     ];

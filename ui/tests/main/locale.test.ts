@@ -55,6 +55,7 @@ describe('main window locale', () => {
     expect(translate('en', 'widgetsGroup')).toBe('Widgets');
     expect(translate('zh', 'agentAll')).toBe('全部');
     expect(translate('zh', 'integrationNoAgents')).toBe('没有检测到可接入此资源的 Agent。');
+    expect(translate('zh', 'installFor')).toBe('为 {agent} 安装：');
   });
 
   it('labels appearance, behavior, and tray click options', () => {
