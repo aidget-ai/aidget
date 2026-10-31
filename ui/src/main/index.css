@@ -998,6 +998,20 @@ body[data-platform='windows'] .navigation {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+/* Release notes are markdown from GitHub: shown as written, wrapped, and capped
+   so a long changelog cannot push the rest of the page away. */
+.update-notes-row {
+  padding-top: 0;
+}
+.update-notes {
+  max-height: 8rem;
+  margin: 0;
+  overflow: auto;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
 
 .settings-segmented {
   border-radius: 9px;
@@ -1081,8 +1095,11 @@ body[data-platform='windows'] .navigation {
   line-height: 1.5;
   text-align: end;
 }
+/* Buttons centre their own label; a plain text span in the same row does not,
+   so without `align-items` the status sits at the top of a stretched box. */
 .community-actions {
   display: flex;
+  align-items: center;
   gap: 7px;
 }
 

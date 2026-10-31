@@ -8,3 +8,4 @@ pub mod main_window_state;
 pub mod network;
 pub mod process;
 pub mod ui;
+pub mod update;

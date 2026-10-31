@@ -5,3 +5,5 @@ mod main_window_state;
 mod network;
 mod process;
 mod ui;
+
+mod update;

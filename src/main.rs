@@ -127,6 +127,12 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
         })
         .invoke_handler(aidget::runtime::commands::handler())
         .setup(move |app| {
+            // Registered here rather than on the builder: the service has to be
+            // told where to report before anything can publish a snapshot.
+            let update_service = aidget::update::UpdateService::new();
+            aidget::runtime::update::announce(app.handle(), &update_service);
+            app.manage(update_service);
+
             #[cfg(target_os = "macos")]
             app.set_activation_policy(if show_main_window {
                 tauri::ActivationPolicy::Regular
@@ -146,6 +152,7 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
                 endpoint,
             )?;
             tray(app.handle())?;
+            aidget::runtime::update::start_check(app.handle());
             if show_main_window {
                 println!(
                     "aidget ui ready — data at {}",
@@ -158,14 +165,14 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
         .map_err(|error| Error::Other(error.to_string()))?;
 
     app.run(|handle, event| {
-        // The handle is only used by the macOS reopen path.
-        #[cfg(not(target_os = "macos"))]
-        let _ = handle;
         match event {
             // A tray app must survive closing its last widget window.
             tauri::RunEvent::ExitRequested {
                 code: None, api, ..
             } => api.prevent_exit(),
+            // A downloaded update also goes in as the app quits, so the next
+            // launch is the new version even when the user never clicked install.
+            tauri::RunEvent::Exit => aidget::runtime::update::install_on_quit(handle),
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => {
                 if let Err(error) = ui::show_main_now(handle) {

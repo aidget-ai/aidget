@@ -79,6 +79,8 @@ fn main_window_lists_all_widgets_and_marks_enabled_state() {
     assert!(state.widgets[0].enabled);
     assert!(!state.widgets[1].enabled);
     assert_eq!(state.widgets[1].width, 360.0);
+    // The documented contract: one version everywhere. Whether the build may update
+    // itself is the update row's answer, not the version string's.
     assert_eq!(state.version, env!("CARGO_PKG_VERSION"));
 }
 
@@ -200,6 +202,7 @@ fn main_state_exposes_widget_metadata_in_camel_case() {
         github_token: Some(GithubTokenSummary {
             masked: "ghp_…WXYZ".to_string(),
         }),
+        auto_download: true,
     })
     .unwrap();
 
@@ -213,6 +216,7 @@ fn main_state_exposes_widget_metadata_in_camel_case() {
     assert_eq!(value["theme"], "dark");
     assert_eq!(value["language"], "zh-CN");
     assert_eq!(value["trayClickAction"], "window");
+    assert_eq!(value["autoDownload"], true);
     assert_eq!(value["lastPage"], "integrations");
     assert_eq!(value["githubToken"]["masked"], "ghp_…WXYZ");
     assert!(!value

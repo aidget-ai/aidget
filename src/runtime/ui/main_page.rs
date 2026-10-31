@@ -80,6 +80,8 @@ pub struct MainState {
     pub tray_click_action: TrayClickAction,
     pub last_page: MainPage,
     pub github_token: Option<GithubTokenSummary>,
+    /// Whether the About page's toggle leaves automatic downloading on.
+    pub auto_download: bool,
 }
 
 /// List every valid widget, including widgets that are currently archived.
@@ -120,12 +122,16 @@ pub fn main_widgets(store: &Store) -> Result<MainState> {
             broken.extend(crate::widgets::migration::trash_errors(store)?);
             broken
         },
+        // The crate version, as `docs/development.md` promises: the same number the
+        // CLI, doctor, the MCP server and the bundle report. Whether this build may
+        // replace itself is the update row's business, not the version's.
         version: env!("CARGO_PKG_VERSION").to_string(),
         theme: preferences.theme,
         language: preferences.language,
         tray_click_action: preferences.tray_click_action.effective(),
         last_page: preferences.last_page,
         github_token,
+        auto_download: preferences.auto_download,
     })
 }
 

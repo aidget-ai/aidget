@@ -1,7 +1,7 @@
 //! Tauri command endpoints behind the native window authorization boundary.
 use std::collections::BTreeMap;
 
-use crate::runtime::{command_access, ui};
+use crate::runtime::{command_access, ui, update};
 use crate::settings::UiPreferences;
 use crate::widgets::store::Store;
 use tauri::Manager;
@@ -40,7 +40,11 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         community_list,
         community_media,
         community_install,
-        community_downloads
+        community_downloads,
+        update::update_state,
+        update::update_check,
+        update::update_download,
+        update::update_install
     ])
 }
 
