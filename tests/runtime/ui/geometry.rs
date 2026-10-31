@@ -1,6 +1,17 @@
-use aidget::runtime::ui::{centered_position, place_frame};
+use aidget::runtime::ui::{
+    best_display_placement, centered_position, place_frame, place_in_work_area,
+};
 use aidget::widgets::model::WidgetFrame;
-use tauri::{PhysicalPosition, PhysicalRect, PhysicalSize};
+use tauri::{
+    LogicalPosition, LogicalRect, LogicalSize, PhysicalPosition, PhysicalRect, PhysicalSize,
+};
+
+fn logical_rect(x: f64, y: f64, width: f64, height: f64) -> LogicalRect<f64, f64> {
+    LogicalRect {
+        position: LogicalPosition::new(x, y),
+        size: LogicalSize::new(width, height),
+    }
+}
 
 #[test]
 fn centers_a_scaled_window_in_the_selected_physical_work_area() {
@@ -63,4 +74,56 @@ fn missing_display_frame_is_clamped_into_fallback() {
     };
     let (x, y) = place_frame(&frame, (0, 0), (3024, 1786), 2.0, false);
     assert_eq!((x, y), ((3024.0 - 720.0) as i32, 160));
+}
+
+#[test]
+fn initial_placement_fills_the_first_gap_inside_the_work_area() {
+    let area = logical_rect(0.0, 0.0, 1512.0, 893.0);
+    let existing = logical_rect(24.0, 24.0, 360.0, 220.0);
+
+    let placed = place_in_work_area(area, LogicalSize::new(400.0, 350.0), &[existing]);
+
+    assert_eq!((placed.position.x, placed.position.y), (400.0, 24.0));
+    assert_eq!((placed.size.width, placed.size.height), (400.0, 350.0));
+}
+
+#[test]
+fn initial_placement_wraps_to_a_visible_row_when_the_first_row_is_full() {
+    let area = logical_rect(0.0, 0.0, 800.0, 893.0);
+    let existing = [
+        logical_rect(24.0, 24.0, 360.0, 220.0),
+        logical_rect(400.0, 24.0, 360.0, 220.0),
+    ];
+
+    let placed = place_in_work_area(area, LogicalSize::new(360.0, 220.0), &existing);
+
+    assert_eq!((placed.position.x, placed.position.y), (24.0, 260.0));
+}
+
+#[test]
+fn initial_placement_keeps_the_window_visible_when_the_screen_is_full() {
+    let area = logical_rect(0.0, 0.0, 420.0, 260.0);
+    let existing = logical_rect(24.0, 24.0, 360.0, 220.0);
+
+    let placed = place_in_work_area(area, LogicalSize::new(360.0, 220.0), &[existing]);
+
+    assert!(placed.position.x >= 0.0);
+    assert!(placed.position.y >= 0.0);
+    assert!(placed.position.x + placed.size.width <= area.size.width);
+    assert!(placed.position.y + placed.size.height <= area.size.height);
+}
+
+#[test]
+fn initial_placement_uses_another_display_before_shrinking() {
+    let displays = [
+        logical_rect(0.0, 0.0, 1512.0, 893.0),
+        logical_rect(0.0, 0.0, 1920.0, 1080.0),
+    ];
+    let occupied = [Vec::new(), Vec::new()];
+
+    let (display, placed) =
+        best_display_placement(&displays, LogicalSize::new(1000.0, 1000.0), &occupied).unwrap();
+
+    assert_eq!(display, 1);
+    assert_eq!((placed.size.width, placed.size.height), (1000.0, 1000.0));
 }

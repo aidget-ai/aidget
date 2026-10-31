@@ -12,6 +12,7 @@
   --line: #e5e5ea;
   --active: #fff;
   --accent: #4c64ce;
+  --success: #138847;
   --danger: #c7473e;
   --shadow: 0 1px 2px rgb(20 20 30 / 0.08), 0 4px 12px rgb(20 20 30 / 0.035);
   --preview-canvas: #e8e8eb;
@@ -46,6 +47,7 @@
   --line: #38383f;
   --active: #323239;
   --accent: #9aaaff;
+  --success: #5cdc91;
   --danger: #ff9389;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.24);
   --preview-canvas: #242428;
@@ -75,6 +77,7 @@
     --line: #38383f;
     --active: #323239;
     --accent: #9aaaff;
+    --success: #5cdc91;
     --danger: #ff9389;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.24);
     --preview-canvas: #242428;
@@ -121,6 +124,55 @@ button:focus-visible,
 select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.toast-region {
+  position: fixed;
+  z-index: 1000;
+  inset-block-start: calc(var(--header-height) + 12px);
+  inset-inline-end: 24px;
+  display: grid;
+  justify-items: end;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-inline-size: min(420px, calc(100vw - 48px));
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  border-inline-start: 3px solid var(--success);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 12px 36px rgb(20 20 30 / 0.22);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.4;
+  text-align: start;
+  transform-origin: top right;
+  animation: toast-enter 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  backdrop-filter: blur(14px);
+}
+
+.toast svg {
+  flex: none;
+  color: var(--success);
+}
+
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateX(14px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
 }
 
 [hidden] {

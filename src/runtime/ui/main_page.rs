@@ -190,11 +190,7 @@ pub fn set_widget_enabled(app: &AppHandle, id: &str, enabled: bool) -> Result<()
         main_window_state::set_archived(store.root(), &store.widget_ids()?, id, false)?;
         let board = store.load_board()?;
         if !board.widgets.contains_key(id) {
-            store.move_widget(
-                id,
-                board.revision,
-                WidgetFrame::default_for(board.widgets.len()),
-            )?;
+            super::geometry::place_new_widget(app, &store, id)?;
         }
     } else {
         main_window_state::set_archived(store.root(), &store.widget_ids()?, id, true)?;

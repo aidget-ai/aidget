@@ -100,6 +100,33 @@ fn create_assigns_frame_and_revision() {
 }
 
 #[test]
+fn initial_placement_does_not_overwrite_a_concurrent_user_move() {
+    let (_dir, store) = store();
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+    let initial = store.load_board().unwrap().widgets["note"].clone();
+    let automatic = WidgetFrame {
+        x: 24.0,
+        y: 24.0,
+        ..initial.clone()
+    };
+    let moved = WidgetFrame {
+        x: 700.0,
+        y: 300.0,
+        ..initial.clone()
+    };
+    let revision = store.load_board().unwrap().revision;
+    store.move_widget("note", revision, moved.clone()).unwrap();
+
+    store
+        .set_initial_frame("note", Some(&initial), automatic)
+        .unwrap();
+
+    let frame = store.load_board().unwrap().widgets["note"].clone();
+    assert_eq!(frame.x, moved.x);
+    assert_eq!(frame.y, moved.y);
+}
+
+#[test]
 fn fifty_widgets_are_allowed_and_the_fifty_first_is_rejected() {
     let (_dir, store) = store();
     assert_eq!(MAX_WIDGETS, 50);

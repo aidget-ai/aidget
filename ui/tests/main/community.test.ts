@@ -85,14 +85,16 @@ function page(hasGithubToken = false) {
   const root = document.createElement('section');
   document.body.append(root);
   const installed = vi.fn(async () => {});
+  const notify = vi.fn();
   const page = createCommunityPage(
     root,
     () => 'en',
     installed,
     () => hasGithubToken,
+    notify,
   );
   page.show();
-  return { root, page, installed };
+  return { root, page, installed, notify };
 }
 describe('community cards', () => {
   it.each(['.community-name', '.community-preview-button', '.community-install'])(
@@ -199,7 +201,7 @@ describe('community cards', () => {
     expect(refresh.disabled).toBe(false);
   });
   it('requires details confirmation and sends the pinned main SHA', async () => {
-    const { root, installed } = page();
+    const { root, installed, notify } = page();
     await vi.waitFor(() => expect(root.querySelector('.community-install')).toBeTruthy());
     (root.querySelector('.community-install') as HTMLButtonElement).click();
     const dialog = root.querySelector('dialog')!;
@@ -216,6 +218,7 @@ describe('community cards', () => {
       }),
     );
     await vi.waitFor(() => expect(installed).toHaveBeenCalled());
+    expect(notify).toHaveBeenCalledWith('Installed in Local Widgets');
     expect(root.querySelector('.community-install')?.textContent).toBe('Installed');
   });
   it('pins install in the dialog header and close as a text action in the footer', async () => {
@@ -457,6 +460,7 @@ describe('community discovery controls', () => {
       () => locale,
       async () => {},
       () => false,
+      vi.fn(),
     );
     controller.show();
     expect(root.querySelector('.community-status')?.textContent).toBe('正在拉取数据...');

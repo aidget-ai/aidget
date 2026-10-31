@@ -1,5 +1,8 @@
 use super::{fixture, store, Server, MAIN, NAME};
-use aidget::{common::utils::sha256_hex, community::model::Registry};
+use aidget::{
+    common::{error::Error, utils::sha256_hex},
+    community::model::Registry,
+};
 use serde_json::json;
 use std::{
     fs,
@@ -158,4 +161,30 @@ fn invalid_remote_bytes_and_cache_errors_do_not_leave_entries() {
         .media(&store, MAIN, NAME, "assets/screen.png", false)
         .is_err());
     assert_eq!(server.requests.lock().unwrap().len(), before);
+}
+
+#[test]
+fn a_cache_directory_replaced_by_a_file_fails_before_http_even_on_refresh() {
+    let server = Server::new();
+    fixture(&server);
+    let (_root, store) = store();
+    let client = server.client();
+    client
+        .media(&store, MAIN, NAME, "assets/screen.png", false)
+        .unwrap();
+    let directory = store.state_dir().join("community/media");
+    fs::remove_dir_all(&directory).unwrap();
+    fs::write(&directory, b"not a directory").unwrap();
+    let before = server.requests.lock().unwrap().len();
+
+    for refresh in [false, true] {
+        let error = client
+            .media(&store, MAIN, NAME, "assets/screen.png", refresh)
+            .unwrap_err();
+        assert_eq!(server.requests.lock().unwrap().len(), before);
+        assert!(
+            matches!(error, Error::Io(error) if error.kind() == std::io::ErrorKind::NotADirectory)
+        );
+        assert_eq!(fs::read(&directory).unwrap(), b"not a directory");
+    }
 }

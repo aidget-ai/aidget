@@ -31,6 +31,7 @@ describe('main window locale', () => {
   it('uses compact community action labels', () => {
     expect(translate('zh', 'communityRefreshing')).toBe('刷新中');
     expect(translate('zh', 'communityInstalling')).toBe('安装中');
+    expect(translate('zh', 'communityInstalledNotice')).toBe('已安装到本地组件');
     expect(translate('zh', 'communityIdConflict')).toBe('已存在');
     expect(translate('zh', 'communityUnsupported')).toBe('不兼容');
     expect(translate('en', 'communityRefreshing')).toBe('Refreshing');

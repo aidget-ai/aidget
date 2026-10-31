@@ -654,6 +654,38 @@ impl Store {
         Ok(board)
     }
 
+    /// Set the initial frame only while the target frame still matches the
+    /// snapshot used to calculate it. A concurrent user move is preserved.
+    pub fn set_initial_frame(
+        &self,
+        id: &str,
+        expected: Option<&WidgetFrame>,
+        frame: WidgetFrame,
+    ) -> Result<Board> {
+        let _lock = self.write_lock()?;
+        validate_id(id)?;
+        self.load_meta(id)?;
+        let mut board = self.load_board()?;
+        let unchanged = match (board.widgets.get(id), expected) {
+            (Some(current), Some(expected)) => {
+                current.display == expected.display
+                    && current.x == expected.x
+                    && current.y == expected.y
+                    && current.w == expected.w
+                    && current.h == expected.h
+            }
+            (None, None) => true,
+            _ => false,
+        };
+        if !unchanged {
+            return Ok(board);
+        }
+        board.widgets.insert(id.to_string(), frame);
+        board.revision += 1;
+        self.save_board(&board)?;
+        Ok(board)
+    }
+
     pub fn reload_board(&self) -> Result<BTreeMap<String, WidgetFrame>> {
         Ok(self.load_board()?.widgets)
     }

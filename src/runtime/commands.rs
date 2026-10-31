@@ -443,7 +443,8 @@ async fn community_install(
 ) -> std::result::Result<(), String> {
     ui::require_main_window_label(window.label()).map_err(|e| e.to_string())?;
     let root = app.state::<ui::UiState>().root.lock().unwrap().clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let install_root = root.clone();
+    let meta = tauri::async_runtime::spawn_blocking(move || {
         crate::community::service::Community::for_store(&root)?.install_reviewed(
             &Store::new(root),
             &commit,
@@ -453,6 +454,7 @@ async fn community_install(
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
+    ui::place_new_widget(&app, &Store::new(install_root), &meta.id).map_err(|e| e.to_string())?;
     ui::sync_widgets(&app);
     Ok(())
 }

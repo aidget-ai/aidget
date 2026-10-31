@@ -52,6 +52,7 @@ import { createSegmentedControl } from './segmented-control';
 import { createSortIcon } from './sort-icon';
 import { createMainStartup } from './startup';
 import { renderMiddleEllipsis } from './text-ellipsis';
+import { createToastRegion } from './toast';
 import { createLocalWidgetDetails } from './widget-details';
 
 interface WidgetView {
@@ -160,11 +161,13 @@ let purgeTimer: number | undefined;
 let previewRefreshActive = false;
 let widgetsReadyForPreviews = false;
 
+const toast = createToastRegion(document.body);
 const community = createCommunityPage(
   document.querySelector<HTMLElement>('[data-view="community-widgets"]')!,
   () => locale,
   refreshState,
   () => Boolean(state?.githubToken),
+  (message) => toast.show(message),
 );
 
 const previewRefresh = createPreviewRefresh(

@@ -57,19 +57,35 @@ impl Community {
         let _request = shared
             .lock()
             .map_err(|e| Error::Other(format!("media request lock poisoned: {e}")))?;
-        if !refresh {
+        {
             let _lock = cache_lock(store)?;
-            match read_bounded(&destination, MAX_MEDIA) {
-                Ok(bytes) => {
-                    let mime = validate(&bytes, file)?;
-                    fs::OpenOptions::new()
-                        .write(true)
-                        .open(&destination)?
-                        .set_times(fs::FileTimes::new().set_modified(SystemTime::now()))?;
-                    return Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)));
+            // Windows can report a child of a regular file as missing; reject the
+            // invalid cache directory before treating that error as a cache miss.
+            match fs::metadata(&directory) {
+                Ok(metadata) if !metadata.is_dir() => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::NotADirectory,
+                        format!("media cache is not a directory: {}", directory.display()),
+                    )
+                    .into());
                 }
+                Ok(_) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => return Err(e.into()),
+            }
+            if !refresh {
+                match read_bounded(&destination, MAX_MEDIA) {
+                    Ok(bytes) => {
+                        let mime = validate(&bytes, file)?;
+                        fs::OpenOptions::new()
+                            .write(true)
+                            .open(&destination)?
+                            .set_times(fs::FileTimes::new().set_modified(SystemTime::now()))?;
+                        return Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)));
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e.into()),
+                }
             }
         }
         let bytes = self

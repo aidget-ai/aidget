@@ -121,6 +121,7 @@ pub async fn dispatch(
             })
             .await
             .map_err(|e| Error::Other(e.to_string()))??;
+            ui::place_new_widget(&app, &store, &meta.id)?;
             ui::sync_widgets(&app);
             Ok(serde_json::to_value(store.ack(&meta)?)?)
         }
@@ -178,6 +179,7 @@ fn create(app: AppHandle, store: &Store, params: Value) -> Result<Value> {
             ..WidgetEdit::default()
         },
     )?;
+    ui::place_new_widget(&app, store, &meta.id)?;
     ui::sync_widgets(&app);
     Ok(serde_json::to_value(store.ack(&meta)?)?)
 }

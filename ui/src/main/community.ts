@@ -36,6 +36,7 @@ export function createCommunityPage(
   locale: () => Locale,
   installed: () => Promise<void>,
   hasGithubToken: () => boolean,
+  notify: (message: string) => void,
 ) {
   let snapshot: CommunitySnapshot | undefined;
   let loading = false;
@@ -322,6 +323,7 @@ export function createCommunityPage(
       }
       await installed();
       dialog.close();
+      notify(t('communityInstalledNotice'));
     } catch (error) {
       installError = `${t('communityInstallFailed')}: ${String(error)}`;
     } finally {
