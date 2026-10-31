@@ -16,16 +16,27 @@ overrides it. On Windows the default is `C:\Users\<user>\.aidget`.
 ├── board.json
 ├── settings.toml
 ├── run/
-├── screenshots/
-├── storage/
+├── state/
+│   ├── agent-backups/
+│   ├── community/
+│   ├── previews/<id>.png
+│   ├── screenshots/
+│   ├── storage/<id>.json
+│   └── widgets.json
+├── skills/aidget/SKILL.md
 ├── trash/
 └── widgets/<id>/
+    ├── package.json          # optional npm package metadata
     ├── config.json
     ├── index.html
     ├── style.css
     ├── agents.md
     └── assets/
 ```
+
+Some entries are created only when needed. Archived widgets stay in
+`widgets/<id>/` with their archive state in `state/widgets.json`; `trash/`
+holds deleted widgets retained for restoration.
 
 Do not write these files directly. CLI and MCP writes maintain revisions and
 notify the resident UI. A direct file write can race the watcher.
@@ -66,6 +77,8 @@ notify the resident UI. A direct file write can race the watcher.
   wildcard hosts are invalid.
 - Installed copies additionally contain host-managed `revision` and
   `updatedAt`; do not create those fields yourself.
+- Unused fields are ignored. Missing required fields and invalid current values
+  are rejected; unused fields never grant permissions or supply missing values.
 
 ## Regions
 

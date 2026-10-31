@@ -169,6 +169,34 @@ fn main_window_skips_widgets_with_broken_config() {
 }
 
 #[test]
+fn main_window_lists_trash_with_unused_fields_and_reports_invalid_configs() {
+    let dir = TempDir::new().unwrap();
+    let store = Store::new(dir.path());
+    store.ensure_layout().unwrap();
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+    let deleted = store.delete("note").unwrap();
+    let path = deleted.join(CONFIG_FILE);
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    config["allowScripts"] = serde_json::json!(true);
+    let bytes = serde_json::to_vec(&config).unwrap();
+    std::fs::write(&path, &bytes).unwrap();
+    let invalid = store.trash_dir().join("invalid");
+    std::fs::create_dir(&invalid).unwrap();
+    std::fs::write(invalid.join(CONFIG_FILE), b"{").unwrap();
+    let missing = store.trash_dir().join("missing");
+    std::fs::create_dir(&missing).unwrap();
+
+    let state = main_widgets(&store).unwrap();
+    assert_eq!(state.deleted_widgets.len(), 1);
+    assert_eq!(state.deleted_widgets[0].id, "note");
+    let mut broken: Vec<_> = state.broken.iter().map(|entry| entry.id.as_str()).collect();
+    broken.sort_unstable();
+    assert_eq!(broken, ["trash/invalid", "trash/missing"]);
+    assert_eq!(std::fs::read(path).unwrap(), bytes);
+}
+
+#[test]
 fn main_state_exposes_widget_metadata_in_camel_case() {
     let value = serde_json::to_value(MainState {
         widgets: vec![WidgetSummary {

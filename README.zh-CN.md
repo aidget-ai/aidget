@@ -165,13 +165,14 @@ aidget community install @aidget-community/<id> --json
 
 ## 数据目录
 
-默认数据根目录是 `~/.aidget`。
+默认数据根目录是 `~/.aidget`（Windows 为 `C:\Users\<user>\.aidget`）。
 
 ```text
 ~/.aidget
 ├── aidget                    # CLI 入口（Windows 为 aidget.cmd）
 ├── board.json                # 卡片位置和尺寸
 ├── settings.toml             # 主程序配置
+├── run/                      # 运行时 IPC 端点（macOS/Linux 使用 Unix socket）
 ├── widgets/
 │   └── <id>/
 │       ├── package.json      # 可选 npm 包信息（用于发布到 NPM）
@@ -181,14 +182,21 @@ aidget community install @aidget-community/<id> --json
 │       ├── agents.md         # 面向 Agent 的说明文档
 │       └── assets/           # 图片、字体等本地资源
 ├── state/
+│   ├── agent-backups/        # 集成 Agent 时生成的配置备份
+│   ├── community/
+│   │   ├── downloads/        # npm 下载统计缓存
+│   │   ├── media/            # 社区组件图标和截图缓存
+│   │   └── registries/       # 社区目录缓存
+│   ├── previews/
+│   │   └── <id>.png          # 主窗口使用的小组件预览缓存
 │   ├── screenshots/          # 小组件截图
 │   ├── storage/
 │   │   └── <id>.json         # 小组件持久化数据
-│   └── widgets.json          # 小组件状态
+│   └── widgets.json          # 小组件归档状态
 ├── skills/
 │   └── aidget/
 │       └── SKILL.md          # 分发给 Agent 的 Skill
-└── trash/                    # 已归档的小组件
+└── trash/                    # 已删除、可恢复的小组件
 ```
 
 ## 权限管控

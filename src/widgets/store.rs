@@ -140,12 +140,6 @@ impl Store {
         settings::load(&self.root)
     }
 
-    /// Keep only the newest screenshot PNGs allowed by `settings.toml`.
-    pub fn prune_screenshots(&self) -> Result<()> {
-        let settings = self.load_settings()?;
-        retention::prune_screenshots(&self.screenshots_dir(), settings.screenshot_retention)
-    }
-
     /// Keep only the newest trashed widget directories allowed by `settings.toml`.
     pub fn prune_trash(&self) -> Result<()> {
         let settings = self.load_settings()?;
@@ -288,6 +282,30 @@ impl Store {
         })
     }
 
+    /// Surface invalid trash configurations without blocking healthy trash entries.
+    pub fn trash_errors(&self) -> Result<Vec<BrokenWidget>> {
+        let mut errors = vec![];
+        for entry in fs::read_dir(self.trash_dir())? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let result = fs::read(entry.path().join(CONFIG_FILE))
+                .map_err(Error::from)
+                .and_then(|bytes| {
+                    let meta: WidgetMeta = serde_json::from_slice(&bytes)?;
+                    meta.config.validate()
+                });
+            if let Err(error) = result {
+                errors.push(BrokenWidget {
+                    id: format!("trash/{}", entry.file_name().to_string_lossy()),
+                    error: error.to_string(),
+                });
+            }
+        }
+        Ok(errors)
+    }
+
     pub fn deleted_widgets(&self) -> Result<Vec<DeletedWidgetSummary>> {
         let dir = self.trash_dir();
         if !dir.exists() {
@@ -308,7 +326,7 @@ impl Store {
             if !config.is_file() {
                 continue;
             }
-            // Startup migration reports broken trash entries independently.
+            // Invalid entries are reported separately by trash_errors.
             let Ok(meta) = serde_json::from_slice::<WidgetMeta>(&fs::read(config)?) else {
                 continue;
             };

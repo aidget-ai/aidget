@@ -117,7 +117,7 @@ pub fn main_widgets(store: &Store) -> Result<MainState> {
         deleted_widgets: store.deleted_widgets()?,
         broken: {
             let mut broken = store.list()?.broken;
-            broken.extend(crate::widgets::migration::trash_errors(store)?);
+            broken.extend(store.trash_errors()?);
             broken
         },
         version: env!("CARGO_PKG_VERSION").to_string(),

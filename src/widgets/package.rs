@@ -28,7 +28,6 @@ impl WidgetPlatform {
 }
 /// Initial logical size; the board remains authoritative after installation.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(deny_unknown_fields)]
 pub struct WidgetSize {
     pub width: f64,
     pub height: f64,
@@ -41,9 +40,10 @@ impl Default for WidgetSize {
         }
     }
 }
-/// Portable aidget configuration. Installed revisions are stored by `WidgetMeta`.
+/// Portable aidget configuration. Unused fields are ignored; installed revisions
+/// are stored by `WidgetMeta`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct WidgetConfig {
     pub id: String,
     pub title: String,

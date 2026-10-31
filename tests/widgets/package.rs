@@ -1,6 +1,21 @@
 use aidget::widgets::package::{PackageManifest, WidgetConfig};
 
 #[test]
+fn config_ignores_unused_fields_without_changing_current_values() {
+    let expected = WidgetConfig::new("clock", "Clock");
+    let mut value = serde_json::to_value(&expected).unwrap();
+    value["allowScripts"] = serde_json::json!(true);
+    value["version"] = serde_json::json!("0.1.0");
+    value["source"] = serde_json::json!({"kind": "builtin", "id": "welcome"});
+    value["unused"] = serde_json::json!({"anything": [1, 2, 3]});
+    value["size"]["unused"] = serde_json::json!(true);
+
+    let config: WidgetConfig = serde_json::from_value(value).unwrap();
+    config.validate().unwrap();
+    assert_eq!(config, expected);
+}
+
+#[test]
 fn initial_sizes_reject_oversized_and_nonfinite_dimensions() {
     for dimension in [8192.1, 1e308, f64::INFINITY, f64::NAN] {
         for width in [true, false] {

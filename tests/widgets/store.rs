@@ -17,6 +17,26 @@ fn store() -> (TempDir, Store) {
 }
 
 #[test]
+fn reading_unused_config_fields_does_not_rewrite_or_back_up_the_widget() {
+    let (dir, store) = store();
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+    let path = store.widget_dir("note").unwrap().join(CONFIG_FILE);
+    let mut value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    value["allowScripts"] = serde_json::json!(true);
+    value["source"] = serde_json::json!({"kind": "builtin", "id": "welcome"});
+    let bytes = serde_json::to_vec_pretty(&value).unwrap();
+    fs::write(&path, &bytes).unwrap();
+
+    let meta = store.load_meta("note").unwrap();
+    assert!(!meta.grants(WidgetPermission::Script));
+    assert_eq!(meta.revision, 1);
+    assert_eq!(store.list().unwrap().widgets.len(), 1);
+    assert_eq!(fs::read(path).unwrap(), bytes);
+    assert!(store.load_package("note").unwrap().is_none());
+    assert!(!dir.path().join("backups").exists());
+}
+
+#[test]
 fn drag_mode_updates_preserve_position_and_survive_partial_edits() {
     use aidget::widgets::model::WidgetDragMode;
     let (_dir, store) = store();
@@ -305,7 +325,7 @@ fn list_reports_board_revision_and_broken_widgets() {
 }
 
 #[test]
-fn rejects_config_and_board_fields_from_older_layouts() {
+fn ignores_unused_config_fields_but_rejects_unknown_board_fields() {
     let (_dir, store) = store();
     store
         .create(
@@ -323,8 +343,12 @@ fn rejects_config_and_board_fields_from_older_layouts() {
     meta["schema"] = serde_json::json!(1);
     fs::write(&config, serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
 
-    let error = store.load_meta("note").unwrap_err();
-    assert!(matches!(error, Error::Json(_)), "got {error}");
+    let loaded = store.load_meta("note").unwrap();
+    assert_eq!(loaded.id, "note");
+    assert!(serde_json::to_value(loaded)
+        .unwrap()
+        .get("schema")
+        .is_none());
 
     let mut board: serde_json::Value =
         serde_json::from_slice(&fs::read(store.board_path()).unwrap()).unwrap();

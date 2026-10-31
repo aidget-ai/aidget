@@ -102,15 +102,7 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
     let listener = endpoint
         .bind()
         .map_err(|error| Error::Other(format!("cannot bind socket: {error}")))?;
-    let migration_errors = aidget::widgets::migration::run(&store)?;
-    for broken in &migration_errors {
-        eprintln!("widget migration {}: {}", broken.id, broken.error);
-    }
-    if migration_errors.is_empty() {
-        store.prune_retained()?;
-    } else {
-        store.prune_screenshots()?;
-    }
+    store.prune_retained()?;
     aidget::widgets::template::bootstrap_welcome(&store)?;
     let store_for_ui = store.clone();
     let store_for_protocol = Arc::new(store.clone());

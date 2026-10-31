@@ -165,13 +165,14 @@ aidget community install @aidget-community/<id> --json
 
 ## Data directory
 
-The default data root is `~/.aidget`.
+The default data root is `~/.aidget` (`C:\Users\<user>\.aidget` on Windows).
 
 ```text
 ~/.aidget
 ├── aidget                    # stable CLI entry (aidget.cmd on Windows)
 ├── board.json                # widget positions and sizes
 ├── settings.toml             # application settings
+├── run/                      # runtime IPC endpoint (Unix socket on macOS/Linux)
 ├── widgets/
 │   └── <id>/
 │       ├── package.json      # optional npm package metadata (for publishing to npm)
@@ -181,14 +182,21 @@ The default data root is `~/.aidget`.
 │       ├── agents.md         # guidance for future agents
 │       └── assets/           # images, fonts, and other local assets
 ├── state/
+│   ├── agent-backups/        # agent configuration backups made during integration
+│   ├── community/
+│   │   ├── downloads/        # npm download statistics cache
+│   │   ├── media/            # community logos and screenshots cache
+│   │   └── registries/       # community catalog cache
+│   ├── previews/
+│   │   └── <id>.png          # cached widget previews for the main window
 │   ├── screenshots/          # widget screenshots
 │   ├── storage/
 │   │   └── <id>.json         # persistent widget data
-│   └── widgets.json          # widget state
+│   └── widgets.json          # widget archive state
 ├── skills/
 │   └── aidget/
 │       └── SKILL.md          # the Skill distributed to agents
-└── trash/                    # archived widgets
+└── trash/                    # deleted widgets retained for restoration
 ```
 
 ## Permission controls
