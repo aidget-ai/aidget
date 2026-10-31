@@ -5,7 +5,7 @@
 
 # aidget
 
-**把桌面创意交给 AI Agent**
+**把桌面交给 AI Agent**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/aidget-ai/aidget/check.yml?branch=main&label=CI&style=flat-square)](https://github.com/aidget-ai/aidget/actions/workflows/check.yml)
 [![最新版本](https://img.shields.io/github/v/release/aidget-ai/aidget?style=flat-square)](https://github.com/aidget-ai/aidget/releases/latest)
