@@ -19,7 +19,6 @@ import {
   X,
 } from 'lucide';
 
-import brandIcon from '../../../icons/icon.png';
 import { renderAgentStrip } from './agent-controls';
 import { createCommunityPage } from './community';
 import {
@@ -99,7 +98,6 @@ const trayLinuxNote = document.querySelector<HTMLElement>('[data-tray-linux-note
 const recycleFilter = document.querySelector<HTMLButtonElement>('[data-recycle-filter]')!;
 const widgetSortButton = document.querySelector<HTMLButtonElement>('[data-widget-sort]')!;
 const widgetSortLabel = widgetSortButton.querySelector<HTMLElement>('[data-sort-label]')!;
-const brandMark = document.querySelector<HTMLImageElement>('[data-brand-icon]')!;
 const version = document.querySelector<HTMLElement>('[data-version]')!;
 const githubButton = document.querySelector<HTMLButtonElement>('[data-github]')!;
 const autoStart = document.querySelector<HTMLButtonElement>('[data-autostart]')!;
@@ -1211,7 +1209,6 @@ document.querySelectorAll<HTMLButtonElement>('[data-window-action]').forEach((bu
 
 autoStart.setAttribute('aria-checked', 'false');
 
-brandMark.src = brandIcon;
 createIcons({
   icons: { Info, LayoutGrid, Minus, ServerCog, Settings, Square, UsersRound, X },
 });

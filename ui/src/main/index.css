@@ -227,8 +227,9 @@ body[data-platform='windows'] .brand-bar {
   width: 24px;
   height: 24px;
   flex: none;
-  border-radius: 6px;
-  object-fit: contain;
+  background: currentColor;
+  -webkit-mask: url('../../../icons/tray-template.svg') center / contain no-repeat;
+  mask: url('../../../icons/tray-template.svg') center / contain no-repeat;
 }
 
 .brand-name {
