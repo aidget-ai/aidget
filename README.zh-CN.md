@@ -17,7 +17,18 @@
 [快速开始](#快速开始) | [跨平台支持](#跨平台支持) | [开发](#开发) | [数据目录](#数据目录) | [权限管控](#权限管控)<br>
 [English](README.md) | 简体中文
 
-<img src="./screenshot.png" alt="aidget 截图" width="360" />
+<table width="100%">
+  <tr>
+    <td width="50%" align="center">
+      <img src="./screenshot.webp" alt="aidget 主界面" width="100%" />
+      <sub>主界面</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./screenshot-desktop.webp" alt="aidget 桌面组件效果" width="100%" />
+      <sub>桌面组件效果</sub>
+    </td>
+  </tr>
+</table>
 
 </div>
 

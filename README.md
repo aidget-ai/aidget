@@ -17,7 +17,18 @@
 [Quick start](#quick-start) | [Cross-platform support](#cross-platform-support) | [Development](#development) | [Data directory](#data-directory) | [Permission controls](#permission-controls)<br>
 English | [简体中文](README.zh-CN.md)
 
-<img src="./screenshot.png" alt="aidget screenshot" width="360" />
+<table width="100%">
+  <tr>
+    <td width="50%" align="center">
+      <img src="./screenshot.webp" alt="aidget main window" width="100%" />
+      <sub>Main window</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./screenshot-desktop.webp" alt="aidget widgets on the desktop" width="100%" />
+      <sub>Widgets on the desktop</sub>
+    </td>
+  </tr>
+</table>
 
 </div>
 
