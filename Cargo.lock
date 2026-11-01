@@ -27,6 +27,7 @@ dependencies = [
  "chrono",
  "clap",
  "dirs 7.0.0",
+ "dunce",
  "flate2",
  "fs2",
  "include_dir",

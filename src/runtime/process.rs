@@ -27,7 +27,9 @@ pub fn cli_link(root: &Path) -> PathBuf {
 /// one predictable absolute path. Best-effort: a read-only or translocated
 /// bundle just keeps whatever path the caller already has.
 pub fn publish_cli(root: &Path) {
-    let Ok(exe) = std::env::current_exe().and_then(|exe| exe.canonicalize()) else {
+    // cmd.exe cannot invoke the `\\?\` verbatim paths `Path::canonicalize`
+    // emits on Windows, so canonicalize to the plain DOS form instead.
+    let Ok(exe) = std::env::current_exe().and_then(dunce::canonicalize) else {
         return;
     };
     // A translocated bundle is a throwaway mount; a link into it dies on the
