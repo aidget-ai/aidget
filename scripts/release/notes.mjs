@@ -3,6 +3,8 @@ import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
+import { parseTag } from './version.mjs';
+
 export const CHINESE_MARKER = '<!-- lang:zh -->';
 
 const execFileAsync = promisify(execFile);
@@ -57,39 +59,27 @@ export function composeNotes(english, chinese) {
   return `${en}\n\n${CHINESE_MARKER}\n\n${zh}\n`;
 }
 
-// Collect subjects after the previous release tag, or after the root commit.
-async function releaseCommits(tag, git) {
-  const tags = (await git(['tag', '--sort=-v:refname']))
-    .split(/\r?\n/)
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const index = tags.indexOf(tag);
-  if (index < 0) {
-    throw new Error(`release tag ${tag} is not present in git tags`);
-  }
-
-  let previous = tags[index + 1];
-  if (!previous) {
-    previous = required((await git(['rev-list', '--max-parents=0', tag])).trim(), 'root commit');
-  }
-
-  return required(
-    (await git(['log', `${previous}..${tag}`, '--pretty=format:%s', '--no-merges'])).trim(),
-    'release commit list',
-  );
-}
-
-/** Generates English notes from commit subjects since the previous release. */
+/** Generate English notes since the last published stable tag, or from all history. */
 export async function generateEnglishChangelog({
   tag,
+  previousTag = '',
   apiKey,
   fetchImpl = fetch,
   runGit: git = runGit,
 }) {
   required(tag, 'RELEASE_TAG');
   required(apiKey, 'DEEPSEEK_API_KEY');
+  parseTag(tag);
+  if (previousTag) {
+    parseTag(previousTag);
+  }
 
-  const commits = await releaseCommits(tag, git);
+  // Failed and unpublished tags must not truncate the first release's history.
+  const range = previousTag ? `${previousTag}..${tag}` : tag;
+  const commits = required(
+    (await git(['log', range, '--pretty=format:%s', '--no-merges'])).trim(),
+    'release commit list',
+  );
   const prompt = `Based on the following git commit messages, generate a concise and user-friendly changelog in markdown format. Group changes by category (e.g., Features, Bug Fixes, Improvements). Only include meaningful changes, skip trivial commits. Use clear, non-technical language where possible. Output ONLY the changelog content without any preamble.
 
 Commit messages:
@@ -110,11 +100,18 @@ ${english}`;
 /** Runs the changelog and translation calls in order and composes their result. */
 export async function generateBilingualNotes({
   tag,
+  previousTag = '',
   apiKey,
   fetchImpl = fetch,
   runGit: git = runGit,
 }) {
-  const english = await generateEnglishChangelog({ tag, apiKey, fetchImpl, runGit: git });
+  const english = await generateEnglishChangelog({
+    tag,
+    previousTag,
+    apiKey,
+    fetchImpl,
+    runGit: git,
+  });
   const chinese = await translateToChinese(english, apiKey, fetchImpl);
   return composeNotes(english, chinese);
 }
@@ -129,6 +126,7 @@ async function main(argv) {
   const tag = required(process.env.RELEASE_TAG, 'RELEASE_TAG');
   const notes = await generateBilingualNotes({
     tag,
+    previousTag: process.env.PREVIOUS_RELEASE_TAG,
     apiKey: process.env.DEEPSEEK_API_KEY,
   });
   await writeFile(out, notes);

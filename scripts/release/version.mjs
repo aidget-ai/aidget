@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const TAG_PATTERN = /^v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/;
+const TAG_PATTERN = /^v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-beta\.(?:0|[1-9]\d*))?)$/;
 
 function parsePackageVersion(toml) {
   let inPackage = false;
@@ -53,24 +53,39 @@ function replacePackageVersion(toml, version) {
   return lines.join('\n');
 }
 
+/** Parse a stable or numbered beta release tag into its manifest version. */
 export function parseTag(tag) {
   const match = String(tag).match(TAG_PATTERN);
   if (!match) {
-    throw new Error(`release tag must be vMAJOR.MINOR.PATCH, got ${JSON.stringify(tag)}`);
+    throw new Error(
+      `release tag must be vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.N, got ${JSON.stringify(tag)}`,
+    );
   }
   return match[1];
 }
 
+/** Whether a valid release tag is a beta that must not become Latest. */
+export function isPrereleaseTag(tag) {
+  return parseTag(tag).includes('-beta.');
+}
+
+/** Compare supported release tags using SemVer precedence. */
 export function isNewerTag(candidate, current) {
-  const next = parseTag(candidate).split('.').map(Number);
-  const latest = parseTag(current).split('.').map(Number);
+  const [nextCore, nextBeta] = parseTag(candidate).split('-beta.');
+  const [latestCore, latestBeta] = parseTag(current).split('-beta.');
+  const next = nextCore.split('.').map(BigInt);
+  const latest = latestCore.split('.').map(BigInt);
 
   for (let i = 0; i < 3; i += 1) {
     if (next[i] !== latest[i]) {
       return next[i] > latest[i];
     }
   }
-  return false;
+  // A stable release sorts after every beta of the same core version.
+  if (nextBeta === undefined) {
+    return latestBeta !== undefined;
+  }
+  return latestBeta !== undefined && BigInt(nextBeta) > BigInt(latestBeta);
 }
 
 async function readJson(path, label) {
@@ -129,6 +144,9 @@ async function main(argv) {
     case 'parse':
       console.log(parseTag(first));
       return;
+    case 'prerelease':
+      console.log(isPrereleaseTag(first));
+      return;
     case 'set':
       console.log(await setVersion(root, first));
       return;
@@ -141,7 +159,7 @@ async function main(argv) {
       }
       return;
     default:
-      throw new Error('usage: version.mjs <parse|set|check|newer> <tag> [previous-tag]');
+      throw new Error('usage: version.mjs <parse|prerelease|set|check|newer> <tag> [previous-tag]');
   }
 }
 

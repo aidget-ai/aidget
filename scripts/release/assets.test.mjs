@@ -28,38 +28,41 @@ describe('release assets', () => {
     expect(() => assetName('notes.txt', '0.2.0')).toThrow();
   });
 
-  test('collectAssets copies the expected set and writes SHA256SUMS', async () => {
-    const root = await tempRoot('aidget-assets-');
-    const input = join(root, 'input');
-    const output = join(root, 'output');
-    await mkdir(join(input, 'dmg'), { recursive: true });
-    await mkdir(join(input, 'appzip'), { recursive: true });
-    await mkdir(join(input, 'nsis'), { recursive: true });
-    await mkdir(join(input, 'appimage'), { recursive: true });
-    await mkdir(join(input, 'deb'), { recursive: true });
-    await mkdir(join(input, 'rpm'), { recursive: true });
+  test.each(['0.2.0', '0.1.1-beta.0'])(
+    'collectAssets copies all %s packages and writes SHA256SUMS',
+    async (version) => {
+      const root = await tempRoot('aidget-assets-');
+      const input = join(root, 'input');
+      const output = join(root, 'output');
+      await mkdir(join(input, 'dmg'), { recursive: true });
+      await mkdir(join(input, 'appzip'), { recursive: true });
+      await mkdir(join(input, 'nsis'), { recursive: true });
+      await mkdir(join(input, 'appimage'), { recursive: true });
+      await mkdir(join(input, 'deb'), { recursive: true });
+      await mkdir(join(input, 'rpm'), { recursive: true });
 
-    const sources = [
-      ['dmg/aidget_0.2.0_aarch64.dmg', 'arm'],
-      ['dmg/aidget_0.2.0_x64.dmg', 'intel'],
-      ['appzip/aidget_0.2.0_aarch64.app.zip', 'arm-app'],
-      ['appzip/aidget_0.2.0_x64.app.zip', 'intel-app'],
-      ['nsis/aidget_0.2.0_x64-setup.exe', 'windows'],
-      ['appimage/aidget_0.2.0_amd64.AppImage', 'appimage'],
-      ['deb/aidget_0.2.0_amd64.deb', 'deb'],
-      ['rpm/aidget-0.2.0-1.x86_64.rpm', 'rpm'],
-    ];
-    for (const [path, body] of sources) {
-      await writeFile(join(input, path), body);
-    }
+      const sources = [
+        ['dmg/aidget_0.2.0_aarch64.dmg', 'arm'],
+        ['dmg/aidget_0.2.0_x64.dmg', 'intel'],
+        ['appzip/aidget_0.2.0_aarch64.app.zip', 'arm-app'],
+        ['appzip/aidget_0.2.0_x64.app.zip', 'intel-app'],
+        ['nsis/aidget_0.2.0_x64-setup.exe', 'windows'],
+        ['appimage/aidget_0.2.0_amd64.AppImage', 'appimage'],
+        ['deb/aidget_0.2.0_amd64.deb', 'deb'],
+        ['rpm/aidget-0.2.0-1.x86_64.rpm', 'rpm'],
+      ];
+      for (const [path, body] of sources) {
+        await writeFile(join(input, path.replaceAll('0.2.0', version)), body);
+      }
 
-    const names = await collectAssets({ input, output, version: '0.2.0' });
-    expect(names).toHaveLength(8);
-    expect(await readFile(join(output, 'aidget_0.2.0_amd64.rpm'), 'utf8')).toBe('rpm');
-    expect(await readFile(join(output, 'SHA256SUMS'), 'utf8')).toMatch(
-      /aidget_0\.2\.0_x64-setup\.exe/,
-    );
-  });
+      const names = await collectAssets({ input, output, version });
+      expect(names).toHaveLength(8);
+      expect(await readFile(join(output, `aidget_${version}_amd64.rpm`), 'utf8')).toBe('rpm');
+      expect(await readFile(join(output, 'SHA256SUMS'), 'utf8')).toContain(
+        `aidget_${version}_x64-setup.exe`,
+      );
+    },
+  );
 
   test('collectAssets fails when a required platform is missing', async () => {
     const root = await tempRoot('aidget-assets-missing-');

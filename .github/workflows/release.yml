@@ -17,6 +17,8 @@ jobs:
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+      previous_tag: ${{ steps.release.outputs.previous_tag }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -36,6 +38,7 @@ jobs:
           VERSION=$(node scripts/release/version.mjs parse "$TAG")
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$(node scripts/release/version.mjs prerelease "$TAG")" >> "$GITHUB_OUTPUT"
 
           test "$(git cat-file -t "refs/tags/$TAG")" = tag
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
@@ -45,10 +48,17 @@ jobs:
             test "$(jq -r .isDraft release.json)" = true
           fi
 
-          LATEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
-          if [ -n "$LATEST" ]; then
+          if LATEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name); then
             node scripts/release/version.mjs newer "$TAG" "$LATEST"
+          else
+            # GitHub returns 404 when no stable release has been published yet.
+            if [ "$(jq -r '.status // empty' <<< "$LATEST")" != 404 ]; then
+              echo "Failed to determine latest release: $LATEST" >&2
+              exit 1
+            fi
+            LATEST=''
           fi
+          echo "previous_tag=$LATEST" >> "$GITHUB_OUTPUT"
 
   verify:
     needs: metadata
@@ -205,6 +215,7 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          PREVIOUS_RELEASE_TAG: ${{ needs.metadata.outputs.previous_tag }}
         run: node scripts/release/notes.mjs --out release-notes.md
 
       - name: Stage release
@@ -226,8 +237,14 @@ jobs:
 
           test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 9
 
-      - name: Publish latest
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.metadata.outputs.tag }}
-        run: gh release edit "$TAG" --draft=false --latest
+          PRERELEASE: ${{ needs.metadata.outputs.prerelease }}
+        run: |
+          if [ "$PRERELEASE" = true ]; then
+            gh release edit "$TAG" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$TAG" --draft=false --prerelease=false --latest
+          fi

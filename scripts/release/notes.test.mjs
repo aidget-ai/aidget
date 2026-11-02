@@ -38,11 +38,9 @@ describe('release notes', () => {
     let request;
     const changelog = await generateEnglishChangelog({
       tag: 'v0.3.0',
+      previousTag: 'v0.2.0',
       apiKey: 'key',
       runGit: async (args) => {
-        if (args[0] === 'tag') {
-          return 'v0.3.0\nv0.2.0\nv0.1.0\n';
-        }
         expect(args).toEqual(['log', 'v0.2.0..v0.3.0', '--pretty=format:%s', '--no-merges']);
         return 'feat: add release notes\nfix: keep the title';
       },
@@ -64,26 +62,20 @@ describe('release notes', () => {
     ]);
   });
 
-  test('generateEnglishChangelog starts from the root commit for the first release', async () => {
+  test('generateEnglishChangelog includes all history when no release has been published', async () => {
     let logArgs;
     await generateEnglishChangelog({
-      tag: 'v0.1.0',
+      tag: 'v0.1.1-beta.0',
       apiKey: 'key',
       runGit: async (args) => {
-        if (args[0] === 'tag') {
-          return 'v0.1.0\n';
-        }
-        if (args[0] === 'rev-list') {
-          expect(args).toEqual(['rev-list', '--max-parents=0', 'v0.1.0']);
-          return 'root-sha\n';
-        }
+        expect(args[0]).toBe('log');
         logArgs = args;
         return 'feat: first release';
       },
       fetchImpl: async () => deepSeekReply('### Features\n\n- First release'),
     });
 
-    expect(logArgs).toEqual(['log', 'root-sha..v0.1.0', '--pretty=format:%s', '--no-merges']);
+    expect(logArgs).toEqual(['log', 'v0.1.1-beta.0', '--pretty=format:%s', '--no-merges']);
   });
 
   test('generateEnglishChangelog fails without commits or a changelog', async () => {
@@ -91,7 +83,7 @@ describe('release notes', () => {
       generateEnglishChangelog({
         tag: 'v0.2.0',
         apiKey: 'key',
-        runGit: async (args) => (args[0] === 'tag' ? 'v0.2.0\nv0.1.0\n' : '  \n'),
+        runGit: async () => '  \n',
         fetchImpl: () => {
           throw new Error('fetch should not run');
         },
@@ -102,7 +94,7 @@ describe('release notes', () => {
       generateEnglishChangelog({
         tag: 'v0.2.0',
         apiKey: 'key',
-        runGit: async (args) => (args[0] === 'tag' ? 'v0.2.0\nv0.1.0\n' : 'fix: it'),
+        runGit: async () => 'fix: it',
         fetchImpl: async () => deepSeekReply(''),
       }),
     ).rejects.toThrow(/DeepSeek changelog is required/);
@@ -113,7 +105,7 @@ describe('release notes', () => {
       generateEnglishChangelog({
         tag: 'v0.2.0',
         apiKey: 'key',
-        runGit: async (args) => (args[0] === 'tag' ? 'v0.2.0\nv0.1.0\n' : 'fix: it'),
+        runGit: async () => 'fix: it',
         fetchImpl: async () => new Response('busy', { status: 503 }),
       }),
     ).rejects.toThrow(/DeepSeek changelog returned HTTP 503/);
@@ -159,8 +151,12 @@ describe('release notes', () => {
     const requests = [];
     const notes = await generateBilingualNotes({
       tag: 'v0.2.0',
+      previousTag: 'v0.1.0',
       apiKey: 'key',
-      runGit: async (args) => (args[0] === 'tag' ? 'v0.2.0\nv0.1.0\n' : 'feat: add it'),
+      runGit: async (args) => {
+        expect(args).toEqual(['log', 'v0.1.0..v0.2.0', '--pretty=format:%s', '--no-merges']);
+        return 'feat: add it';
+      },
       fetchImpl: async (_url, init) => {
         const prompt = JSON.parse(init.body).messages[0].content;
         requests.push(prompt);
