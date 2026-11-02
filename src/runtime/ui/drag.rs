@@ -4,10 +4,9 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, WebviewWindow};
 
 use crate::common::error::{Error, Result};
-use crate::widgets::model::WidgetFrame;
 use crate::widgets::store::Store;
 
-use super::geometry::{named_display, same_monitor};
+use super::geometry::{moved_frame, named_display, same_monitor};
 use super::main_window::emit_main;
 use super::state::UiState;
 
@@ -29,7 +28,6 @@ pub fn persist_position(app: &AppHandle, window: &WebviewWindow) -> Result<()> {
         return Ok(());
     };
     let position = window.outer_position()?;
-    let size = window.inner_size()?;
     // Let the toolkit pick the screen that holds most of the window. Computing
     // an overlap ourselves would duplicate `NSWindow.screen` and can disagree
     // while the window is straddling the seam.
@@ -51,18 +49,16 @@ pub fn persist_position(app: &AppHandle, window: &WebviewWindow) -> Result<()> {
     } else {
         named_display(app, &monitor)
     };
-    let frame = WidgetFrame {
+    let frame = moved_frame(
+        &current,
         display,
-        x: (position.x - area.position.x) as f64 / scale,
-        y: (position.y - area.position.y) as f64 / scale,
-        w: size.width as f64 / scale,
-        h: size.height as f64 / scale,
-    };
+        (position.x, position.y),
+        (area.position.x, area.position.y),
+        scale,
+    );
 
     if (frame.x - current.x).abs() < 1.0
         && (frame.y - current.y).abs() < 1.0
-        && (frame.w - current.w).abs() < 1.0
-        && (frame.h - current.h).abs() < 1.0
         && frame.display == current.display
     {
         return Ok(());

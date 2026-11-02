@@ -56,4 +56,37 @@ describe('Agent controls', () => {
         .style.getPropertyValue('--agent-icon-url'),
     ).not.toBe('');
   });
+
+  it('labels both install buttons for the specific Agent', () => {
+    const installInfo: IntegrationInfo = {
+      ...info,
+      agents: [
+        {
+          id: 'gemini',
+          name: 'Gemini CLI',
+          icon: 'gemini',
+          mcp: { path: '/tmp/gemini/mcp.json', installed: false },
+          skills: { path: '/tmp/gemini/skills', installed: false },
+        },
+      ],
+    };
+    const labels = {
+      all: 'All',
+      empty: 'No Agents',
+      installFor: '为 {agent} 安装：',
+      removeFrom: 'Remove from',
+    };
+
+    for (const [resource, path] of [
+      ['mcp', '/tmp/gemini/mcp.json'],
+      ['skills', '/tmp/gemini/skills'],
+    ] as const) {
+      const root = document.createElement('div');
+      renderAgentStrip(root, installInfo, resource, labels, false, vi.fn());
+
+      expect(root.querySelector('[data-agent="gemini"]')?.getAttribute('title')).toBe(
+        `为 Gemini CLI 安装：${path}`,
+      );
+    }
+  });
 });

@@ -16,5 +16,10 @@ publishedAt: string, package: PackageManifest, config: WidgetConfig, files: Arra
 export type Registry = { widgets: Array<RegistryEntry>, };
 export type CommunityEntry = { entry: RegistryEntry, installed: boolean, idConflict: boolean, supported: boolean, };
 export type CommunitySnapshot = { commit: string, widgets: Array<CommunityEntry>, };
+export type CachedCommunitySnapshot = { snapshot: CommunitySnapshot,
+/**
+ * Unix seconds of the last successful main-branch check.
+ */
+checkedAt: number, };
 export type DownloadCount = { package: string, weekly: number | null, error: string | null, };
 export type LocalWidgetDetails = { config: WidgetConfig, description: string | null, preview: string | null, };

@@ -16,6 +16,7 @@ fn discovery_types_allow_unknown_fields() {
     value["future"] = json!(true);
     value["widgets"][0]["future"] = json!({"enabled":true});
     value["widgets"][0]["files"][0]["future"] = json!(42);
+    value["widgets"][0]["config"]["future"] = json!(true);
     let parsed: Registry = serde_json::from_value(value).unwrap();
     assert_eq!(
         serde_json::to_value(parsed).unwrap()["widgets"][0]["publishedAt"],
@@ -47,7 +48,7 @@ fn published_at_is_required_and_must_be_utc_rfc3339() {
 #[test]
 fn discovery_still_validates_known_fields_and_widget_configuration() {
     let mut value = registry();
-    value["widgets"][0]["config"]["future"] = json!(true);
+    value["widgets"][0]["config"]["permissions"] = json!(["unsupported"]);
     assert!(serde_json::from_value::<Registry>(value).is_err());
     let mut value = registry();
     value["widgets"][0]["files"][0]["size"] = json!("large");

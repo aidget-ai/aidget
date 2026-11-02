@@ -19,7 +19,6 @@ import {
   X,
 } from 'lucide';
 
-import brandIcon from '../../../icons/icon.png';
 import { renderAgentStrip } from './agent-controls';
 import { createCommunityPage } from './community';
 import {
@@ -52,6 +51,7 @@ import { createSegmentedControl } from './segmented-control';
 import { createSortIcon } from './sort-icon';
 import { createMainStartup } from './startup';
 import { renderMiddleEllipsis } from './text-ellipsis';
+import { createToastRegion } from './toast';
 import { createUpdatePage } from './update';
 import { createLocalWidgetDetails } from './widget-details';
 
@@ -102,7 +102,6 @@ const trayLinuxNote = document.querySelector<HTMLElement>('[data-tray-linux-note
 const recycleFilter = document.querySelector<HTMLButtonElement>('[data-recycle-filter]')!;
 const widgetSortButton = document.querySelector<HTMLButtonElement>('[data-widget-sort]')!;
 const widgetSortLabel = widgetSortButton.querySelector<HTMLElement>('[data-sort-label]')!;
-const brandMark = document.querySelector<HTMLImageElement>('[data-brand-icon]')!;
 const version = document.querySelector<HTMLElement>('[data-version]')!;
 const githubButton = document.querySelector<HTMLButtonElement>('[data-github]')!;
 const autoStart = document.querySelector<HTMLButtonElement>('[data-autostart]')!;
@@ -179,11 +178,13 @@ let purgeTimer: number | undefined;
 let previewRefreshActive = false;
 let widgetsReadyForPreviews = false;
 
+const toast = createToastRegion(document.body);
 const community = createCommunityPage(
   document.querySelector<HTMLElement>('[data-view="community-widgets"]')!,
   () => locale,
   refreshState,
   () => Boolean(state?.githubToken),
+  (message) => toast.show(message),
 );
 
 const previewRefresh = createPreviewRefresh(
@@ -272,6 +273,8 @@ function renderPage() {
   }
   if (page === 'community-widgets') {
     community.show();
+  } else {
+    community.hide();
   }
   renderIntegration();
   renderDescription();
@@ -579,7 +582,7 @@ async function saveGithubToken() {
     }
     state = { ...state, githubToken: summary };
     githubTokenInput.value = '';
-    community.invalidate();
+    community.invalidate(true);
   } catch (error) {
     githubTokenFailure = `${t('githubTokenSaveFailed')}: ${String(error)}`;
   } finally {
@@ -602,7 +605,7 @@ async function removeGithubToken() {
     await invoke<null>('set_github_token', { token: null });
     state = { ...state, githubToken: null };
     githubTokenInput.value = '';
-    community.invalidate();
+    community.invalidate(true);
   } catch (error) {
     githubTokenFailure = `${t('githubTokenRemoveFailed')}: ${String(error)}`;
   } finally {
@@ -983,7 +986,7 @@ function render(next: MainState) {
     community.invalidate();
   }
   if (state?.githubToken?.masked !== next.githubToken?.masked) {
-    community.invalidate();
+    community.invalidate(true);
   }
   state = next;
   if (next.broken.length) {
@@ -1231,7 +1234,6 @@ document.querySelectorAll<HTMLButtonElement>('[data-window-action]').forEach((bu
 
 autoStart.setAttribute('aria-checked', 'false');
 
-brandMark.src = brandIcon;
 createIcons({
   icons: { Info, LayoutGrid, Minus, ServerCog, Settings, Square, UsersRound, X },
 });

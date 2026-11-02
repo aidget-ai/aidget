@@ -16,16 +16,27 @@ overrides it. On Windows the default is `C:\Users\<user>\.aidget`.
 ├── board.json
 ├── settings.toml
 ├── run/
-├── screenshots/
-├── storage/
+├── state/
+│   ├── agent-backups/
+│   ├── community/
+│   ├── previews/<id>.png
+│   ├── screenshots/
+│   ├── storage/<id>.json
+│   └── widgets.json
+├── skills/aidget/SKILL.md
 ├── trash/
 └── widgets/<id>/
+    ├── package.json          # optional npm package metadata
     ├── config.json
     ├── index.html
     ├── style.css
     ├── agents.md
     └── assets/
 ```
+
+Some entries are created only when needed. Archived widgets stay in
+`widgets/<id>/` with their archive state in `state/widgets.json`; `trash/`
+holds deleted widgets retained for restoration.
 
 Do not write these files directly. CLI and MCP writes maintain revisions and
 notify the resident UI. A direct file write can race the watcher.
@@ -66,6 +77,8 @@ notify the resident UI. A direct file write can race the watcher.
   wildcard hosts are invalid.
 - Installed copies additionally contain host-managed `revision` and
   `updatedAt`; do not create those fields yourself.
+- Unused fields are ignored. Missing required fields and invalid current values
+  are rejected; unused fields never grant permissions or supply missing values.
 
 ## Regions
 
@@ -268,6 +281,10 @@ capture.
 | Native glass   | AppKit material     | Not available       | Not available                                                       |
 | Network bridge | Native HTTPS client | Native HTTPS client | Native HTTPS client                                                 |
 | Placement      | User-controlled     | User-controlled     | Under Wayland, the compositor controls stacking and exact placement |
+
+New widgets are placed into the first free slot inside a display's work area,
+preferring the primary display and falling back to another display when needed.
+Later moves are user-owned and take precedence over automatic placement.
 
 On Windows, widget content is served from `http://aidget.localhost`. Native
 `fetch` still requires an HTTPS API origin.

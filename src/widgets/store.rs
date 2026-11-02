@@ -140,12 +140,6 @@ impl Store {
         settings::load(&self.root)
     }
 
-    /// Keep only the newest screenshot PNGs allowed by `settings.toml`.
-    pub fn prune_screenshots(&self) -> Result<()> {
-        let settings = self.load_settings()?;
-        retention::prune_screenshots(&self.screenshots_dir(), settings.screenshot_retention)
-    }
-
     /// Keep only the newest trashed widget directories allowed by `settings.toml`.
     pub fn prune_trash(&self) -> Result<()> {
         let settings = self.load_settings()?;
@@ -288,6 +282,30 @@ impl Store {
         })
     }
 
+    /// Surface invalid trash configurations without blocking healthy trash entries.
+    pub fn trash_errors(&self) -> Result<Vec<BrokenWidget>> {
+        let mut errors = vec![];
+        for entry in fs::read_dir(self.trash_dir())? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let result = fs::read(entry.path().join(CONFIG_FILE))
+                .map_err(Error::from)
+                .and_then(|bytes| {
+                    let meta: WidgetMeta = serde_json::from_slice(&bytes)?;
+                    meta.config.validate()
+                });
+            if let Err(error) = result {
+                errors.push(BrokenWidget {
+                    id: format!("trash/{}", entry.file_name().to_string_lossy()),
+                    error: error.to_string(),
+                });
+            }
+        }
+        Ok(errors)
+    }
+
     pub fn deleted_widgets(&self) -> Result<Vec<DeletedWidgetSummary>> {
         let dir = self.trash_dir();
         if !dir.exists() {
@@ -308,7 +326,7 @@ impl Store {
             if !config.is_file() {
                 continue;
             }
-            // Startup migration reports broken trash entries independently.
+            // Invalid entries are reported separately by trash_errors.
             let Ok(meta) = serde_json::from_slice::<WidgetMeta>(&fs::read(config)?) else {
                 continue;
             };
@@ -647,6 +665,38 @@ impl Store {
             return Err(Error::RevisionConflict {
                 current: Box::new(crate::common::error::ConflictCurrent::Board(board)),
             });
+        }
+        board.widgets.insert(id.to_string(), frame);
+        board.revision += 1;
+        self.save_board(&board)?;
+        Ok(board)
+    }
+
+    /// Set the initial frame only while the target frame still matches the
+    /// snapshot used to calculate it. A concurrent user move is preserved.
+    pub fn set_initial_frame(
+        &self,
+        id: &str,
+        expected: Option<&WidgetFrame>,
+        frame: WidgetFrame,
+    ) -> Result<Board> {
+        let _lock = self.write_lock()?;
+        validate_id(id)?;
+        self.load_meta(id)?;
+        let mut board = self.load_board()?;
+        let unchanged = match (board.widgets.get(id), expected) {
+            (Some(current), Some(expected)) => {
+                current.display == expected.display
+                    && current.x == expected.x
+                    && current.y == expected.y
+                    && current.w == expected.w
+                    && current.h == expected.h
+            }
+            (None, None) => true,
+            _ => false,
+        };
+        if !unchanged {
+            return Ok(board);
         }
         board.widgets.insert(id.to_string(), frame);
         board.revision += 1;

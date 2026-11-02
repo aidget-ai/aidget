@@ -5,6 +5,37 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use tempfile::TempDir;
 
+#[test]
+fn bounded_reads_preserve_exact_limits_and_report_missing_or_oversized_files() {
+    use aidget::common::utils::read_bounded;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("cache");
+    assert_eq!(
+        read_bounded(&path, 4).unwrap_err().kind(),
+        std::io::ErrorKind::NotFound
+    );
+    fs::write(&path, b"1234").unwrap();
+    assert_eq!(read_bounded(&path, 4).unwrap(), b"1234");
+    assert_eq!(
+        read_bounded(&path, 3).unwrap_err().kind(),
+        std::io::ErrorKind::InvalidData
+    );
+}
+
+#[test]
+fn path_mutex_serializes_independent_clients_of_the_same_path() {
+    use aidget::common::utils::path_mutex;
+    let dir = TempDir::new().unwrap();
+    let first = path_mutex(&dir.path().join("image")).unwrap();
+    let second = path_mutex(&dir.path().join("image")).unwrap();
+    let independent = path_mutex(&dir.path().join("other")).unwrap();
+    let _guard = first.lock().unwrap();
+    assert!(second.try_lock().is_err());
+    assert!(independent.try_lock().is_ok());
+    drop(_guard);
+    assert!(second.try_lock().is_ok());
+}
+
 /// Set a file or directory's modified time through a handle with the access
 /// rights Windows requires for timestamp updates.
 pub(crate) fn set_modified(path: &Path, timestamp: u64) {

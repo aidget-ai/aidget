@@ -142,10 +142,7 @@ pub fn builtin_agents() -> Vec<AgentSpec> {
         "deepseek-color",
         &["dsh"],
         vec![dsh_dir.clone()],
-        Some(mcp(
-            dsh_dir.join("profiles/web/cordis.patch.yml"),
-            McpFormat::Dsh,
-        )),
+        Some(mcp(dsh_mcp_path(&dsh_dir), McpFormat::Dsh)),
         Some(dsh_dir.join("skills")),
     ));
 
@@ -509,6 +506,15 @@ pub fn builtin_agents() -> Vec<AgentSpec> {
     ));
 
     agents
+}
+
+/// Resolve the DeepSeek Harness home-level `cordis.patch.yml`.
+///
+/// DSH applies this layer after the selected profile, so one file is loaded by
+/// every profile, including the desktop profile. `home` is `DSH_HOME` when set
+/// and `~/.dsh` otherwise.
+pub fn dsh_mcp_path(home: &Path) -> PathBuf {
+    home.join("cordis.patch.yml")
 }
 
 fn agent(

@@ -1,39 +1,27 @@
 //! Native distribution operations. The UI never supplies trusted manifests or URLs.
-use base64::{engine::general_purpose::STANDARD, Engine};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
-use std::{
-    collections::{BTreeSet, VecDeque},
-    fs,
-    sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
-};
 
 use super::{
     archive,
     http::{FetchError, Http},
     model::*,
-    snapshot::{self, validate_commit},
+    snapshot,
 };
 use crate::{
-    common::{
-        error::{Error, Result},
-        utils::atomic_write,
-    },
+    common::error::{Error, Result},
     settings::{self, GithubToken},
     widgets::{
         model::WidgetMeta,
-        package::{validate_package_name, validate_path, WidgetPlatform},
+        package::{validate_package_name, WidgetPlatform},
         store::Store,
     },
 };
+mod downloads;
+mod media;
+mod registry;
+
 const MAX_JSON: usize = 8 * 1024 * 1024;
-static REGISTRIES: Mutex<VecDeque<CachedRegistry>> = Mutex::new(VecDeque::new());
-struct CachedRegistry {
-    endpoint: String,
-    commit: String,
-    registry: Arc<Registry>,
-}
 /// Trusted endpoint roots. Production always uses the official public sources.
 #[derive(Clone)]
 pub struct Endpoints {
@@ -65,11 +53,6 @@ struct Branch {
 #[derive(Deserialize)]
 struct Commit {
     sha: String,
-}
-#[derive(Serialize, Deserialize)]
-struct CountCache {
-    at: u64,
-    count: u64,
 }
 impl Community {
     /// Official community and npm endpoints.
@@ -110,7 +93,7 @@ impl Community {
     fn branch(&self, branch: &str) -> Result<String> {
         let value: Branch =
             self.github_json(&format!("{}/branches/{branch}", self.endpoints.github))?;
-        validate_commit(&value.commit.sha)?;
+        snapshot::validate_commit(&value.commit.sha)?;
         Ok(value.commit.sha)
     }
     fn github_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
@@ -136,48 +119,6 @@ impl Community {
         self.branch("main")?;
         Ok(())
     }
-    fn registry(&self, commit: &str) -> Result<Arc<Registry>> {
-        validate_commit(commit)?;
-        // Share immutable snapshots across command clients and serialize cache misses
-        // so concurrent image requests only download and validate each snapshot once.
-        let mut cache = REGISTRIES
-            .lock()
-            .map_err(|e| Error::Other(format!("registry cache lock poisoned: {e}")))?;
-        if let Some(cached) = cache
-            .iter()
-            .find(|item| item.endpoint == self.endpoints.raw && item.commit == commit)
-        {
-            return Ok(Arc::clone(&cached.registry));
-        }
-        let registry: Registry =
-            self.json(&format!("{}/{commit}/registry.json", self.endpoints.raw))?;
-        let mut ids = BTreeSet::new();
-        let mut names = BTreeSet::new();
-        for entry in &registry.widgets {
-            entry.package.validate()?;
-            entry.config.validate()?;
-            if !entry.package.is_community()
-                || entry.config.screenshots.is_empty()
-                || !ids.insert(&entry.config.id)
-                || !names.insert(&entry.package.name)
-            {
-                return Err(Error::InvalidParams(
-                    "invalid or duplicate reviewed community entry".into(),
-                ));
-            }
-            snapshot::validate_files(&entry.files)?;
-        }
-        let registry = Arc::new(registry);
-        if cache.len() == 16 {
-            cache.pop_front();
-        }
-        cache.push_back(CachedRegistry {
-            endpoint: self.endpoints.raw.clone(),
-            commit: commit.into(),
-            registry: Arc::clone(&registry),
-        });
-        Ok(registry)
-    }
     fn npm_metadata(&self, name: &str, version: &str) -> std::result::Result<Value, FetchError> {
         let bytes = self.http.get(
             &format!("{}/{}/{version}", self.endpoints.npm, encoded_package(name)),
@@ -191,77 +132,40 @@ impl Community {
     }
     /// Discover a reviewed main snapshot that is immediately installable from Git.
     pub fn list(&self, store: &Store) -> Result<CommunitySnapshot> {
+        let requested_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| Error::Other(e.to_string()))?
+            .as_nanos();
         let commit = self.branch("main")?;
-        let registry = self.registry(&commit)?;
+        let registry = self.registry(store, &commit)?;
+        let snapshot = Self::snapshot(store, commit.clone(), &registry)?;
+        self.remember_latest(store, &commit, requested_at, &registry)?;
+        Ok(snapshot)
+    }
+    fn snapshot(store: &Store, commit: String, registry: &Registry) -> Result<CommunitySnapshot> {
         let ids = store.widget_ids()?;
-        let mut names = BTreeSet::new();
+        let mut names = std::collections::BTreeSet::new();
         for valid in store.list()?.widgets {
             if let Some(package) = store.load_package(&valid.id)? {
                 names.insert(package.name);
             }
         }
-        let mut widgets = vec![];
-        for entry in registry.widgets.iter().cloned() {
-            widgets.push(CommunityEntry {
+        let widgets = registry
+            .widgets
+            .iter()
+            .cloned()
+            .map(|entry| CommunityEntry {
                 installed: names.contains(&entry.package.name),
                 id_conflict: ids.contains(&entry.config.id),
                 supported: entry.config.platforms.contains(&WidgetPlatform::current()),
                 entry,
-            });
-        }
+            })
+            .collect();
         Ok(CommunitySnapshot { commit, widgets })
-    }
-    /// Serve reviewed raster media without rendering package HTML in the main window.
-    pub fn media(&self, commit: &str, name: &str, path: &str) -> Result<String> {
-        let registry = self.registry(commit)?;
-        let entry = registry
-            .widgets
-            .iter()
-            .find(|e| e.package.name == name)
-            .ok_or_else(|| Error::NotFound(name.into()))?;
-        if !entry
-            .config
-            .logo
-            .iter()
-            .chain(entry.config.screenshots.iter())
-            .any(|p| p == path)
-        {
-            return Err(Error::InvalidParams("not a declared media file".into()));
-        }
-        validate_path(path)?;
-        let file = entry.files.iter().find(|f| f.path == path).ok_or_else(|| {
-            Error::InvalidParams("media missing from registry digest list".into())
-        })?;
-        let bytes = self
-            .http
-            .get(
-                &snapshot::file_url(&self.endpoints.raw, commit, &entry.config.id, path)?,
-                5 * 1024 * 1024,
-            )
-            .map_err(FetchError::into_error)?;
-        if bytes.len() as u64 != file.size
-            || crate::common::utils::sha256_hex(&bytes) != file.sha256
-        {
-            return Err(Error::InvalidParams(
-                "media differs from reviewed snapshot".into(),
-            ));
-        }
-        let mime = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-            "image/png"
-        } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
-            "image/jpeg"
-        } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
-            "image/webp"
-        } else {
-            return Err(Error::InvalidParams(
-                "media must be PNG, JPEG or WebP".into(),
-            ));
-        };
-        Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
     }
     /// Install the snapshot selected by the main window; never trust caller metadata.
     pub fn install_reviewed(&self, store: &Store, commit: &str, name: &str) -> Result<WidgetMeta> {
-        let registry = self.registry(commit)?;
+        let registry = self.registry(store, commit)?;
         let entry = registry
             .widgets
             .iter()
@@ -274,7 +178,7 @@ impl Community {
         let (name, version) = split_spec(spec)?;
         if name.starts_with("@aidget-community/") {
             let main = self.branch("main")?;
-            let registry = self.registry(&main)?;
+            let registry = self.registry(store, &main)?;
             if let Some(entry) = registry.widgets.iter().find(|e| {
                 e.package.name == name && version.as_ref().is_none_or(|v| v == &e.package.version)
             }) {
@@ -386,66 +290,6 @@ impl Community {
         }
         let id = config.id.clone();
         crate::widgets::install::commit(store, staged.path(), config, &package, &id)
-    }
-    /// Fetch optional npm weekly counts, cached for one hour; failures never become zero.
-    pub fn downloads(&self, store: &Store, names: &[String]) -> Result<Vec<DownloadCount>> {
-        if names.len() > 100 {
-            return Err(Error::InvalidParams(
-                "too many download-count requests".into(),
-            ));
-        }
-        let cache_dir = store.state_dir().join("community/downloads");
-        fs::create_dir_all(&cache_dir)?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| Error::Other(e.to_string()))?
-            .as_secs();
-        let mut counts = vec![];
-        for name in names {
-            validate_package_name(name)?;
-            let path = cache_dir.join(format!(
-                "{}.json",
-                crate::common::utils::sha256_hex(name.as_bytes())
-            ));
-            let cached = match fs::read(&path) {
-                Ok(bytes) => Some(serde_json::from_slice::<CountCache>(&bytes)?),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-                Err(e) => return Err(e.into()),
-            };
-            if let Some(cache) = cached.filter(|c| now.saturating_sub(c.at) < 3600) {
-                counts.push(DownloadCount {
-                    package: name.clone(),
-                    weekly: Some(cache.count),
-                    error: None,
-                });
-                continue;
-            }
-            let result = self.json::<Value>(&format!(
-                "{}/downloads/point/last-week/{}",
-                self.endpoints.downloads,
-                encoded_package(name)
-            ));
-            match result.and_then(|v| {
-                v["downloads"]
-                    .as_u64()
-                    .ok_or_else(|| Error::InvalidParams("invalid npm downloads response".into()))
-            }) {
-                Ok(count) => {
-                    atomic_write(&path, &serde_json::to_vec(&CountCache { at: now, count })?)?;
-                    counts.push(DownloadCount {
-                        package: name.clone(),
-                        weekly: Some(count),
-                        error: None,
-                    });
-                }
-                Err(error) => counts.push(DownloadCount {
-                    package: name.clone(),
-                    weekly: None,
-                    error: Some(error.to_string()),
-                }),
-            }
-        }
-        Ok(counts)
     }
 }
 /// Encode an entire npm name, retaining the scope/name distinction in one path segment.

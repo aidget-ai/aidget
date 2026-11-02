@@ -5,7 +5,7 @@
 
 # aidget
 
-**Hand desktop creativity over to your AI agent**
+**Manage desktop widgets — the AI Agent way.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/aidget-ai/aidget/check.yml?branch=main&label=CI&style=flat-square)](https://github.com/aidget-ai/aidget/actions/workflows/check.yml)
 [![Latest release](https://img.shields.io/github/v/release/aidget-ai/aidget?style=flat-square)](https://github.com/aidget-ai/aidget/releases/latest)
@@ -17,7 +17,18 @@
 [Quick start](#quick-start) | [Cross-platform support](#cross-platform-support) | [Development](#development) | [Data directory](#data-directory) | [Permission controls](#permission-controls)<br>
 English | [简体中文](README.zh-CN.md)
 
-<img src="./screenshot.png" alt="aidget screenshot" width="360" />
+<table width="100%">
+  <tr>
+    <td width="50%" align="center">
+      <img src="./screenshot.webp" alt="aidget main window" width="100%" />
+      <sub>Main window</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./screenshot-desktop.webp" alt="aidget widgets on the desktop" width="100%" />
+      <sub>Widgets on the desktop</sub>
+    </td>
+  </tr>
+</table>
 
 </div>
 
@@ -165,13 +176,14 @@ aidget community install @aidget-community/<id> --json
 
 ## Data directory
 
-The default data root is `~/.aidget`.
+The default data root is `~/.aidget` (`C:\Users\<user>\.aidget` on Windows).
 
 ```text
 ~/.aidget
 ├── aidget                    # stable CLI entry (aidget.cmd on Windows)
 ├── board.json                # widget positions and sizes
 ├── settings.toml             # application settings
+├── run/                      # runtime IPC endpoint (Unix socket on macOS/Linux)
 ├── widgets/
 │   └── <id>/
 │       ├── package.json      # optional npm package metadata (for publishing to npm)
@@ -181,14 +193,21 @@ The default data root is `~/.aidget`.
 │       ├── agents.md         # guidance for future agents
 │       └── assets/           # images, fonts, and other local assets
 ├── state/
+│   ├── agent-backups/        # agent configuration backups made during integration
+│   ├── community/
+│   │   ├── downloads/        # npm download statistics cache
+│   │   ├── media/            # community logos and screenshots cache
+│   │   └── registries/       # community catalog cache
+│   ├── previews/
+│   │   └── <id>.png          # cached widget previews for the main window
 │   ├── screenshots/          # widget screenshots
 │   ├── storage/
 │   │   └── <id>.json         # persistent widget data
-│   └── widgets.json          # widget state
+│   └── widgets.json          # widget archive state
 ├── skills/
 │   └── aidget/
 │       └── SKILL.md          # the Skill distributed to agents
-└── trash/                    # archived widgets
+└── trash/                    # deleted widgets retained for restoration
 ```
 
 ## Permission controls

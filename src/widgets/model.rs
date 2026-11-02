@@ -60,9 +60,10 @@ pub enum WidgetSurface {
     Glass,
 }
 
-/// Installed portable config plus host-managed revision information.
+/// Installed portable config plus host-managed revision information. Unused
+/// fields are ignored without granting permissions or changing current fields.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct WidgetMeta {
     #[serde(flatten)]
     pub config: super::package::WidgetConfig,

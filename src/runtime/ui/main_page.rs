@@ -119,7 +119,7 @@ pub fn main_widgets(store: &Store) -> Result<MainState> {
         deleted_widgets: store.deleted_widgets()?,
         broken: {
             let mut broken = store.list()?.broken;
-            broken.extend(crate::widgets::migration::trash_errors(store)?);
+            broken.extend(store.trash_errors()?);
             broken
         },
         // The crate version, as `docs/development.md` promises: the same number the
@@ -196,11 +196,7 @@ pub fn set_widget_enabled(app: &AppHandle, id: &str, enabled: bool) -> Result<()
         main_window_state::set_archived(store.root(), &store.widget_ids()?, id, false)?;
         let board = store.load_board()?;
         if !board.widgets.contains_key(id) {
-            store.move_widget(
-                id,
-                board.revision,
-                WidgetFrame::default_for(board.widgets.len()),
-            )?;
+            super::geometry::place_new_widget(app, &store, id)?;
         }
     } else {
         main_window_state::set_archived(store.root(), &store.widget_ids()?, id, true)?;

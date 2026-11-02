@@ -1,8 +1,40 @@
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    sync::{Arc, Mutex, Weak},
+};
 
 use crate::common::error::{Error, Result};
+
+/// Read a cache file without allocating beyond its documented size limit.
+pub fn read_bounded(path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)?
+        .take(limit as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > limit {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "cached file exceeds size limit",
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Share a process-local mutex for operations on the same path, releasing unused entries.
+pub fn path_mutex(path: &Path) -> Result<Arc<Mutex<()>>> {
+    static LOCKS: Mutex<BTreeMap<PathBuf, Weak<Mutex<()>>>> = Mutex::new(BTreeMap::new());
+    let mut locks = LOCKS
+        .lock()
+        .map_err(|e| Error::Other(format!("path lock poisoned: {e}")))?;
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    let lock = locks.get(path).and_then(Weak::upgrade).unwrap_or_default();
+    locks.insert(path.into(), Arc::downgrade(&lock));
+    Ok(lock)
+}
 
 /// Replace a file through a synced temporary sibling and `rename()`.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {

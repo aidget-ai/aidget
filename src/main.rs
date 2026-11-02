@@ -102,15 +102,7 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
     let listener = endpoint
         .bind()
         .map_err(|error| Error::Other(format!("cannot bind socket: {error}")))?;
-    let migration_errors = aidget::widgets::migration::run(&store)?;
-    for broken in &migration_errors {
-        eprintln!("widget migration {}: {}", broken.id, broken.error);
-    }
-    if migration_errors.is_empty() {
-        store.prune_retained()?;
-    } else {
-        store.prune_screenshots()?;
-    }
+    store.prune_retained()?;
     aidget::widgets::template::bootstrap_welcome(&store)?;
     let store_for_ui = store.clone();
     let store_for_protocol = Arc::new(store.clone());
@@ -235,7 +227,7 @@ fn tray(app: &tauri::AppHandle) -> Result<()> {
         ],
     )?;
 
-    let icon = tray_icon();
+    let icon = tray_icon()?;
     let builder = TrayIconBuilder::with_id("aidget")
         .icon(icon)
         .menu(&menu)
@@ -281,22 +273,7 @@ fn tray(app: &tauri::AppHandle) -> Result<()> {
     Ok(())
 }
 
-fn tray_icon() -> tauri::image::Image<'static> {
-    const SIZE: u32 = 32;
-    let mut rgba = vec![0u8; (SIZE * SIZE * 4) as usize];
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let in_widget = (5..=26).contains(&x) && (7..=24).contains(&y);
-            let in_chrome = in_widget && (7..=12).contains(&y);
-            let border = in_widget && (x <= 6 || x >= 25 || y <= 8 || y >= 23);
-            if in_chrome || border {
-                let index = ((y * SIZE + x) * 4) as usize;
-                rgba[index] = 0;
-                rgba[index + 1] = 0;
-                rgba[index + 2] = 0;
-                rgba[index + 3] = 255;
-            }
-        }
-    }
-    tauri::image::Image::new_owned(rgba, SIZE, SIZE)
+fn tray_icon() -> Result<tauri::image::Image<'static>> {
+    tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template.png"))
+        .map_err(|error| Error::Other(format!("cannot decode tray icon: {error}")))
 }

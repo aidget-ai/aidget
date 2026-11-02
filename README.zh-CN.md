@@ -5,7 +5,7 @@
 
 # aidget
 
-**把桌面创意交给 AI Agent**
+**把桌面交给 AI Agent**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/aidget-ai/aidget/check.yml?branch=main&label=CI&style=flat-square)](https://github.com/aidget-ai/aidget/actions/workflows/check.yml)
 [![最新版本](https://img.shields.io/github/v/release/aidget-ai/aidget?style=flat-square)](https://github.com/aidget-ai/aidget/releases/latest)
@@ -17,7 +17,18 @@
 [快速开始](#快速开始) | [跨平台支持](#跨平台支持) | [开发](#开发) | [数据目录](#数据目录) | [权限管控](#权限管控)<br>
 [English](README.md) | 简体中文
 
-<img src="./screenshot.png" alt="aidget 截图" width="360" />
+<table width="100%">
+  <tr>
+    <td width="50%" align="center">
+      <img src="./screenshot.webp" alt="aidget 主界面" width="100%" />
+      <sub>主界面</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./screenshot-desktop.webp" alt="aidget 桌面组件效果" width="100%" />
+      <sub>桌面组件效果</sub>
+    </td>
+  </tr>
+</table>
 
 </div>
 
@@ -165,13 +176,14 @@ aidget community install @aidget-community/<id> --json
 
 ## 数据目录
 
-默认数据根目录是 `~/.aidget`。
+默认数据根目录是 `~/.aidget`（Windows 为 `C:\Users\<user>\.aidget`）。
 
 ```text
 ~/.aidget
 ├── aidget                    # CLI 入口（Windows 为 aidget.cmd）
 ├── board.json                # 卡片位置和尺寸
 ├── settings.toml             # 主程序配置
+├── run/                      # 运行时 IPC 端点（macOS/Linux 使用 Unix socket）
 ├── widgets/
 │   └── <id>/
 │       ├── package.json      # 可选 npm 包信息（用于发布到 NPM）
@@ -181,14 +193,21 @@ aidget community install @aidget-community/<id> --json
 │       ├── agents.md         # 面向 Agent 的说明文档
 │       └── assets/           # 图片、字体等本地资源
 ├── state/
+│   ├── agent-backups/        # 集成 Agent 时生成的配置备份
+│   ├── community/
+│   │   ├── downloads/        # npm 下载统计缓存
+│   │   ├── media/            # 社区组件图标和截图缓存
+│   │   └── registries/       # 社区目录缓存
+│   ├── previews/
+│   │   └── <id>.png          # 主窗口使用的小组件预览缓存
 │   ├── screenshots/          # 小组件截图
 │   ├── storage/
 │   │   └── <id>.json         # 小组件持久化数据
-│   └── widgets.json          # 小组件状态
+│   └── widgets.json          # 小组件归档状态
 ├── skills/
 │   └── aidget/
 │       └── SKILL.md          # 分发给 Agent 的 Skill
-└── trash/                    # 已归档的小组件
+└── trash/                    # 已删除、可恢复的小组件
 ```
 
 ## 权限管控

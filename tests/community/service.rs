@@ -1,3 +1,7 @@
+mod downloads;
+mod media;
+mod registry;
+
 use aidget::{
     common::utils::sha256_hex,
     community::{
@@ -222,7 +226,7 @@ fn github_api_requests_use_the_configured_bearer_token_only() {
     );
     server
         .client_with_token(Some(&token))
-        .downloads(&store, &[NAME.to_string()])
+        .downloads(&store, &[NAME.to_string()], |_| Ok(()))
         .unwrap();
 
     let authorizations = server.authorizations.lock().unwrap().clone();
@@ -395,30 +399,6 @@ fn main_snapshot_is_available_without_waiting_for_npm_publication() {
         .iter()
         .any(|p| p.contains("dist") || p.contains(&encoded_package(NAME))));
 }
-#[test]
-fn npm_zero_is_cached_and_unavailable_counts_are_not_zero() {
-    let server = Server::new();
-    let (_root, store) = store();
-    let name = "@aidget-community/note".to_owned();
-    let path = format!("/downloads/point/last-week/{}", encoded_package(&name));
-    server.put(&path, 200, json!({"downloads":0}));
-    let client = server.client();
-    assert_eq!(
-        client
-            .downloads(&store, std::slice::from_ref(&name))
-            .unwrap()[0]
-            .weekly,
-        Some(0)
-    );
-    server.bytes(&path, 503, vec![]);
-    assert_eq!(
-        client.downloads(&store, &[name]).unwrap()[0].weekly,
-        Some(0)
-    );
-    let unavailable = client.downloads(&store, &["other".into()]).unwrap();
-    assert_eq!(unavailable[0].weekly, None);
-    assert!(unavailable[0].error.is_some());
-}
 
 #[test]
 fn third_party_installation_resolves_latest_once_without_official_snapshot() {
@@ -557,11 +537,35 @@ fn media_paths_are_encoded_without_changing_the_selected_commit() {
         200,
         b"\x89PNG\r\n\x1a\nfixture".to_vec(),
     );
+    let (_root, store) = store();
     assert!(server
         .client()
-        .media(MAIN, NAME, path)
+        .media(&store, MAIN, NAME, path, false)
         .unwrap()
         .starts_with("data:image/png;base64,"));
+}
+
+#[test]
+fn repeated_media_requests_download_the_reviewed_bytes_only_once() {
+    let server = Server::new();
+    fixture(&server);
+    let (_root, store) = store();
+    for _ in 0..2 {
+        server
+            .client()
+            .media(&store, MAIN, NAME, "assets/screen.png", false)
+            .unwrap();
+    }
+    assert_eq!(
+        server
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|path| path.ends_with("/assets/screen.png"))
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -578,7 +582,7 @@ fn media_commands_share_the_list_snapshot_across_clients_and_concurrent_requests
                 scope.spawn(|| {
                     assert!(server
                         .client()
-                        .media(MAIN, NAME, "assets/screen.png")
+                        .media(&store, MAIN, NAME, "assets/screen.png", false)
                         .unwrap()
                         .starts_with("data:image/png;base64,"));
                 });
@@ -589,6 +593,13 @@ fn media_commands_share_the_list_snapshot_across_clients_and_concurrent_requests
             requests
                 .iter()
                 .filter(|path| **path == format!("/{MAIN}/registry.json"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|path| path.ends_with("/assets/screen.png"))
                 .count(),
             1
         );
@@ -640,6 +651,6 @@ fn registry_cache_keeps_endpoints_and_commits_separate_and_rejects_invalid_conte
     assert!(server.client().list(&store).unwrap().widgets.is_empty());
     assert!(server
         .client()
-        .media(MAIN, NAME, "assets/screen.png")
+        .media(&store, MAIN, NAME, "assets/screen.png", false)
         .is_ok());
 }

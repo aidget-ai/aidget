@@ -10,6 +10,39 @@ fn script_execution_is_a_permission_not_a_separate_switch() {
 }
 
 #[test]
+fn metadata_ignores_unused_fields_without_granting_script_permission() {
+    use aidget::widgets::model::{WidgetMeta, WidgetPermission};
+    use serde_json::json;
+
+    for unused in [json!(true), json!(false), json!({"obsolete": true})] {
+        let mut value = serde_json::to_value(WidgetMeta::new("note", "Note")).unwrap();
+        value["allowScripts"] = unused;
+        value["version"] = json!("0.1.0");
+        value["source"] = json!({"kind": "builtin", "id": "welcome"});
+        let meta: WidgetMeta = serde_json::from_value(value.clone()).unwrap();
+        assert!(!meta.grants(WidgetPermission::Script));
+        assert_eq!(meta.revision, 1);
+
+        value["permissions"] = json!(["script"]);
+        let meta: WidgetMeta = serde_json::from_value(value).unwrap();
+        assert!(meta.grants(WidgetPermission::Script));
+    }
+}
+
+#[test]
+fn unused_fields_do_not_supply_missing_or_invalid_current_fields() {
+    use aidget::widgets::model::WidgetMeta;
+    use serde_json::json;
+
+    let mut value = serde_json::to_value(WidgetMeta::new("note", "Note")).unwrap();
+    value["allowScripts"] = json!(true);
+    value.as_object_mut().unwrap().remove("permissions");
+    assert!(serde_json::from_value::<WidgetMeta>(value.clone()).is_err());
+    value["permissions"] = json!(["unsupported"]);
+    assert!(serde_json::from_value::<WidgetMeta>(value).is_err());
+}
+
+#[test]
 fn drag_mode_is_explicit_and_rejects_unknown_values() {
     use aidget::widgets::model::WidgetMeta;
     use serde_json::json;
