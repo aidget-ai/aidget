@@ -9,6 +9,13 @@ use std::{
 
 use crate::common::error::{Error, Result};
 
+/// Compare MCP executable commands, accepting safely simplified Windows verbatim paths.
+/// Only the verbatim prefix may differ; this does not resolve paths on disk.
+pub fn executable_paths_match(configured: &str, current: &str) -> bool {
+    dunce::simplified(Path::new(configured)).as_os_str()
+        == dunce::simplified(Path::new(current)).as_os_str()
+}
+
 /// Read a cache file without allocating beyond its documented size limit.
 pub fn read_bounded(path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
