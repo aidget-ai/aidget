@@ -1,4 +1,4 @@
-use aidget::runtime::update::check_and_maybe_download;
+use aidget::runtime::update::{check_and_maybe_download, exit_action, DeferredQuit, ExitAction};
 use aidget::update::{UpdateService, UpdateState};
 use std::io::{Read, Write};
 use std::sync::{
@@ -275,4 +275,22 @@ fn replacement_network_and_preparation_failure_never_fall_back_to_old_staging() 
             crate::update::cleanup(service.staged().unwrap());
         }
     }
+}
+
+#[test]
+fn quit_is_deferred_only_while_replacement_is_running() {
+    assert_eq!(exit_action(None, false), ExitAction::Prevent);
+    assert_eq!(exit_action(None, true), ExitAction::Prevent);
+    assert_eq!(exit_action(Some(0), true), ExitAction::Defer(0));
+    assert_eq!(exit_action(Some(7), false), ExitAction::Allow);
+}
+
+#[test]
+fn deferred_quit_keeps_the_first_code_and_is_taken_once() {
+    let quit = DeferredQuit::default();
+    quit.defer(0);
+    quit.defer(9);
+    assert_eq!(quit.take(), Some(0));
+    assert_eq!(quit.take(), None);
+    assert!(!quit.skip_install_on_quit());
 }

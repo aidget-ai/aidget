@@ -242,6 +242,18 @@ Recorded so they are not rediscovered.
   window says how long to wait.
 - **An async Tauri command cannot hold `State`.** It requires `'static`, so the
   service is cloned (it shares one `Arc` snapshot) before the `await`.
+- **`UpdateState::Installing` is not the quit gate.** A completed replacement keeps
+  that state until the process exits, so deferring on it would also block the
+  relaunch exit. A separate `installing` flag covers only the file-swap window: a
+  quit that arrives there is recorded in `ExitRequested` and released once the
+  install settles; a failed install exits without retrying the same replacement.
+- **macOS Cmd+Q never sends `ExitRequested`.** The native quit reaches `Exit`
+  directly, so `install_on_quit` waits for an active replacement to settle instead
+  of treating the busy service as `NotStarted` and letting the process die between
+  the two bundle renames. If the quit races the claim, the `NotStarted` arm
+  re-checks the gate and waits too. The wait ends when replacement finishes; a
+  native quit can still win the race against the relaunch script, leaving the new
+  version installed for the next launch without an automatic restart.
 
 ## Verification
 

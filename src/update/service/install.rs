@@ -61,10 +61,12 @@ impl UpdateService {
 
     fn begin_install(&self) -> std::result::Result<PathBuf, InstallOutcome> {
         // Claim before reading staging: a refused request cannot mutate its owner.
-        if !self.begin() {
+        // The gate closes inside the same claim, before any snapshot is announced.
+        if !self.begin_replacement() {
             return Err(InstallOutcome::NotStarted(self.snapshot()));
         }
         let Some(staged) = self.staged() else {
+            self.clear_installing();
             let failed = self.fail(&Error::Other("no downloaded update to install".into()));
             self.set(failed.clone());
             return Err(InstallOutcome::Failed(failed));
@@ -81,13 +83,21 @@ impl UpdateService {
         &self,
         outcome: std::result::Result<Result<Installation>, tokio::task::JoinError>,
     ) -> InstallOutcome {
+        // The replacement is over before this request reports Completed; a later
+        // quit may proceed and start the new version.
+        self.clear_installing();
         match outcome {
             Ok(Ok(installation)) => {
-                if let Some(dir) = self
-                    .staged()
-                    .and_then(|path| path.parent().map(Path::to_path_buf))
-                {
-                    let _ = std::fs::remove_dir_all(dir);
+                // The NSIS installer still runs from the staged directory when
+                // this returns; deleting it would fail on Windows and leave the
+                // directory behind anyway. Let the OS temp cleanup own it.
+                if !cfg!(target_os = "windows") {
+                    if let Some(dir) = self
+                        .staged()
+                        .and_then(|path| path.parent().map(Path::to_path_buf))
+                    {
+                        let _ = std::fs::remove_dir_all(dir);
+                    }
                 }
                 *self.staged.lock().unwrap() = None;
                 // Keep ownership until exit, including a restart scheduling failure.

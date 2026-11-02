@@ -1,5 +1,8 @@
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Condvar, Mutex,
+};
 
 use crate::common::error::{Error, Result};
 use crate::update::github::{self, Release};
@@ -28,6 +31,14 @@ pub struct UpdateService {
     release: Arc<Mutex<Option<Release>>>,
     /// A verified download waiting to install.
     staged: Arc<Mutex<Option<Staged>>>,
+    /// Whether a replacement is actually running.
+    ///
+    /// Separate from `snapshot.state`: `Installing` deliberately survives a
+    /// completed replacement until the process exits, so using it as the quit
+    /// gate would also defer the exit that starts the new version.
+    installing: Arc<AtomicBool>,
+    /// Wakes an un-deferable quit (macOS Cmd+Q) once replacement has finished.
+    install_settled: Arc<(Mutex<()>, Condvar)>,
     /// Where a published snapshot is reported.
     ///
     /// The launch check runs without anyone asking, so the window has to be told
@@ -72,6 +83,8 @@ impl UpdateService {
             build: Arc::from(build),
             release: Arc::new(Mutex::new(None)),
             staged: Arc::new(Mutex::new(None)),
+            installing: Arc::new(AtomicBool::new(false)),
+            install_settled: Arc::new((Mutex::new(()), Condvar::new())),
             announce: Arc::new(Mutex::new(None)),
         }
     }
@@ -82,6 +95,30 @@ impl UpdateService {
         // published snapshot has to agree with it.
         snapshot.staged = self.staged().is_some();
         snapshot
+    }
+
+    /// Whether file replacement is running, excluding the settled state that
+    /// still owns the service until exit.
+    pub fn is_installing(&self) -> bool {
+        self.installing.load(Ordering::SeqCst)
+    }
+
+    /// Wait until the active replacement has finished.
+    ///
+    /// Used by the `Exit` handler on macOS, where the native quit gesture never
+    /// emits `ExitRequested` and therefore cannot be deferred.
+    pub fn wait_for_install(&self) {
+        let mut guard = self.install_settled.0.lock().unwrap();
+        while self.installing.load(Ordering::SeqCst) {
+            guard = self.install_settled.1.wait(guard).unwrap();
+        }
+    }
+
+    /// Open the quit gate and wake anyone waiting on the replacement.
+    fn clear_installing(&self) {
+        let _guard = self.install_settled.0.lock().unwrap();
+        self.installing.store(false, Ordering::SeqCst);
+        self.install_settled.1.notify_all();
     }
 
     /// The verified download waiting to install, if there is one.
@@ -281,10 +318,26 @@ impl UpdateService {
 
     /// Mark a step as under way, unless one already is.
     fn begin(&self) -> bool {
+        self.begin_with(false)
+    }
+
+    /// Claim an install and close the quit gate in the same critical section.
+    ///
+    /// Setting the flag after [`Self::begin`] returns would leave a window where
+    /// the state is already in flight but the exit policy still sees no
+    /// replacement; `notify()` runs before the caller can store the flag.
+    fn begin_replacement(&self) -> bool {
+        self.begin_with(true)
+    }
+
+    fn begin_with(&self, installing: bool) -> bool {
         {
             let mut snapshot = self.snapshot.lock().unwrap();
             if snapshot.state.in_flight() {
                 return false;
+            }
+            if installing {
+                self.installing.store(true, Ordering::SeqCst);
             }
             snapshot.state = UpdateState::Checking;
             snapshot.error = None;

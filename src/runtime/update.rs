@@ -4,6 +4,10 @@
 //! Policy that mixes the release feed with the user's settings lives here;
 //! `crate::update::UpdateService` knows only about releases and downloads.
 
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 use std::time::Duration;
 
 use tauri::{Emitter, Manager};
@@ -16,6 +20,93 @@ use crate::update::{UpdateService, UpdateSnapshot};
 
 /// The event a published snapshot is announced on.
 pub const UPDATE_EVENT: &str = "aidget://update";
+
+/// What a normal exit request should do while an update is being replaced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitAction {
+    /// A window close, not a quit: the tray app must stay resident.
+    Prevent,
+    /// A quit arrived while the bundle or package was being replaced.
+    Defer(i32),
+    /// Nothing is replacing the app, so the quit may proceed.
+    Allow,
+}
+
+/// Decide whether a quit can proceed, based purely on the request and the
+/// replacement gate.
+pub fn exit_action(code: Option<i32>, installing: bool) -> ExitAction {
+    match code {
+        None => ExitAction::Prevent,
+        Some(code) if installing => ExitAction::Defer(code),
+        Some(_) => ExitAction::Allow,
+    }
+}
+
+/// A quit requested while the installer was running.
+///
+/// The first request wins, and the recorded code survives until the install
+/// settles. Once released, `install_on_quit` must not retry the installation
+/// that just finished: that would make quitting wait for a second attempt.
+#[derive(Default)]
+pub struct DeferredQuit {
+    code: Mutex<Option<i32>>,
+    skip_install_on_quit: AtomicBool,
+}
+
+impl DeferredQuit {
+    /// Remember a quit code unless one is already waiting.
+    pub fn defer(&self, code: i32) {
+        let mut waiting = self.code.lock().unwrap();
+        if waiting.is_none() {
+            *waiting = Some(code);
+        }
+    }
+
+    /// Take the pending quit exactly once.
+    pub fn take(&self) -> Option<i32> {
+        self.code.lock().unwrap().take()
+    }
+
+    /// Consume the instruction to skip the quit-time install retry.
+    pub fn skip_install_on_quit(&self) -> bool {
+        self.skip_install_on_quit.swap(false, Ordering::SeqCst)
+    }
+}
+
+/// Whether the service is replacing files right now.
+pub fn install_in_progress<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> bool {
+    handle
+        .try_state::<UpdateService>()
+        .is_some_and(|service| service.is_installing())
+}
+
+/// Record a quit that has to wait for the active installation.
+pub fn defer_quit<R: tauri::Runtime>(handle: &tauri::AppHandle<R>, code: i32) {
+    if let Some(state) = handle.try_state::<DeferredQuit>() {
+        state.defer(code);
+    }
+    // The install may have settled between the caller's check and this record.
+    // Release the quit here instead of waiting for an owner that already left.
+    if !install_in_progress(handle) {
+        finish_deferred_quit(handle);
+    }
+}
+
+/// Release a deferred quit after the installation has settled.
+///
+/// Successful installs leave through `relaunch_and_exit`, so this is reached by
+/// a failed install or a failed relaunch. The skip flag prevents the normal
+/// `Exit` handler from trying the same installation again.
+pub fn finish_deferred_quit<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) {
+    let Some(state) = handle.try_state::<DeferredQuit>() else {
+        return;
+    };
+    let Some(code) = state.take() else {
+        return;
+    };
+    state.skip_install_on_quit.store(true, Ordering::SeqCst);
+    handle.exit(code);
+}
 
 /// Forward every snapshot the service publishes to the main window.
 pub fn announce(app: &tauri::AppHandle, service: &UpdateService) {
@@ -83,9 +174,25 @@ pub async fn check_and_maybe_download(
 /// Goes through the service so a failure lands on the same `Error` state and the
 /// same message as an install the user asked for.
 pub fn install_on_quit(handle: &tauri::AppHandle) {
+    if handle
+        .try_state::<DeferredQuit>()
+        .is_some_and(|state| state.skip_install_on_quit())
+    {
+        println!("aidget: the deferred installation already settled; quitting");
+        return;
+    }
     let Some(service) = handle.try_state::<UpdateService>() else {
         return;
     };
+    // macOS native quit (Cmd+Q) reaches `Exit` without `ExitRequested`, so it
+    // cannot be deferred there. Keep the event loop alive until the replacement
+    // has finished; exiting mid-swap is what this guard exists to prevent.
+    if service.is_installing() {
+        println!("aidget: waiting for the active update installation before quitting");
+        service.wait_for_install();
+        println!("aidget: the active update installation settled; quitting");
+        return;
+    }
     if service.staged().is_none() {
         return;
     }
@@ -103,7 +210,16 @@ pub fn install_on_quit(handle: &tauri::AppHandle) {
             println!("aidget: installed the downloaded update on quit")
         }
         InstallOutcome::NotStarted(_) => {
-            println!("aidget: skipped install on quit: another update operation is active")
+            // A native quit can race the install's claim: the first check saw
+            // no replacement, then the claim won. The gate is set inside that
+            // claim, so after a lost claim it is safe to read and wait on.
+            if service.is_installing() {
+                println!("aidget: waiting for the active update installation before quitting");
+                service.wait_for_install();
+                println!("aidget: the active update installation settled; quitting");
+            } else {
+                println!("aidget: skipped install on quit: another update operation is active");
+            }
         }
         InstallOutcome::Failed(snapshot) => eprintln!(
             "aidget: cannot install on quit: {}",
@@ -192,11 +308,19 @@ pub(crate) async fn update_install(
 ) -> std::result::Result<UpdateSnapshot, String> {
     ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
     let service = app.state::<UpdateService>().inner().clone();
-    let snapshot = service.install().await;
-    complete_install(snapshot, |installation| {
+    let outcome = service.install().await;
+    let completed = matches!(&outcome, InstallOutcome::Completed(..));
+    let failed = matches!(&outcome, InstallOutcome::Failed(_));
+    let result = complete_install(outcome, |installation| {
         relaunch_and_exit(&app, installation)
-    })
-    .map_err(|error| error.to_string())
+    });
+    if failed || (completed && result.is_err()) {
+        // The installer has stopped, so a quit that arrived while it ran can
+        // now finish. `NotStarted` is deliberately absent: another request
+        // still owns the replacement and will release the quit itself.
+        finish_deferred_quit(&app);
+    }
+    result.map_err(|error| error.to_string())
 }
 
 /// Authorize process exit only for the request that completed installation.
