@@ -34,6 +34,26 @@ fn settings_are_created_with_retention_and_preference_defaults() {
     assert!(document.contains("language = \"system\""));
     assert!(document.contains("tray_click_action = \"window\""));
     assert!(document.contains("last_page = \"integrations\""));
+    assert!(document.contains("auto_download = true"));
+    assert!(settings.auto_download, "downloading unasked is the default");
+}
+
+#[test]
+fn a_settings_file_without_the_auto_download_key_downloads_unasked() {
+    let (dir, root) = root();
+    // What a file written before the updater existed looks like.
+    fs::write(
+        root.join(SETTINGS_FILE),
+        "screenshot_retention = 30\ntrash_retention = 20\n",
+    )
+    .unwrap();
+
+    assert!(load(&root).unwrap().auto_download);
+    ensure(&root).unwrap();
+    assert!(fs::read_to_string(root.join(SETTINGS_FILE))
+        .unwrap()
+        .contains("auto_download = true"));
+    drop(dir);
 }
 
 #[test]
@@ -85,6 +105,7 @@ tray_click_action = \"window\"\n",
         language: Language::ZhCn,
         tray_click_action: TrayClickAction::Menu,
         last_page: MainPage::About,
+        auto_download: false,
     };
     save_preferences(&root, preferences).unwrap();
 
@@ -97,6 +118,7 @@ tray_click_action = \"window\"\n",
     assert!(document.contains("language = \"zh-CN\""));
     assert!(document.contains("tray_click_action = \"menu\""));
     assert!(document.contains("last_page = \"about\""));
+    assert!(document.contains("auto_download = false"));
     assert_eq!(load(&root).unwrap().preferences(), preferences);
     drop(dir);
 }
@@ -146,6 +168,7 @@ fn settings_writes_use_owner_only_permissions() {
         language: Language::ZhCn,
         tray_click_action: TrayClickAction::Menu,
         last_page: MainPage::About,
+        auto_download: true,
     };
     fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
     save_preferences(&root, preferences).unwrap();

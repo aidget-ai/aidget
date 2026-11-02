@@ -341,6 +341,47 @@
               <span class="setting-label" data-message="version"></span>
               <span class="setting-value" data-version>—</span>
             </div>
+            <div class="settings-row">
+              <span class="setting-label" data-message="updates"></span>
+              <div class="community-actions">
+                <span class="setting-value" data-update-status role="status">—</span>
+                <button
+                  class="secondary-button"
+                  type="button"
+                  data-update-download
+                  data-message="downloadUpdate"
+                  hidden
+                ></button>
+                <button
+                  class="secondary-button"
+                  type="button"
+                  data-update-install
+                  data-message="installUpdate"
+                  hidden
+                ></button>
+                <button
+                  class="secondary-button"
+                  type="button"
+                  data-update-check
+                  data-message="checkNow"
+                ></button>
+              </div>
+            </div>
+            <div class="settings-row update-notes-row" data-update-notes-row hidden>
+              <p class="update-notes" data-update-notes></p>
+            </div>
+            <div class="settings-row">
+              <span class="setting-label" data-message="autoDownload"></span>
+              <button
+                class="switch"
+                type="button"
+                role="switch"
+                aria-checked="false"
+                data-update-auto-download
+              >
+                <span></span>
+              </button>
+            </div>
             <div class="settings-row community-row">
               <span class="setting-label" data-message="community"></span>
               <div class="community-actions">

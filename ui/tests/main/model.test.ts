@@ -75,6 +75,7 @@ describe('main window widgets', () => {
       trayClickAction: 'menu',
       lastPage: 'integrations',
       githubToken: null,
+      autoDownload: true,
     };
     expect(isEmpty(state)).toBe(true);
     expect(isEmpty({ ...state, widgets: [base] })).toBe(false);
@@ -101,6 +102,7 @@ describe('main window widgets', () => {
       trayClickAction: 'menu',
       lastPage: 'integrations',
       githubToken: null,
+      autoDownload: true,
     };
 
     expect(state.deletedWidgets[0].hasPreview).toBe(true);
