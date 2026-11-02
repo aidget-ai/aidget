@@ -999,8 +999,10 @@ function render(next: MainState) {
     faultSource = undefined;
   }
   version.textContent = next.version;
-  autoDownload = next.autoDownload;
-  updatePage.setAutoDownload(autoDownload);
+  if (!preferencesBusy) {
+    autoDownload = next.autoDownload;
+    updatePage.setAutoDownload(autoDownload);
+  }
   void updatePage.refresh();
   empty.hidden = deletedMode ? next.deletedWidgets.length > 0 : visibleWidgets.length > 0;
   grid.hidden = deletedMode || visibleWidgets.length === 0;

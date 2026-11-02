@@ -629,7 +629,7 @@ describe('automatic download preference ownership', () => {
   );
 });
 
-it('keeps a refreshed preference when the pending component callback finishes', async () => {
+it('keeps the pending auto-download value when a stale main event arrives', async () => {
   const initial = state('about');
   initial.autoDownload = false;
   await loadMain(initial);
@@ -643,13 +643,29 @@ it('keeps a refreshed preference when the pending component callback finishes', 
   const toggle = document.querySelector<HTMLButtonElement>('[data-update-auto-download]')!;
   toggle.click();
   await Promise.resolve();
+  expect(toggle.getAttribute('aria-checked')).toBe('true');
+
+  // A main-state event still carrying the old value must not overwrite the
+  // pending save. The page later writes currentPreferences(), so losing it here
+  // would put the old value back on disk.
   const render = mocks.listen.mock.calls.find(([event]) => event === 'aidget://main')![1];
   render({ event: 'aidget://main', id: 1, payload: initial });
-  expect(toggle.getAttribute('aria-checked')).toBe('false');
+  expect(toggle.getAttribute('aria-checked')).toBe('true');
+
   finishSave();
   await vi.waitFor(() => expect(toggle.disabled).toBe(false));
   for (let i = 0; i < 20; i++) {
     await Promise.resolve();
   }
-  expect(toggle.getAttribute('aria-checked')).toBe('false');
+  expect(toggle.getAttribute('aria-checked')).toBe('true');
+
+  pageButton('general').click();
+  await vi.waitFor(() =>
+    expect(mocks.invoke).toHaveBeenLastCalledWith(
+      'set_preferences',
+      expect.objectContaining({
+        preferences: expect.objectContaining({ autoDownload: true }),
+      }),
+    ),
+  );
 });
