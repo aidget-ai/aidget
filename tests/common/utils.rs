@@ -1,9 +1,37 @@
-use aidget::common::utils::atomic_write;
+use aidget::common::utils::{atomic_write, executable_paths_match};
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, UNIX_EPOCH};
 
 use tempfile::TempDir;
+
+#[cfg(windows)]
+#[test]
+fn executable_path_matching_only_simplifies_safe_verbatim_disk_paths() {
+    let plain = r"C:\Program Files\aidget\aidget.exe";
+    let verbatim = r"\\?\C:\Program Files\aidget\aidget.exe";
+    assert!(executable_paths_match(verbatim, plain));
+    assert!(executable_paths_match(plain, verbatim));
+    assert!(!executable_paths_match(r"\\?\C:\Other\aidget.exe", plain));
+    assert!(!executable_paths_match(r"\\?\UNC\server\aidget.exe", plain));
+    assert!(!executable_paths_match(
+        r"\\?\C:\Program Files\aidget\CON\aidget.exe",
+        r"C:\Program Files\aidget\CON\aidget.exe"
+    ));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn executable_path_matching_is_exact_on_non_windows() {
+    assert!(executable_paths_match(
+        "/opt/aidget/bin/aidget",
+        "/opt/aidget/bin/aidget"
+    ));
+    assert!(!executable_paths_match(
+        "/opt/aidget/bin/aidget",
+        "/other/aidget"
+    ));
+}
 
 #[test]
 fn bounded_reads_preserve_exact_limits_and_report_missing_or_oversized_files() {

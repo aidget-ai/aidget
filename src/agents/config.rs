@@ -6,7 +6,7 @@ use toml_edit::{value, DocumentMut, Item, Table};
 
 use crate::agents::jsonc;
 use crate::common::error::{Error, Result};
-use crate::common::utils::atomic_write;
+use crate::common::utils::{atomic_write, executable_paths_match};
 
 /// MCP configuration shape used by one Agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -538,21 +538,38 @@ fn json_entry_matches(format: McpFormat, entry: &Value, command: &str) -> bool {
         return transport
             .and_then(|value| value.get("command"))
             .and_then(Value::as_str)
-            == Some(command)
+            .is_some_and(|path| executable_paths_match(path, command))
             && transport.and_then(|value| value.get("args")) == Some(&json!(["mcp"]));
     }
     if format == McpFormat::OpenCode {
-        return entry.get("command").and_then(Value::as_array)
-            == Some(&vec![json!(command), json!("mcp")]);
+        return entry
+            .get("command")
+            .and_then(Value::as_array)
+            .is_some_and(|parts| {
+                parts.len() == 2
+                    && parts[0]
+                        .as_str()
+                        .is_some_and(|path| executable_paths_match(path, command))
+                    && parts[1].as_str() == Some("mcp")
+            });
     }
-    let command_match = entry.get("command").and_then(Value::as_str) == Some(command)
-        || entry.get("cmd").and_then(Value::as_str) == Some(command);
+    let command_match = entry
+        .get("command")
+        .and_then(Value::as_str)
+        .is_some_and(|path| executable_paths_match(path, command))
+        || entry
+            .get("cmd")
+            .and_then(Value::as_str)
+            .is_some_and(|path| executable_paths_match(path, command));
     let args_match = entry.get("args") == Some(&json!(["mcp"]));
     command_match && args_match
 }
 
 fn toml_entry_matches(entry: &Table, command: &str) -> bool {
-    let command_match = entry.get("command").and_then(Item::as_str) == Some(command);
+    let command_match = entry
+        .get("command")
+        .and_then(Item::as_str)
+        .is_some_and(|path| executable_paths_match(path, command));
     let args_match = entry
         .get("args")
         .and_then(Item::as_array)
@@ -578,7 +595,10 @@ fn yaml_entry(command: &str) -> serde_yaml::Value {
 }
 
 fn yaml_command_matches(entry: &serde_yaml::Value, command: &str) -> bool {
-    entry.get("command").and_then(serde_yaml::Value::as_str) == Some(command)
+    entry
+        .get("command")
+        .and_then(serde_yaml::Value::as_str)
+        .is_some_and(|path| executable_paths_match(path, command))
         && entry
             .get("args")
             .and_then(serde_yaml::Value::as_sequence)

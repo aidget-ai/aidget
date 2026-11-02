@@ -3,6 +3,11 @@ use std::fs;
 use aidget::agents::config::{mcp_state, set_mcp, McpFormat, McpTarget};
 use tempfile::tempdir;
 
+#[cfg(windows)]
+const PLAIN_EXE: &str = r"C:\Program Files\aidget\aidget.exe";
+#[cfg(windows)]
+const LEGACY_EXE: &str = r"\\?\C:\Program Files\aidget\aidget.exe";
+
 #[test]
 fn json_mcp_entry_round_trips_without_touching_neighbors() {
     let temp = tempdir().unwrap();
@@ -42,6 +47,157 @@ fn conflicting_mcp_entry_is_rejected() {
         Some("a different `aidget` entry already exists")
     );
     assert!(set_mcp(&target, "/new", true, temp.path(), "claude").is_err());
+}
+
+#[cfg(windows)]
+#[test]
+fn legacy_verbatim_mcp_entries_are_recognized_and_removable() {
+    for format in [
+        McpFormat::Claude,
+        McpFormat::Goose,
+        McpFormat::OpenCode,
+        McpFormat::Cline,
+        McpFormat::Codex,
+        McpFormat::Hermes,
+        McpFormat::Dsh,
+    ] {
+        let temp = tempdir().unwrap();
+        let target = McpTarget {
+            path: temp.path().join(format!("{format:?}.config")),
+            format,
+        };
+        set_mcp(&target, LEGACY_EXE, true, temp.path(), "agent").unwrap();
+        let original = fs::read(&target.path).unwrap();
+
+        let state = mcp_state(&target, PLAIN_EXE).unwrap();
+        assert!(state.installed, "{format:?}: {state:?}");
+        assert_eq!(state.conflict, None, "{format:?}");
+        set_mcp(&target, PLAIN_EXE, true, temp.path(), "agent").unwrap();
+        assert_eq!(fs::read(&target.path).unwrap(), original, "{format:?}");
+
+        set_mcp(&target, PLAIN_EXE, false, temp.path(), "agent").unwrap();
+        let state = mcp_state(&target, PLAIN_EXE).unwrap();
+        assert!(!state.installed, "{format:?}");
+        assert_eq!(state.conflict, None, "{format:?}");
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn different_executable_is_still_a_conflict_with_verbatim_paths() {
+    for format in [
+        McpFormat::Claude,
+        McpFormat::Goose,
+        McpFormat::OpenCode,
+        McpFormat::Cline,
+        McpFormat::Codex,
+        McpFormat::Hermes,
+        McpFormat::Dsh,
+    ] {
+        let temp = tempdir().unwrap();
+        let target = McpTarget {
+            path: temp.path().join(format!("{format:?}.config")),
+            format,
+        };
+        set_mcp(
+            &target,
+            r"\\?\C:\Other\aidget.exe",
+            true,
+            temp.path(),
+            "agent",
+        )
+        .unwrap();
+        let original = fs::read(&target.path).unwrap();
+
+        let state = mcp_state(&target, PLAIN_EXE).unwrap();
+        assert!(!state.installed, "{format:?}");
+        assert!(state.conflict.is_some(), "{format:?}");
+        assert!(set_mcp(&target, PLAIN_EXE, true, temp.path(), "agent").is_err());
+        assert!(set_mcp(&target, PLAIN_EXE, false, temp.path(), "agent").is_err());
+        assert_eq!(fs::read(&target.path).unwrap(), original, "{format:?}");
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn dsh_legacy_entry_does_not_hide_a_different_executable() {
+    let temp = tempdir().unwrap();
+    let target = McpTarget {
+        path: temp.path().join("cordis.patch.yml"),
+        format: McpFormat::Dsh,
+    };
+    let original = serde_yaml::to_string(&serde_json::json!([
+        {"insert": [{"id": "magpie-mcp-aidget", "config": {"command": LEGACY_EXE, "args": ["mcp"]}}]},
+        {"insert": [{"id": "magpie-mcp-aidget", "config": {"command": r"C:\Other\aidget.exe", "args": ["mcp"]}}]}
+    ]))
+    .unwrap();
+    fs::write(&target.path, &original).unwrap();
+
+    let state = mcp_state(&target, PLAIN_EXE).unwrap();
+    assert!(!state.installed);
+    assert!(state.conflict.is_some());
+    assert!(set_mcp(&target, PLAIN_EXE, true, temp.path(), "dsh").is_err());
+    assert!(set_mcp(&target, PLAIN_EXE, false, temp.path(), "dsh").is_err());
+    assert_eq!(fs::read_to_string(&target.path).unwrap(), original);
+}
+
+#[cfg(windows)]
+#[test]
+fn legacy_verbatim_entries_with_other_args_remain_conflicts() {
+    let configs = [
+        (
+            McpFormat::Claude,
+            serde_json::json!({"mcpServers": {"aidget": {"command": LEGACY_EXE, "args": ["other"]}}})
+                .to_string(),
+        ),
+        (
+            McpFormat::Goose,
+            serde_json::json!({"extensions": {"aidget": {"cmd": LEGACY_EXE, "args": ["other"]}}})
+                .to_string(),
+        ),
+        (
+            McpFormat::OpenCode,
+            serde_json::json!({"mcp": {"aidget": {"command": [LEGACY_EXE, "other"]}}})
+                .to_string(),
+        ),
+        (
+            McpFormat::Cline,
+            serde_json::json!({"mcpServers": {"aidget": {"transport": {"command": LEGACY_EXE, "args": ["other"]}}}})
+                .to_string(),
+        ),
+        (
+            McpFormat::Codex,
+            format!("[mcp_servers.aidget]\ncommand = {LEGACY_EXE:?}\nargs = [\"other\"]\n"),
+        ),
+        (
+            McpFormat::Hermes,
+            serde_yaml::to_string(&serde_json::json!({"mcp_servers": {"aidget": {"command": LEGACY_EXE, "args": ["other"]}}})).unwrap(),
+        ),
+        (
+            McpFormat::Dsh,
+            serde_yaml::to_string(&serde_json::json!([{"insert": [{"id": "magpie-mcp-aidget", "config": {"command": LEGACY_EXE, "args": ["other"]}}]}])).unwrap(),
+        ),
+    ];
+
+    for (format, original) in configs {
+        let temp = tempdir().unwrap();
+        let target = McpTarget {
+            path: temp.path().join(format!("{format:?}.config")),
+            format,
+        };
+        fs::write(&target.path, &original).unwrap();
+
+        let state = mcp_state(&target, PLAIN_EXE).unwrap();
+        assert!(!state.installed, "{format:?}");
+        assert!(state.conflict.is_some(), "{format:?}");
+        assert!(set_mcp(&target, PLAIN_EXE, true, temp.path(), "agent").is_err());
+        assert!(set_mcp(&target, PLAIN_EXE, false, temp.path(), "agent").is_err());
+        assert_eq!(
+            fs::read_to_string(&target.path).unwrap(),
+            original,
+            "{format:?}"
+        );
+    }
 }
 
 #[test]

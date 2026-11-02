@@ -227,7 +227,9 @@ fn state_for(executable: &Path, skill_directory: &Path) -> Result<IntegrationSta
 }
 
 fn current_executable() -> Result<std::path::PathBuf> {
-    Ok(std::env::current_exe()?.canonicalize()?)
+    // The command is pasted into Agent configs and batch files, which cannot
+    // invoke the `\\?\` verbatim paths `Path::canonicalize` emits on Windows.
+    Ok(dunce::canonicalize(std::env::current_exe()?)?)
 }
 
 /// Resolve the aidget Skill directory below one Agent's skills root.
