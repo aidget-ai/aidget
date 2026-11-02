@@ -69,6 +69,14 @@ export function isPrereleaseTag(tag) {
   return parseTag(tag).includes('-beta.');
 }
 
+/** Map SemVer beta tags to RPM Version/Release without changing the binary version. */
+export function rpmBundleConfig(tag) {
+  const [version, beta] = parseTag(tag).split('-beta.');
+  // RPM forbids '-' in Version; a 0-prefixed Release sorts before stable's 1.
+  const release = beta === undefined ? '1' : `0.beta.${beta}.1`;
+  return { version, bundle: { linux: { rpm: { release } } } };
+}
+
 /** Compare supported release tags using SemVer precedence. */
 export function isNewerTag(candidate, current) {
   const [nextCore, nextBeta] = parseTag(candidate).split('-beta.');
@@ -147,6 +155,9 @@ async function main(argv) {
     case 'prerelease':
       console.log(isPrereleaseTag(first));
       return;
+    case 'rpm-config':
+      console.log(JSON.stringify(rpmBundleConfig(first)));
+      return;
     case 'set':
       console.log(await setVersion(root, first));
       return;
@@ -159,7 +170,9 @@ async function main(argv) {
       }
       return;
     default:
-      throw new Error('usage: version.mjs <parse|prerelease|set|check|newer> <tag> [previous-tag]');
+      throw new Error(
+        'usage: version.mjs <parse|prerelease|rpm-config|set|check|newer> <tag> [previous-tag]',
+      );
   }
 }
 

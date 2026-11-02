@@ -108,6 +108,11 @@ The app checks the latest stable GitHub Release and verifies update downloads
 against `SHA256SUMS`. macOS uses the `.app.zip` assets for application replacement.
 Beta releases do not appear in the stable update check.
 
+RPM beta packages use the core version as RPM `Version` and
+`0.beta.N.1` as RPM `Release`, which sorts before the stable release's `1`.
+The packaged executable and the public asset filename retain the full beta
+version.
+
 The first live release is also the first end-to-end test of GitHub-hosted macOS,
 Windows and Linux packaging. Until it runs, treat those packaging paths as
 unverified.

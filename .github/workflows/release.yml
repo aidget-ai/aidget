@@ -76,12 +76,12 @@ jobs:
             os: macos-latest
             target: aarch64-apple-darwin
             arch: aarch64
-            bundles: dmg
+            bundles: app,dmg
           - name: macos-x64
             os: macos-15-intel
             target: x86_64-apple-darwin
             arch: x64
-            bundles: dmg
+            bundles: app,dmg
           - name: windows-x64
             os: windows-2022
             target: ''
@@ -89,7 +89,7 @@ jobs:
           - name: linux-x64
             os: ubuntu-22.04
             target: ''
-            bundles: appimage,deb,rpm
+            bundles: appimage,deb
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -133,9 +133,19 @@ jobs:
         if: matrix.target == ''
         run: pnpm tauri build --ci --bundles "${{ matrix.bundles }}"
 
-      # The updater replaces the `.app` in place, so the release also carries the
-      # bundle as an archive that keeps its wrapper: `--keepParent` is what makes
-      # it one.
+      - name: Bundle and verify RPM
+        if: runner.os == 'Linux'
+        env:
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+        run: |
+          set -euo pipefail
+          RPM_CONFIG=$(node scripts/release/version.mjs rpm-config "$RELEASE_TAG")
+          pnpm tauri bundle --ci --bundles rpm --config "$RPM_CONFIG"
+          EXPECTED=$(jq -r '.version + "-" + .bundle.linux.rpm.release' <<< "$RPM_CONFIG")
+          test "$(rpm -qp --queryformat '%{VERSION}-%{RELEASE}' target/release/bundle/rpm/*.rpm)" = "$EXPECTED"
+          test "$(AIDGET_HOME=$(mktemp -d) target/release/aidget --version)" = "aidget ${RELEASE_TAG#v}"
+
+      # Requesting both app and dmg keeps the .app available for the updater ZIP.
       - name: Zip the macOS app for the updater
         if: runner.os == 'macOS'
         shell: bash
@@ -144,9 +154,6 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          # An empty ARCH silently produced `aidget_0.1.3_.app.zip`, which the
-          # collector then refuses — and the whole release is blocked after four
-          # platforms have been built.
           test -n "$ARCH"
           APP="target/${{ matrix.target }}/release/bundle/macos/aidget.app"
           mkdir -p appzip

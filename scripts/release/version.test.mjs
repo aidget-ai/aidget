@@ -10,6 +10,7 @@ import {
   isPrereleaseTag,
   parseTag,
   readVersions,
+  rpmBundleConfig,
   setVersion,
 } from './version.mjs';
 
@@ -88,6 +89,22 @@ describe('release version', () => {
       tauriConfig: '0.1.1-beta.0',
     });
     await checkVersion(root, 'v0.1.1-beta.0');
+  });
+
+  test('rpmBundleConfig keeps beta ordering in the RPM release field', () => {
+    expect(rpmBundleConfig('v0.1.1-beta.0')).toEqual({
+      version: '0.1.1',
+      bundle: { linux: { rpm: { release: '0.beta.0.1' } } },
+    });
+    expect(rpmBundleConfig('v0.1.1-beta.10')).toEqual({
+      version: '0.1.1',
+      bundle: { linux: { rpm: { release: '0.beta.10.1' } } },
+    });
+    expect(rpmBundleConfig('v0.1.1')).toEqual({
+      version: '0.1.1',
+      bundle: { linux: { rpm: { release: '1' } } },
+    });
+    expect(() => rpmBundleConfig('invalid')).toThrow();
   });
 
   test('setVersion updates all three manifests and leaves dependency versions alone', async () => {
