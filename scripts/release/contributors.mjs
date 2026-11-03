@@ -182,10 +182,7 @@ export function thanks(people, language) {
   if (!people.length) {
     return '';
   }
-  const names = people.map(({ name, github }) => {
-    const escaped = name.replace(/([\\`*_{}[\]<>()#+!|~])/g, '\\$1');
-    return github ? `[${escaped}](https://github.com/${encodeURIComponent(github)})` : escaped;
-  });
+  const names = people.map(({ name }) => name.replace(/([\\`*_{}[\]<>()#+!|~])/g, '\\$1'));
   return language === 'zh'
     ? `### 致谢\n\n感谢 ${names.join('、')}：这次更新包含了你们的反馈或代码。`
     : `### Acknowledgments\n\nThanks to ${names.join(', ')}: this update includes your feedback or code.`;

@@ -28,9 +28,9 @@
 # Release workflow
 
 - Follow [docs/releasing.md](docs/releasing.md).
-- A release is an annotated `vMAJOR.MINOR.PATCH` tag on a reviewed commit that
-  is already on `main`. Create the tag only after the pull request is merged
-  and `main` is green.
+- A release is an annotated `vMAJOR.MINOR.PATCH` or
+  `vMAJOR.MINOR.PATCH-beta.N` tag on a reviewed commit that is already on
+  `main`. Create the tag only after the commit is on `main` and `main` is green.
 - Do not commit release version bumps. The tag is the release version; the
   workflow injects it into the three manifests before checks and packaging.
 - Never move, delete or reuse a failed or published tag. A release that needs a
@@ -38,8 +38,15 @@
   unpublished tag only for a transient runner or service failure.
 - `DEEPSEEK_API_KEY` is required for the bilingual release notes. Never commit
   it or print it in logs.
-- A release is complete only when the workflow has published all six platform
-  assets plus `SHA256SUMS` and marked the release Latest.
+- A release is complete only when the workflow has published the seven platform
+  packages listed in `docs/releasing.md` plus `SHA256SUMS`. Stable releases are
+  marked Latest; beta releases are marked Pre-release and must not become Latest.
 - Do not hand-upload, replace or remove assets on a published release.
-- macOS and Windows artifacts are currently unsigned. Do not claim
-  notarization, code signing or automatic updates; the app has no updater.
+- macOS and Windows artifacts are currently unsigned. Do not claim notarization
+  or code signing.
+- Every build checks updates only from `aidget-ai/aidget`. Do not add a runtime
+  or compile-time product setting that redirects updates to another repository.
+  Test repositories must be injected through `UpdateService::for_build`.
+- The user's GitHub token may be sent only to HTTPS `api.github.com` for Release
+  metadata. Installer and `SHA256SUMS` downloads must remain anonymous from the
+  first `github.com` request through object-storage redirects.

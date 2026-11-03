@@ -11,7 +11,7 @@ fn a_verified_download_leaves_the_file_staged_and_ready() {
     let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
     block_on(service.check(None));
 
-    let snapshot = block_on(service.download(None));
+    let snapshot = block_on(service.download());
 
     assert_eq!(snapshot.state, UpdateState::Ready, "{snapshot:?}");
     let staged = service.staged().expect("a staged download");
@@ -25,7 +25,7 @@ fn a_mismatched_checksum_fails_and_leaves_nothing_staged() {
     let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
     block_on(service.check(None));
 
-    let snapshot = block_on(service.download(None));
+    let snapshot = block_on(service.download());
 
     assert_eq!(snapshot.state, UpdateState::Error);
     let error = snapshot.error.expect("a failure to report");
@@ -53,7 +53,7 @@ fn a_release_without_a_digest_uses_the_sums_file() {
     let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
     block_on(service.check(None));
 
-    let snapshot = block_on(service.download(None));
+    let snapshot = block_on(service.download());
 
     assert_eq!(snapshot.state, UpdateState::Ready);
     if let Some(staged) = service.staged() {
@@ -65,7 +65,7 @@ fn a_release_without_a_digest_uses_the_sums_file() {
 fn a_download_before_a_check_fails_without_touching_the_network() {
     let service = UpdateService::for_build("http://127.0.0.1:1", "owner/repo", "0.1.0");
 
-    let snapshot = block_on(service.download(None));
+    let snapshot = block_on(service.download());
 
     assert_eq!(snapshot.state, UpdateState::Error);
     assert!(snapshot.error.unwrap().contains("no release to download"));
@@ -106,7 +106,7 @@ fn a_loopback_server_is_allowed_for_the_tests() {
     let root = tempfile::TempDir::new().unwrap();
     let dest = root.path().join("asset");
 
-    let digest = aidget::update::download::to_file(&base, None, &dest, &mut |_, _| {}).unwrap();
+    let digest = aidget::update::download::to_file(&base, &dest, &mut |_, _| {}).unwrap();
 
     assert_eq!(std::fs::read_to_string(&dest).unwrap(), "bytes");
     assert_eq!(digest.len(), 64);
@@ -122,8 +122,7 @@ fn a_download_from_a_multi_route_server_lands_on_disk() {
     let dest = root.path().join("asset");
 
     let digest =
-        aidget::update::download::to_file(&format!("{base}/asset"), None, &dest, &mut |_, _| {})
-            .unwrap();
+        aidget::update::download::to_file(&format!("{base}/asset"), &dest, &mut |_, _| {}).unwrap();
 
     assert_eq!(std::fs::read(&dest).unwrap(), b"bytes");
     assert_eq!(digest, super::sha256(b"bytes"));
@@ -138,8 +137,30 @@ fn two_downloads_from_one_server_both_land() {
 
     for round in 0..2 {
         let dest = root.path().join(format!("asset-{round}"));
-        aidget::update::download::to_file(&format!("{base}/asset"), None, &dest, &mut |_, _| {})
+        aidget::update::download::to_file(&format!("{base}/asset"), &dest, &mut |_, _| {})
             .unwrap_or_else(|error| panic!("round {round}: {error}"));
         assert_eq!(std::fs::read(&dest).unwrap(), b"bytes");
+    }
+}
+
+#[test]
+fn public_artifact_and_sums_requests_never_send_authorization() {
+    let root = tempfile::TempDir::new().unwrap();
+    let (asset_url, asset_request) = super::serve_once_capture_request(200, "asset");
+    let digest =
+        aidget::update::download::to_file(&asset_url, &root.path().join("asset"), &mut |_, _| {})
+            .unwrap();
+    assert_eq!(digest, super::sha256(b"asset"));
+
+    let (sums_url, sums_request) = super::serve_once_capture_request(200, "sums");
+    assert_eq!(aidget::update::download::text(&sums_url).unwrap(), "sums");
+
+    for request in [asset_request.recv().unwrap(), sums_request.recv().unwrap()] {
+        assert!(
+            !request
+                .lines()
+                .any(|line| line.to_ascii_lowercase().starts_with("authorization:")),
+            "{request}"
+        );
     }
 }

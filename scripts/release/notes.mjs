@@ -30,7 +30,7 @@ async function deepSeekText(prompt, apiKey, fetchImpl, label) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'deepseek-v4-pro',
+      model: 'deepseek-flash',
       messages: [{ role: 'user', content: prompt }],
     }),
   });

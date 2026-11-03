@@ -24,6 +24,19 @@ impl InstallOutcome {
 }
 
 impl UpdateService {
+    /// Check the feed again, then install the latest verified download.
+    ///
+    /// The user's explicit update action always downloads a newer release,
+    /// regardless of whether automatic downloading is enabled. A failed check
+    /// never authorizes installing an older staged archive.
+    pub async fn apply(&self, token: Option<&str>) -> InstallOutcome {
+        let checked = self.check_with_policy(token, true).await;
+        if checked.state != UpdateState::Ready || checked.error.is_some() {
+            return InstallOutcome::NotStarted(checked);
+        }
+        self.install().await
+    }
+
     /// Install the verified download; only this request's completion permits exit.
     pub async fn install(&self) -> InstallOutcome {
         self.install_with(|staged| {

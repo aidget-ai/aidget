@@ -193,7 +193,7 @@ fn a_downloaded_update_is_the_one_install_tries_to_use() {
     let base = release_with_asset();
     let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
     block_on(service.check(None));
-    let downloaded = block_on(service.download(None));
+    let downloaded = block_on(service.download());
 
     assert_eq!(downloaded.state, UpdateState::Ready);
     assert!(
@@ -223,7 +223,7 @@ fn a_failed_check_keeps_a_downloaded_update_installable() {
     let base = super::serve_feed_then(403, "API rate limit exceeded", &release, body.to_vec());
     let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
     block_on(service.check(None));
-    assert_eq!(block_on(service.download(None)).state, UpdateState::Ready);
+    assert_eq!(block_on(service.download()).state, UpdateState::Ready);
 
     eprintln!("DEBUG staged after download: {:?}", service.staged());
     let rechecked = block_on(service.check(None));
@@ -274,7 +274,7 @@ fn a_check_that_finds_the_same_version_keeps_the_download_installable() {
     ]);
     let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
     block_on(service.check(None));
-    assert_eq!(block_on(service.download(None)).state, UpdateState::Ready);
+    assert_eq!(block_on(service.download()).state, UpdateState::Ready);
 
     // The feed still names what was downloaded, so nothing newer is out.
     let rechecked = block_on(service.check(None));
@@ -305,7 +305,7 @@ fn a_release_brings_its_notes_and_keeps_them_while_downloading() {
     let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
 
     let found = block_on(service.check(None));
-    let ready = block_on(service.download(None));
+    let ready = block_on(service.download());
 
     assert_eq!(
         found.notes.as_deref(),
@@ -350,10 +350,10 @@ fn a_download_is_reported_as_installable_before_it_is_installed() {
         "nothing downloaded yet"
     );
     assert!(
-        block_on(service.download(None)).staged,
+        block_on(service.download()).staged,
         "the download is installable"
     );
-    // The window decides the Install button from this, whatever the state is.
+    // The window decides the Update action from this, whatever the state is.
     assert!(service.snapshot().staged);
 
     if let Some(staged) = service.staged() {
@@ -374,7 +374,7 @@ fn a_failed_download_leaves_the_release_downloadable_again() {
     let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
     block_on(service.check(None));
 
-    let failed = block_on(service.download(None));
+    let failed = block_on(service.download());
 
     assert_eq!(failed.state, UpdateState::Error);
     assert!(!failed.staged, "a failed verification installs nothing");
@@ -401,7 +401,7 @@ fn a_failed_install_keeps_the_download_ready_to_try_again() {
     ]);
     let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
     block_on(service.check(None));
-    block_on(service.download(None));
+    block_on(service.download());
 
     // The test binary does not run from a bundle the updater can replace, so this
     // install fails the way a real one would on a read-only or unusual install.
@@ -446,7 +446,7 @@ fn an_empty_repository_keeps_a_downloaded_update_installable() {
     let base = super::serve_feed_then(404, "Not Found", &release, body.to_vec());
     let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
     block_on(service.check(None));
-    assert_eq!(block_on(service.download(None)).state, UpdateState::Ready);
+    assert_eq!(block_on(service.download()).state, UpdateState::Ready);
 
     let rechecked = block_on(service.check(None));
 
@@ -499,4 +499,88 @@ fn an_install_refused_during_check_does_not_change_the_active_operation() {
     assert_eq!(service.snapshot().state, UpdateState::Checking);
     resume.send(()).unwrap();
     assert_eq!(thread.join().unwrap().state, UpdateState::Found);
+}
+
+#[test]
+fn user_apply_rechecks_and_keeps_a_downloaded_update_when_the_check_fails() {
+    let body = b"ready to install";
+    let digest = super::sha256(body);
+    let release = format!(
+        r#"{{"tag_name": "v99.0.0", "html_url": "", "assets": [
+            {{"name": "__ASSET__", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
+        ]}}"#,
+        body.len()
+    );
+    let base = super::serve_feed_then(403, "API rate limit exceeded", &release, body.to_vec());
+    let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
+    block_on(service.check(None));
+    assert_eq!(block_on(service.download()).state, UpdateState::Ready);
+
+    let outcome = block_on(service.apply(None));
+
+    assert!(matches!(
+        outcome,
+        aidget::update::service::InstallOutcome::NotStarted(_)
+    ));
+    assert_eq!(outcome.snapshot().state, UpdateState::Ready);
+    assert!(outcome
+        .snapshot()
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("rate limit")));
+    assert!(service.staged().is_some());
+    cleanup(&service);
+}
+
+#[test]
+fn user_apply_installs_the_same_staged_version_after_rechecking() {
+    let base = release_with_asset();
+    let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
+    block_on(service.check(None));
+    assert_eq!(block_on(service.download()).state, UpdateState::Ready);
+
+    let outcome = block_on(service.apply(None));
+
+    assert!(matches!(
+        outcome,
+        aidget::update::service::InstallOutcome::Failed(_)
+    ));
+    assert!(
+        !outcome
+            .snapshot()
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("no downloaded update")),
+        "{outcome:?}"
+    );
+    cleanup(&service);
+}
+
+#[test]
+fn user_apply_downloads_the_newer_release_before_installing() {
+    let base = super::serve_release_sequence(vec![
+        ("98.0.0", b"old build".as_slice()),
+        ("99.0.0", b"new build".as_slice()),
+    ]);
+    let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
+    block_on(service.check(None));
+    assert_eq!(block_on(service.download()).state, UpdateState::Ready);
+
+    let outcome = block_on(service.apply(None));
+
+    assert!(matches!(
+        outcome,
+        aidget::update::service::InstallOutcome::Failed(_)
+    ));
+    let staged = service
+        .staged()
+        .expect("the replacement remains installable");
+    assert_eq!(std::fs::read(staged).unwrap(), b"new build");
+    cleanup(&service);
+}
+
+fn cleanup(service: &UpdateService) {
+    if let Some(staged) = service.staged() {
+        super::cleanup(staged);
+    }
 }

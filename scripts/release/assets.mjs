@@ -12,7 +12,6 @@ export const RELEASE_ASSETS = [
   'aidget-darwin-arm64.zip',
   'aidget-darwin-amd64.zip',
   'aidget-windows-amd64.exe',
-  'aidget-linux-amd64.AppImage',
   'aidget-linux-amd64.deb',
   'aidget-linux-amd64.rpm',
 ];
@@ -37,9 +36,6 @@ export function assetName(source) {
   }
   if (/_(x64|amd64)-setup\.exe$/.test(name)) {
     return 'aidget-windows-amd64.exe';
-  }
-  if (name.endsWith('_amd64.AppImage')) {
-    return 'aidget-linux-amd64.AppImage';
   }
   if (name.endsWith('_amd64.deb')) {
     return 'aidget-linux-amd64.deb';

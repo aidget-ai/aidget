@@ -5,6 +5,7 @@ import { disable, enable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   Archive,
+  ArrowUp,
   createElement,
   createIcons,
   Info,
@@ -125,11 +126,13 @@ const agentStrips = {
 };
 const integrationPage = document.querySelector<HTMLElement>('[data-view="integrations"]')!;
 const aboutPage = document.querySelector<HTMLElement>('[data-view="about"]')!;
+const updateHeaderAction = document.querySelector<HTMLButtonElement>('[data-update-header]')!;
 
 let autoDownload = false;
 
 const updatePage = createUpdatePage(
   aboutPage,
+  updateHeaderAction,
   () => locale,
   async (enabled) => {
     const previous = currentPreferences();
@@ -281,6 +284,7 @@ function renderPage() {
   filterControl.refresh();
   renderPreferences();
   renderGithubToken();
+  updatePage.setAboutActive(page === 'about');
 }
 
 function renderDescription() {
@@ -1237,7 +1241,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-window-action]').forEach((bu
 autoStart.setAttribute('aria-checked', 'false');
 
 createIcons({
-  icons: { Info, LayoutGrid, Minus, ServerCog, Settings, Square, UsersRound, X },
+  icons: { ArrowUp, Info, LayoutGrid, Minus, ServerCog, Settings, Square, UsersRound, X },
 });
 applyTheme(theme);
 renderPreferences();

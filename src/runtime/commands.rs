@@ -44,8 +44,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         community_downloads,
         update::update_state,
         update::update_check,
-        update::update_download,
-        update::update_install
+        update::update_apply
     ])
 }
 

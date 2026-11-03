@@ -27,7 +27,7 @@ pub enum Installation {
         bundle: std::path::PathBuf,
         executable: std::path::PathBuf,
     },
-    /// A Linux package or the outer AppImage, never its mounted executable.
+    /// A Linux distribution package and the executable it owns.
     Linux {
         kind: super::github::PackageKind,
         executable: std::path::PathBuf,
@@ -47,7 +47,7 @@ pub fn prepare() -> Result<Installation> {
     {
         let target = target::current()
             .ok_or_else(|| Error::Other("this install cannot update itself".into()))?;
-        linux::prepare(&exe, std::env::var_os("APPIMAGE").as_deref(), target.kind)
+        linux::prepare(&exe, target.kind)
     }
     #[cfg(target_os = "windows")]
     {
@@ -69,7 +69,7 @@ impl Installation {
         match self {
             #[cfg(target_os = "macos")]
             Self::Mac { bundle, .. } => macos::install(staged, bundle),
-            Self::Linux { kind, executable } => linux::install(staged, *kind, executable),
+            Self::Linux { kind, .. } => linux::install(staged, *kind),
             Self::Windows => windows::install(staged, restart),
             #[cfg(not(target_os = "macos"))]
             Self::Mac { .. } => Err(Error::Other("macOS installation requires macOS".into())),

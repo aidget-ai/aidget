@@ -153,7 +153,7 @@ pub async fn check_and_maybe_download(
 ) -> UpdateSnapshot {
     let started = std::time::Instant::now();
     let snapshot = service.check_with_policy(token, auto_download).await;
-    let repository = crate::update::github::repository();
+    let repository = crate::update::github::REPOSITORY;
     match &snapshot.error {
         Some(error) => println!(
             "aidget: update check {:?} from {repository} in {:?}: {error}",
@@ -196,12 +196,11 @@ pub fn install_on_quit(handle: &tauri::AppHandle) {
     if service.staged().is_none() {
         return;
     }
-    // A distribution package is installed with the administrator's password.
-    // Asking for it as the window disappears is worse than keeping the download:
-    // Magpie does not ask on quit either, and the Install button tries again.
+    // Do not request administrator access as the window disappears; keep the
+    // download for the Update action instead.
     if needs_administrator() {
         println!(
-            "aidget: the downloaded update needs an administrator; it waits for the Install button"
+            "aidget: the downloaded update needs an administrator; it waits for the Update action"
         );
         return;
     }
@@ -284,8 +283,9 @@ pub(crate) async fn update_check(
     Ok(check_and_maybe_download(service, token.as_deref(), settings.auto_download).await)
 }
 
+/// Recheck the latest release, then download or install as needed.
 #[tauri::command]
-pub(crate) async fn update_download(
+pub(crate) async fn update_apply(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> std::result::Result<UpdateSnapshot, String> {
@@ -295,25 +295,17 @@ pub(crate) async fn update_download(
     let token = settings
         .github_token
         .map(|token| token.as_str().to_string());
-    // Returns on `Downloading` so the window can draw progress; the work goes on
-    // in the background. This must stay `async`: a synchronous command runs on the
-    // main thread, where `tokio::spawn` panics and aborts the process.
-    Ok(service.start_download(token.as_deref()))
+    let outcome = service.apply(token.as_deref()).await;
+    finish_update_request(&app, outcome)
 }
 
-#[tauri::command]
-pub(crate) async fn update_install(
-    window: tauri::WebviewWindow,
-    app: tauri::AppHandle,
+fn finish_update_request(
+    app: &tauri::AppHandle,
+    outcome: InstallOutcome,
 ) -> std::result::Result<UpdateSnapshot, String> {
-    ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
-    let service = app.state::<UpdateService>().inner().clone();
-    let outcome = service.install().await;
     let completed = matches!(&outcome, InstallOutcome::Completed(..));
     let failed = matches!(&outcome, InstallOutcome::Failed(_));
-    let result = complete_install(outcome, |installation| {
-        relaunch_and_exit(&app, installation)
-    });
+    let result = complete_install(outcome, |installation| relaunch_and_exit(app, installation));
     if failed || (completed && result.is_err()) {
         // The installer has stopped, so a quit that arrived while it ran can
         // now finish. `NotStarted` is deliberately absent: another request

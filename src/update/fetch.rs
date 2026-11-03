@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use reqwest::blocking::{Client, RequestBuilder};
 use reqwest::header::{ACCEPT, AUTHORIZATION};
+use reqwest::Url;
 
 /// The media type GitHub's API answers with.
 const GITHUB_ACCEPT: &str = "application/vnd.github+json";
@@ -35,21 +36,32 @@ pub fn client() -> crate::common::error::Result<Client> {
         .map_err(|error| crate::common::error::Error::Other(error.to_string()))
 }
 
-/// A GitHub API GET, carrying the user's token when one is configured.
+/// A GitHub API GET, carrying the user's token only when the URL is the official
+/// HTTPS API host.
 ///
 /// An unauthenticated caller gets 60 requests an hour for the whole address; with
-/// a token it is 5000, which is why the check uses the stored one. An asset
-/// request redirects to object storage on another host, where `reqwest` drops the
-/// `Authorization` header itself, so the token reaches `api.github.com` only.
-pub fn github_get(client: &Client, url: &str, token: Option<&str>) -> RequestBuilder {
+/// a token it is 5000, which is why the check uses the stored one. Release assets
+/// do not use this function because the public download needs no credentials.
+pub fn github_api_get(
+    client: &Client,
+    url: &str,
+    token: Option<&str>,
+) -> crate::common::error::Result<RequestBuilder> {
     let request = client
         .get(url)
         .header(ACCEPT, GITHUB_ACCEPT)
         .header("X-GitHub-Api-Version", GITHUB_API_VERSION);
-    match token {
-        Some(token) => request.header(AUTHORIZATION, format!("Bearer {token}")),
-        None => request,
+    let Some(token) = token else {
+        return Ok(request);
+    };
+    let parsed = Url::parse(url)
+        .map_err(|error| crate::common::error::Error::Other(format!("GitHub API URL: {error}")))?;
+    if parsed.scheme() != "https" || parsed.host_str() != Some("api.github.com") {
+        return Err(crate::common::error::Error::Other(
+            "refusing to send a GitHub token outside https://api.github.com".into(),
+        ));
     }
+    Ok(request.header(AUTHORIZATION, format!("Bearer {token}")))
 }
 
 /// Refuse a URL that would cross the network in clear text.

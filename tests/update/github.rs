@@ -1,6 +1,4 @@
-#[cfg(debug_assertions)]
-use aidget::update::github::DEV_REPOSITORY;
-use aidget::update::github::{repository, Asset, PackageKind, Release, REPOSITORY};
+use aidget::update::github::{Asset, PackageKind, Release, REPOSITORY};
 use aidget::update::target::Target;
 
 fn asset(name: &str) -> Asset {
@@ -26,16 +24,8 @@ fn target(kind: PackageKind, arch: &'static str) -> Target {
 }
 
 #[test]
-#[cfg(debug_assertions)]
-fn a_debug_build_reads_the_fork() {
-    assert_eq!(repository(), DEV_REPOSITORY);
-    assert_ne!(DEV_REPOSITORY, REPOSITORY);
-}
-
-#[test]
-#[cfg(not(debug_assertions))]
-fn a_release_build_reads_upstream() {
-    assert_eq!(repository(), REPOSITORY);
+fn every_build_reads_the_official_repository() {
+    assert_eq!(REPOSITORY, "aidget-ai/aidget");
 }
 
 #[test]
@@ -145,14 +135,9 @@ fn selects_the_windows_installer() {
 
 #[test]
 fn selects_the_linux_packages_by_suffix() {
-    let release = release(&[
-        "aidget-linux-amd64.AppImage",
-        "aidget-linux-amd64.deb",
-        "aidget-linux-amd64.rpm",
-    ]);
+    let release = release(&["aidget-linux-amd64.deb", "aidget-linux-amd64.rpm"]);
 
     for (kind, expected) in [
-        (PackageKind::AppImage, "aidget-linux-amd64.AppImage"),
         (PackageKind::Deb, "aidget-linux-amd64.deb"),
         (PackageKind::Rpm, "aidget-linux-amd64.rpm"),
     ] {

@@ -114,7 +114,7 @@ fn magpie_held_download_keeps_version_notes_asset_and_install_identity() {
     assert_eq!(service.staged().unwrap(), staged);
     assert_eq!(feed.downloads.load(Ordering::SeqCst), 1);
     // The service's download target must still agree, not just its display.
-    let again = run(service.download(None));
+    let again = run(service.download());
     assert_eq!(again.latest.as_deref(), Some("2.0.0"));
     assert_eq!(
         std::fs::read(service.staged().unwrap()).unwrap(),
@@ -151,7 +151,7 @@ fn replacing_download_revokes_old_eligibility_and_failed_replacement_retries_new
         aidget::update::service::InstallOutcome::Failed(_)
     ));
     *feed.bad_asset.lock().unwrap() = false;
-    let retry = run(service.download(None));
+    let retry = run(service.download());
     assert_eq!(retry.state, UpdateState::Ready);
     assert_eq!(retry.latest.as_deref(), Some("3.0.0"));
     assert_ne!(service.staged().unwrap(), old);
@@ -199,7 +199,7 @@ fn same_version_notes_errors_empty_feed_and_channel_regression_stay_coherent() {
     assert_eq!(regressed.notes.as_deref(), Some("older feed"));
     assert!(!regressed.staged);
     assert!(!old.exists());
-    let downloaded = run(service.download(None));
+    let downloaded = run(service.download());
     assert_eq!(downloaded.latest.as_deref(), Some("1.5.0"));
     crate::update::cleanup(service.staged().unwrap());
     // Without valid staging the empty feed must remove the previous asset target.
@@ -208,10 +208,7 @@ fn same_version_notes_errors_empty_feed_and_channel_regression_stay_coherent() {
     run(fresh.check(None));
     *feed.release.lock().unwrap() = (404, r#"{"message":"Not Found"}"#.into());
     assert_eq!(run(fresh.check(None)).state, UpdateState::NoRelease);
-    assert!(run(fresh.download(None))
-        .error
-        .unwrap()
-        .contains("no release"));
+    assert!(run(fresh.download()).error.unwrap().contains("no release"));
 }
 
 #[test]
@@ -231,7 +228,7 @@ fn policy_on_download_rejects_overlapping_install_and_download_without_mutation(
                 active.install_blocking(),
                 aidget::update::service::InstallOutcome::NotStarted(_)
             ));
-            let repeated = active.start_download(None);
+            let repeated = active.start_download();
             assert_eq!(repeated.state, UpdateState::Downloading);
             assert!(!repeated.staged);
             count.fetch_add(1, Ordering::SeqCst);
@@ -273,7 +270,7 @@ fn replacement_network_and_preparation_failure_never_fall_back_to_old_staging() 
         assert!(service.staged().is_none());
         if !missing_asset {
             *feed.asset_status.lock().unwrap() = 200;
-            let retry = run(service.download(None));
+            let retry = run(service.download());
             assert_eq!(retry.state, UpdateState::Ready);
             assert_eq!(retry.latest.as_deref(), Some("3.0.0"));
             crate::update::cleanup(service.staged().unwrap());

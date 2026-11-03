@@ -128,15 +128,13 @@ describe('release contributors', () => {
     const en = thanks(people, 'en');
     const zh = thanks(people, 'zh');
     expect(en).toBe(
-      '### Acknowledgments\n\nThanks to A\\_\\[B\\], [Carol](https://github.com/carol): this update includes your feedback or code.',
+      '### Acknowledgments\n\nThanks to A\\_\\[B\\], Carol: this update includes your feedback or code.',
     );
-    expect(zh).toBe(
-      '### 致谢\n\n感谢 A\\_\\[B\\]、[Carol](https://github.com/carol)：这次更新包含了你们的反馈或代码。',
-    );
+    expect(zh).toBe('### 致谢\n\n感谢 A\\_\\[B\\]、Carol：这次更新包含了你们的反馈或代码。');
     for (const text of [en, zh]) {
       expect(text).toContain('A\\_\\[B\\]');
-      expect(text).toContain('[Carol](https://github.com/carol)');
-      expect(text).not.toContain('contributors)');
+      expect(text).toContain('Carol');
+      expect(text).not.toContain('https://');
     }
     expect(thanks([], 'en')).toBe('');
   });

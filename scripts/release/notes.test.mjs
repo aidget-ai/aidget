@@ -25,7 +25,7 @@ describe('release notes', () => {
     expect(en.trim()).toMatch(/code\.$/);
     expect(zh.trim()).toMatch(/代码。$/);
     for (const part of [en, zh]) {
-      expect(part).toContain('[Alice](https://github.com/alice)');
+      expect(part).toContain('Alice');
     }
     expect(() => composeNotes('', '中文')).toThrow();
   });
@@ -60,7 +60,7 @@ describe('release notes', () => {
 
     expect(changelog).toBe('### Features\n\n- Add release notes');
     expect(request.url).toBe('https://api.deepseek.com/chat/completions');
-    expect(request.body.model).toBe('deepseek-v4-pro');
+    expect(request.body.model).toBe('deepseek-flash');
     expect(request.body.messages).toEqual([
       {
         role: 'user',
@@ -145,7 +145,7 @@ describe('release notes', () => {
 
     expect(chinese).toBe('中文说明');
     expect(request.url).toBe('https://api.deepseek.com/chat/completions');
-    expect(request.body.model).toBe('deepseek-v4-pro');
+    expect(request.body.model).toBe('deepseek-flash');
     expect(request.body.messages).toEqual([
       {
         role: 'user',

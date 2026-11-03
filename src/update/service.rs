@@ -55,11 +55,7 @@ impl Default for UpdateService {
 
 impl UpdateService {
     pub fn new() -> Self {
-        UpdateService::for_build(
-            github::API_BASE,
-            github::repository(),
-            version::build_stamp(),
-        )
+        UpdateService::for_build(github::API_BASE, github::REPOSITORY, version::build_stamp())
     }
 
     /// A service reading `base` for `repository`, claiming to run as `build`.
@@ -160,8 +156,7 @@ impl UpdateService {
         }
 
         let (base, repository) = (self.base.clone(), self.repository.clone());
-        let download_token = token.map(str::to_string);
-        let token = download_token.clone();
+        let token = token.map(str::to_string);
         let fetched = tokio::task::spawn_blocking(move || {
             github::latest(&base, &repository, token.as_deref())
         })
@@ -181,7 +176,7 @@ impl UpdateService {
                 ..settled
             });
             if let Some(prepared) = self.prepare_claimed_download() {
-                return self.finish_download(prepared, download_token).await;
+                return self.finish_download(prepared).await;
             }
         } else {
             self.set(settled);
@@ -211,12 +206,11 @@ impl UpdateService {
     ///
     /// A click drives this regardless of the `auto_download` setting; that
     /// setting only decides whether a check downloads on its own.
-    pub async fn download(&self, token: Option<&str>) -> UpdateSnapshot {
+    pub async fn download(&self) -> UpdateSnapshot {
         let Some(prepared) = self.begin_download() else {
             return self.snapshot();
         };
-        self.finish_download(prepared, token.map(str::to_string))
-            .await
+        self.finish_download(prepared).await
     }
 
     /// Start the same download without waiting for it.
@@ -226,14 +220,13 @@ impl UpdateService {
     /// runtime to spawn onto: call it from an async command, never from a
     /// synchronous one, which runs on the main thread and aborts the process when
     /// it panics.
-    pub fn start_download(&self, token: Option<&str>) -> UpdateSnapshot {
+    pub fn start_download(&self) -> UpdateSnapshot {
         let Some(prepared) = self.begin_download() else {
             return self.snapshot();
         };
         let service = self.clone();
-        let token = token.map(str::to_string);
         tokio::spawn(async move {
-            service.finish_download(prepared, token).await;
+            service.finish_download(prepared).await;
         });
         self.snapshot()
     }
@@ -283,11 +276,10 @@ impl UpdateService {
             .ok_or_else(|| Error::Other("this install cannot update itself in place".to_string()))
     }
 
-    async fn finish_download(&self, prepared: Download, token: Option<String>) -> UpdateSnapshot {
+    async fn finish_download(&self, prepared: Download) -> UpdateSnapshot {
         let version = prepared.version.clone();
         let progress = self.snapshot.clone();
-        let outcome =
-            tokio::task::spawn_blocking(move || prepared.run(&progress, token.as_deref())).await;
+        let outcome = tokio::task::spawn_blocking(move || prepared.run(&progress)).await;
 
         let settled = match outcome {
             Ok(Ok(path)) => self.settle_download(path, version),

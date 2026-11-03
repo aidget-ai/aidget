@@ -67,13 +67,9 @@ impl Download {
     /// A file that fails verification is removed: nothing unverified is left
     /// looking installable, and a failed attempt takes its download directory
     /// with it instead of leaving an empty folder in the temp directory.
-    pub fn run(
-        self,
-        progress: &Arc<Mutex<UpdateSnapshot>>,
-        token: Option<&str>,
-    ) -> Result<PathBuf> {
+    pub fn run(self, progress: &Arc<Mutex<UpdateSnapshot>>) -> Result<PathBuf> {
         let path = self.path.clone();
-        let fetched = self.fetch(progress, token);
+        let fetched = self.fetch(progress);
         if fetched.is_err() {
             if let Some(dir) = path.parent() {
                 let _ = std::fs::remove_dir_all(dir);
@@ -82,7 +78,7 @@ impl Download {
         fetched
     }
 
-    fn fetch(self, progress: &Arc<Mutex<UpdateSnapshot>>, token: Option<&str>) -> Result<PathBuf> {
+    fn fetch(self, progress: &Arc<Mutex<UpdateSnapshot>>) -> Result<PathBuf> {
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir)?;
         }
@@ -92,7 +88,7 @@ impl Download {
                 let url = self.sums_url.as_deref().ok_or_else(|| {
                     Error::Other("the release publishes no SHA256SUMS".to_string())
                 })?;
-                Some(download::text(url, token)?)
+                Some(download::text(url)?)
             }
         };
         let expected = verify::expected(&self.asset, sums.as_deref())?;
@@ -100,7 +96,6 @@ impl Download {
         let progress = progress.clone();
         let actual = download::to_file(
             &self.asset.browser_download_url,
-            token,
             &self.path,
             &mut |done, total| {
                 let mut snapshot = progress.lock().unwrap();

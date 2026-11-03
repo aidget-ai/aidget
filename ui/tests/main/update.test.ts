@@ -45,12 +45,16 @@ function mount() {
   const end = mainHtml.lastIndexOf('</body>');
   document.body.innerHTML = mainHtml.slice(start, end).replace(/<script[\s\S]*?<\/script>/g, '');
   const about = document.querySelector<HTMLElement>('[data-view="about"]')!;
-  return createUpdatePage(
+  const header = document.querySelector<HTMLButtonElement>('[data-update-header]')!;
+  const page = createUpdatePage(
     about,
+    header,
     () => 'en',
     async () => {},
     () => {},
   );
+  page.setAboutActive(true);
+  return page;
 }
 
 beforeEach(() => {
@@ -63,21 +67,80 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('update row', () => {
-  it('shows the install button when the launch check announces itself', async () => {
+describe('update actions', () => {
+  it('shows update progress in the version action and disables repeats', async () => {
     const page = mount();
     await page.refresh();
-    const install = document.querySelector<HTMLElement>('[data-update-install]')!;
-    expect(install.hidden).toBe(true);
+    const action = document.querySelector<HTMLButtonElement>('[data-update-action]')!;
+    const label = action.querySelector<HTMLElement>('[data-update-label]')!;
+    const icon = action.querySelector<HTMLElement>('[data-update-icon]')!;
+    expect(label.textContent).toBe('Check for updates');
+    expect(icon.hidden).toBe(true);
 
     // The launch check settles on its own, five seconds after launch: nothing the
     // window did can reveal that, so the backend announces it.
     mocks.handlers.get('aidget://update')!({
-      payload: snapshot('ready', { latest: '0.1.3', staged: true }),
+      payload: snapshot('downloading', { latest: '0.1.3', done: 1, total: 2 }),
     });
 
-    expect(install.hidden).toBe(false);
+    expect(label.textContent).toBe('Downloading… 50%');
+    expect(icon.hidden).toBe(false);
+    expect(action.dataset.updateMode).toBe('progress');
+    expect(action.disabled).toBe(true);
     expect(document.querySelector('[data-update-status]')!.textContent).toContain('0.1.3');
+  });
+
+  it('shows the same update action in the header outside About', async () => {
+    const page = mount();
+    await page.refresh();
+    const header = document.querySelector<HTMLButtonElement>('[data-update-header]')!;
+
+    mocks.handlers.get('aidget://update')!({
+      payload: snapshot('ready', { latest: '0.1.3', staged: true }),
+    });
+    expect(header.hidden).toBe(true);
+
+    page.setAboutActive(false);
+    expect(header.hidden).toBe(false);
+    expect(header.querySelector('[data-update-label]')!.textContent).toBe('Update');
+    expect(header.dataset.updateMode).toBe('update');
+  });
+
+  it('applies the found update instead of downloading and installing separately', async () => {
+    const page = mount();
+    await page.refresh();
+    const action = document.querySelector<HTMLButtonElement>('[data-update-action]')!;
+    const label = action.querySelector<HTMLElement>('[data-update-label]')!;
+    mocks.invoke.mockResolvedValueOnce(snapshot('found', { latest: '0.1.3' }));
+
+    mocks.handlers.get('aidget://update')!({
+      payload: snapshot('found', { latest: '0.1.3' }),
+    });
+    expect(label.textContent).toBe('Update');
+    expect(action.dataset.updateMode).toBe('update');
+    action.click();
+    await Promise.resolve();
+
+    expect(mocks.invoke).toHaveBeenLastCalledWith('update_apply');
+  });
+
+  it('shows the latest result for three seconds before returning to check', async () => {
+    vi.useFakeTimers();
+    const page = mount();
+    await page.refresh();
+    const action = document.querySelector<HTMLButtonElement>('[data-update-action]')!;
+    const label = action.querySelector<HTMLElement>('[data-update-label]')!;
+
+    mocks.handlers.get('aidget://update')!({
+      payload: snapshot('latest', { latest: '0.1.0' }),
+    });
+    expect(label.textContent).toBe('Up to date');
+    expect(action.dataset.updateMode).toBe('check');
+
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(label.textContent).toBe('Up to date');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(label.textContent).toBe('Check for updates');
   });
 
   it('reads the state again while a download runs', async () => {
@@ -116,9 +179,9 @@ it('renders the same staged contract verified by the backend policy caller', asy
   mocks.handlers.get('aidget://update')!({ payload: { ...stagedContract, state: 'ready' } });
   expect(document.querySelector('[data-update-status]')!.textContent).toContain('2.0.0');
   expect(document.querySelector('[data-update-notes]')!.textContent).toBe('v2 notes');
-  const install = document.querySelector<HTMLButtonElement>('[data-update-install]')!;
-  expect(install.hidden).toBe(false);
-  install.click();
+  const action = document.querySelector<HTMLButtonElement>('[data-update-action]')!;
+  expect(action.querySelector('[data-update-label]')!.textContent).toBe('Update');
+  action.click();
   await Promise.resolve();
-  expect(mocks.invoke).toHaveBeenCalledWith('update_install');
+  expect(mocks.invoke).toHaveBeenCalledWith('update_apply');
 });

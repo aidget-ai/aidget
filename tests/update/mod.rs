@@ -36,6 +36,34 @@ pub fn serve_once(status: u16, body: &str) -> String {
     format!("http://{address}")
 }
 
+/// A one-shot server that returns the raw request alongside its response body.
+pub fn serve_once_capture_request(
+    status: u16,
+    body: &str,
+) -> (String, std::sync::mpsc::Receiver<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let body = body.to_string();
+    let (requests, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        let mut request = [0u8; 4096];
+        let read = stream.read(&mut request).unwrap_or(0);
+        requests
+            .send(String::from_utf8_lossy(&request[..read]).into_owned())
+            .unwrap();
+        let response = format!(
+            "HTTP/1.1 {status} OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = stream.write_all(response.as_bytes());
+        let _ = stream.flush();
+    });
+    (format!("http://{address}"), received)
+}
+
 /// A server that answers after `delay`, so a check stays in flight long enough
 /// for the test to look at it.
 pub fn serve_slow(delay: std::time::Duration, body: &str) -> String {
@@ -161,6 +189,63 @@ pub fn serve_feed_then(status: u16, message: &str, body: &str, asset: Vec<u8>) -
     format!("http://{address}")
 }
 
+/// A release feed that advances by one version on each check.
+///
+/// Each asset gets its own digest and body, so a test can prove that choosing a
+/// newer release replaces an older staged download rather than reusing it.
+pub fn serve_release_sequence(releases: Vec<(&str, &[u8])>) -> String {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let releases = releases
+        .into_iter()
+        .map(|(tag, body)| (tag.to_string(), body.to_vec()))
+        .collect::<Vec<_>>();
+    let feed_hits = Arc::new(AtomicUsize::new(0));
+    let asset_hits = Arc::new(AtomicUsize::new(0));
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut request = [0u8; 4096];
+            let read = stream.read(&mut request).unwrap_or(0);
+            let request = String::from_utf8_lossy(&request[..read]).to_string();
+            let path = request.split_whitespace().nth(1).unwrap_or("");
+            let (tag, body) = if path.contains("/releases/latest") {
+                let index = feed_hits
+                    .fetch_add(1, Ordering::SeqCst)
+                    .min(releases.len() - 1);
+                (&releases[index].0, None)
+            } else {
+                let index = asset_hits
+                    .fetch_add(1, Ordering::SeqCst)
+                    .min(releases.len() - 1);
+                (&releases[index].0, Some(&releases[index].1))
+            };
+            let payload = body.cloned().unwrap_or_else(|| {
+                let digest = sha256(&releases[feed_hits.load(Ordering::SeqCst) - 1].1);
+                format!(
+                    r#"{{"tag_name": "v{tag}", "html_url": "", "assets": [
+                        {{"name": "__ASSET__", "browser_download_url": "__BASE__/asset", "size": {}, "digest": "sha256:{digest}"}}
+                    ]}}"#,
+                    releases[feed_hits.load(Ordering::SeqCst) - 1].1.len()
+                )
+                .into_bytes()
+            });
+            let payload = fill(&payload, address);
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                payload.len()
+            );
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(&payload);
+            let _ = stream.flush();
+        }
+    });
+    format!("http://{address}")
+}
+
 /// Remove a staged download and the directory it lives in.
 pub fn cleanup(staged: std::path::PathBuf) {
     if let Some(dir) = staged.parent() {
@@ -187,6 +272,3 @@ pub fn release_asset_name() -> String {
     let target = aidget::update::target::current().expect("this platform has an install shape");
     target.asset_name()
 }
-
-/// The version the mock releases claim.
-pub const VERSION: &str = "v99.0.0";

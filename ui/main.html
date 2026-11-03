@@ -70,6 +70,16 @@
             <span class="breadcrumb-divider">/</span>
             <strong data-current-page></strong>
           </div>
+          <button class="text-button update-header-action" type="button" data-update-header hidden>
+            <i
+              class="update-action-icon"
+              data-lucide="arrow-up"
+              data-update-icon
+              aria-hidden="true"
+              hidden
+            ></i>
+            <span data-update-label data-message="updateAction"></span>
+          </button>
         </header>
 
         <section
@@ -339,32 +349,19 @@
           <div class="settings-list">
             <div class="settings-row">
               <span class="setting-label" data-message="version"></span>
-              <span class="setting-value" data-version>—</span>
-            </div>
-            <div class="settings-row">
-              <span class="setting-label" data-message="updates"></span>
-              <div class="community-actions">
-                <span class="setting-value" data-update-status role="status">—</span>
-                <button
-                  class="secondary-button"
-                  type="button"
-                  data-update-download
-                  data-message="downloadUpdate"
-                  hidden
-                ></button>
-                <button
-                  class="secondary-button"
-                  type="button"
-                  data-update-install
-                  data-message="installUpdate"
-                  hidden
-                ></button>
-                <button
-                  class="secondary-button"
-                  type="button"
-                  data-update-check
-                  data-message="checkNow"
-                ></button>
+              <div class="update-version-actions">
+                <span class="setting-value" data-version>—</span>
+                <span class="visually-hidden" data-update-status role="status">—</span>
+                <button class="text-button" type="button" data-update-action>
+                  <i
+                    class="update-action-icon"
+                    data-lucide="arrow-up"
+                    data-update-icon
+                    aria-hidden="true"
+                    hidden
+                  ></i>
+                  <span data-update-label data-message="checkNow"></span>
+                </button>
               </div>
             </div>
             <div class="settings-row update-notes-row" data-update-notes-row hidden>

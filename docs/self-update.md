@@ -1,6 +1,6 @@
 # Self-update
 
-Design, scope and acceptance record for Aidget's one-click self-update (Issue #2).
+Design and acceptance criteria for Aidget's one-click self-update (Issue #2).
 
 A few seconds after launch, and whenever **Check for updates** is pressed, the
 running version is compared with the latest GitHub release. When it is newer the
@@ -10,17 +10,11 @@ There is no poller, scheduler or recurring timer: `CONTRIBUTING.md` requires a
 design discussion before adding one, and the approved proposal asks for a launch
 check plus buttons.
 
-## Which repository a build reads
+## Repository and token scope
 
-| Build                              | Reads                         |
-| ---------------------------------- | ----------------------------- |
-| `pnpm dev`, `pnpm build:debug`     | `kalinplus/aidget` (the fork) |
-| `pnpm build`, the release workflow | `aidget-ai/aidget` (upstream) |
-
-`#[cfg(debug_assertions)]` decides, not a runtime setting, so a release binary
-cannot read the fork and cannot be pointed at another repository. Neither value is
-user-configurable, and the only download URL the updater accepts comes from the
-release metadata it fetched.
+Every build reads releases from `aidget-ai/aidget`. Tests inject a local base URL
+and repository through `UpdateService::for_build`; there is no runtime or
+compile-time product setting that can redirect the updater to another repository.
 
 ## Decisions
 
@@ -39,12 +33,12 @@ unavailable" and hides the status and the headers, while the updater needs both 
 with `cmp_precedence`, not `>`, because its `Ord` orders build metadata and a
 rebuilt release would read as a new one.
 
-**The configured GitHub token is used for the check.** The main window already
-stores one for the community pages, sent only to `api.github.com`. Unauthenticated
+**The configured GitHub token is used only for the metadata check.** Unauthenticated
 traffic gets 60 requests an hour per address, which behind a proxy exit node turns
-a launch check into "rate limit reached". `reqwest` drops the `Authorization`
-header on the cross-host redirect to asset storage, so the token reaches the API
-host only.
+a launch check into "rate limit reached". `github_api_get` refuses to attach a
+token unless the URL is HTTPS `api.github.com`. Installer and `SHA256SUMS` requests
+never accept a token, so neither the first `github.com` download request nor the
+cross-host redirect to object storage carries authorization.
 
 **The commands are reachable from the main window only.** They are listed in
 `command_names::MAIN_COMMANDS` and granted in `capabilities/main.json`, and
@@ -66,17 +60,14 @@ cannot be selected.
 | uncommitted changes, no tag     | `0.1.0-dirty`      | no                 |
 
 The tag decides, not a clean tree: the release workflow writes the version into
-the manifests after checking out the tag, which dirties the tree. Judging by
-cleanliness marked every published build as one from source. A runtime override
-was rejected too: it would let any local process point the updater elsewhere.
+the manifests after checking out the tag. A runtime repository override is
+rejected because it would let any local process redirect the updater.
 
-**Install kind comes from the executable and the platform.** An AppImage is
-recognised by `APPIMAGE` or by its own name, and is replaced at the file its
-runtime names rather than at `/tmp/.mount_*`. Outside one, the package is the one
-this machine's package manager can install: `dpkg` if `PATH` has it, otherwise
-`rpm`, otherwise the build cannot update itself in place. `dpkg` wins where both
-are present because `rpm` on a Debian machine is usually only used to read `.rpm`
-files.
+**Install kind comes from the package manager on the machine.** Linux uses the
+package this machine's package manager can install: `dpkg` if `PATH` has it,
+otherwise `rpm`, otherwise the build cannot update itself in place. `dpkg` wins
+where both are present because `rpm` on a Debian machine is usually only used to
+read `.rpm` files.
 
 **Windows: the installer installs.** A running `.exe` cannot be swapped, and the
 release carries an NSIS installer, so the flags are Tauri's own: `/S` (silent),
@@ -89,12 +80,10 @@ agent, with the tool passed as the absolute path `PATH` resolved. A package inst
 never starts on quit, where the password prompt would appear as the window
 disappears — the rule Magpie applies too.
 
-**`state` says what is happening, `staged` what is available.** The window decides
-which buttons to offer. Reading that off `state` made every failure hide work that
-was still possible: a failed check hid a downloaded update, a failed download
-offered no retry, a failed install hid a verified file that only needed another
-try. `UpdateSnapshot.staged` is derived from the download on disk whenever a
-snapshot is read, so a state transition cannot take it away.
+**`state` says what is happening, `staged` what is available.** The window derives
+the available action from both fields. `UpdateSnapshot.staged` is read from the
+download on disk whenever a snapshot is read, so a failed check, download or
+install does not hide a verified file that can still be retried.
 
 **"Up to date", "nothing published" and "this build cannot replace itself" are
 three states, and none is an error.** A build from a working tree reports
@@ -137,28 +126,35 @@ from a check that finds the same version: the file is still installable either w
 A missing key reads as on, so a `settings.toml` written before the updater existed
 behaves like a fresh one. It is part of `UiPreferences` and saved by
 `set_preferences` with the theme and the language; a toggle sends the whole payload
-back, so it cannot overwrite the other preferences with defaults. The Download
-button works with the setting off, which is what makes turning it off useful.
+back, so it cannot overwrite the other preferences with defaults. The Update
+action works with automatic downloading off.
+
+The About version row and the global page header share one stateful action.
+Checking produces a three-second status on About. Once an update exists, the
+action reads `Update`; clicking it calls `update_apply`, which fetches the latest
+release again. A matching staged version installs directly, while a newer version
+is downloaded and verified before installation. A failed recheck never installs
+an older staged archive. The global copy is hidden on About because the version
+row already provides the same action.
 
 ## Platform scope
 
 Release assets use `aidget-<platform>-<arch>.<ext>` without a version in the
 filename. `scripts/release/assets.mjs` validates the complete set.
 
-| Platform            | Update asset                  | Installation                                    |
-| ------------------- | ----------------------------- | ----------------------------------------------- |
-| macOS Apple Silicon | `aidget-darwin-arm64.zip`     | Unpack beside the bundle, rename it in, restart |
-| macOS Intel         | `aidget-darwin-amd64.zip`     | Unpack beside the bundle, rename it in, restart |
-| Windows x64         | `aidget-windows-amd64.exe`    | Run the NSIS installer, exit                    |
-| Linux x64 AppImage  | `aidget-linux-amd64.AppImage` | Replace the file in place, restart              |
-| Linux x64 DEB       | `aidget-linux-amd64.deb`      | `pkexec dpkg -i`, restart                       |
-| Linux x64 RPM       | `aidget-linux-amd64.rpm`      | `pkexec rpm -U`, restart                        |
+| Platform            | Update asset               | Installation                                    |
+| ------------------- | -------------------------- | ----------------------------------------------- |
+| macOS Apple Silicon | `aidget-darwin-arm64.zip`  | Unpack beside the bundle, rename it in, restart |
+| macOS Intel         | `aidget-darwin-amd64.zip`  | Unpack beside the bundle, rename it in, restart |
+| Windows x64         | `aidget-windows-amd64.exe` | Run the NSIS installer, exit                    |
+| Linux x64 DEB       | `aidget-linux-amd64.deb`   | `pkexec dpkg -i`, restart                       |
+| Linux x64 RPM       | `aidget-linux-amd64.rpm`   | `pkexec rpm -U`, restart                        |
 
 DMGs remain available for manual installation. macOS ZIPs retain the complete
 `.app` wrapper, and `SHA256SUMS` covers every update asset. A build without a
-supported package manager reports that it cannot update in place. Beta.1 users
-must manually install beta.2 or later once because the older updater expects the
-previous asset names.
+supported package manager reports that it cannot update in place. AppImage is no
+longer published; beta.1 and beta.2 AppImage users must manually migrate to DEB
+or RPM because the next release has no AppImage asset to update from.
 
 ## Code layout
 
@@ -177,7 +173,7 @@ src/update/
     ├── mod.rs        per-platform dispatch and relaunch
     ├── macos.rs      unpack, swap with rollback, start the new one
     ├── windows.rs    NSIS flags and launch
-    └── linux.rs      AppImage replacement, deb/rpm through pkexec
+    └── linux.rs      deb/rpm through pkexec
 ```
 
 The Tauri endpoints live in `src/runtime/commands.rs` with every other command;
@@ -191,8 +187,6 @@ directory with its `mod.rs`, registered in `tests/main.rs`. Frontend tests live 
 
 ## Traps
 
-Recorded so they are not rediscovered.
-
 - **A launch check cannot be discovered by polling.** The window reads the snapshot
   when it loads, which is before the check starts, and `idle` stops the poll. Every
   published snapshot is announced on `aidget://update` instead, so the window hears
@@ -200,18 +194,13 @@ Recorded so they are not rediscovered.
 - **Relaunch waits for the old process on every platform.** On Linux the new
   instance finds the old one over IPC, asks it to reopen, and exits, leaving nothing
   running; both platforms now wait on the pid before starting the replacement.
-- **`rerun-if-changed=.git/HEAD` misses a commit.** `HEAD` points at a ref, and the
-  ref is what changes, so a rebuild kept the previous stamp. Refs and
-  `packed-refs` are declared too, and a build with no tag and no describe reports
-  `<version>-untagged` rather than passing for a release.
-- **A matrix field that does not exist fails silently.** The zipped `.app` step read
-  `matrix.arch`, which the matrix never defined, so both archives were named
-  `aidget_<version>_.app.zip` — accepted by the workflow, rejected later by the
-  asset collector, after four platforms had been built.
-- **A Tauri command that spawns must be `async`.** A synchronous command runs on the
-  main thread, which has no Tokio runtime, so `tokio::spawn` panics and the panic
-  aborts the process. `update_download` answers with the `Downloading` snapshot at
-  once and finishes in the background.
+- **Watching `.git/HEAD` alone misses commits.** Declare the branch and tag refs
+  plus `packed-refs`; otherwise a cached build stamp can survive the commit that
+  should change it. A build with no tag and no describe reports
+  `<version>-untagged`.
+- **A Tauri command that performs network and file work must be `async`.** A
+  synchronous command runs on the main thread, where blocking work stalls the
+  window. `update_apply` publishes download progress while the replacement runs.
 - **Do not relaunch with `open -a`.** LaunchServices resolves an application by its
   bundle identifier, so with another copy running it activates that one and the
   bundle just swapped in never starts. The replaced executable is started directly.
@@ -219,25 +208,20 @@ Recorded so they are not rediscovered.
 - **Incremental builds cache the stamp.** `build.rs` reruns only for what it
   declares, so a rebuild after a checkout can keep the previous `git describe`
   result. Touch `build.rs` when the stamp matters.
-- **Once the repository has tags, every later commit reads as a build from
-  source.** An acceptance build has to be made at a tag.
-- **A download test has to name this machine's asset.** A mock release named
-  `aidget-darwin-arm64.zip` on every platform makes the service correctly refuse to
-  download a macOS asset on a machine that installs a `.deb`. The mock server fills
-  `__ASSET__` from `target::current()`.
+- **Acceptance builds must be made at the release tag.** Any later commit reports
+  as a build from source.
+- **Download tests use the current platform asset.** The mock server fills
+  `__ASSET__` from `target::current()` so platform selection is tested rather than
+  bypassed.
 - **A check must not discard a downloaded update.** Neither a failed feed nor a feed
   naming nothing newer says anything about a file that already downloaded and
   verified. Magpie keeps `ready` in both cases for the same reason.
 - **`ditto -c -k` alone loses the `.app` wrapper.** Releases must pass
   `--keepParent`, or the archive holds `Contents/` at its root and there is nothing
   to swap in.
-- **`reqwest` in `Cargo.lock` means nothing.** It is target-specific for non-macOS
-  Apple platforms and is not compiled here; `aws-lc-sys` is what a cross-target
-  Windows check stops in.
-- **A non-success answer is not a file.** A rejected asset request used to be
-  written to disk and only caught by the checksum; the status is checked first.
-- **A failed download takes its directory with it.** Each download gets
-  `<tmp>/aidget-update-<uuid>`; removing only the file left empty folders behind.
+- **A macOS cross-target check stops in `aws-lc-sys`.** The `reqwest` entry is
+  target-specific on non-macOS Apple platforms and is not the toolchain used by a
+  Windows build.
 - **Unauthenticated quota is per address and shared behind a proxy.** A `403` there
   is usually the quota, so the answer is reported with `x-ratelimit-reset` and the
   window says how long to wait.
@@ -277,45 +261,19 @@ repository's `reqwest`, needs an MSVC C toolchain.
 **Unit tests** (`tests/update/`) cover version comparison and the describe-stamp
 rule, release JSON parsing, per-platform asset selection, the digest and
 `SHA256SUMS` paths, the state machine including its refusals, download failures and
-retries, the macOS swap, the AppImage replacement against real files, and the
-`pkexec` command lines. They run against a local mock server, never against GitHub.
+retries, the macOS swap, and the `pkexec` command lines. They run against a local
+mock server, never against GitHub.
 
-**End to end on macOS arm64**, against releases published in the fork with a
-throwaway `AIDGET_HOME`:
-
-| Step                | Evidence                                                     |
-| ------------------- | ------------------------------------------------------------ |
-| Launch check        | `update check Found … in 0.7s`, then `Ready`                 |
-| Manual check        | the same line after the button                               |
-| Auto-download off   | `Found` and stops; the button downloads                      |
-| Progress            | `update download Downloading` → `Ready`                      |
-| Checksum            | the asset matches the release `digest`                       |
-| Install and restart | 0.1.0 → 0.1.3, and the relaunched window reports the new one |
-| Toggle              | theme and language survive the preference write              |
-| Up to date          | `update check Latest`                                        |
-| Nothing published   | `update check NoRelease` against upstream                    |
-| Build from source   | `update check Source`, with the About page naming the build  |
-| Rate limit          | `GitHub rate limit reached; try again in about 9 minute(s)`  |
-
-Two environment notes for repeating this: the release workflow cannot publish to a
-fork (`scripts/release/notes.mjs` needs `DEEPSEEK_API_KEY`), so a test release is
-built locally and uploaded with `gh release create`; and where GitHub is only
-reachable through a proxy, `https_proxy=… NO_PROXY=api.github.com` sends the check
-directly and the asset through the proxy without spending the quota.
-
-**Not run**, and repeated in the pull request:
+The current automated suite does not exercise these platform operations end to
+end:
 
 - Windows installer launch: CI compiles and tests the path, no NSIS install was
   executed on Windows. UAC elevation, SmartScreen and file locking during a silent
   install are likewise unverified.
-- Linux AppImage end to end, and `.deb` / `.rpm` end to end: the commands are
-  asserted, the prompt they need cannot be answered in CI.
-- A widget window being refused: guaranteed by the command inventory, not exercised
-  by a test.
+- Linux `.deb` / `.rpm` end to end: the commands are asserted, the prompt they
+  need cannot be answered in CI.
 - Running from a read-only folder or straight from a DMG: `ensure_writable` writes
   the advice, it was not run against such a folder.
-- The release notes row on screen: the notes reach the window (tested), the row was
-  not confirmed by eye.
 
 ## Out of scope
 

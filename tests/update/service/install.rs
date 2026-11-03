@@ -111,7 +111,7 @@ fn missing_staging_does_not_run_installer_or_authorize_exit() {
 fn refused_download_does_not_release_install_ownership_even_without_feed_metadata() {
     let service = UpdateService::for_build("unused", "owner/repo", "1.0.0");
     service.snapshot.lock().unwrap().state = UpdateState::Installing;
-    let snapshot = runtime().block_on(service.download(None));
+    let snapshot = runtime().block_on(service.download());
     assert_eq!(snapshot.state, UpdateState::Installing);
 }
 

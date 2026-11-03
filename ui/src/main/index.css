@@ -360,6 +360,9 @@ body[data-platform='windows'] .navigation {
   user-select: none;
   -webkit-user-select: none;
 }
+.update-header-action {
+  margin-left: auto;
+}
 
 .breadcrumb {
   display: flex;
@@ -1052,6 +1055,60 @@ body[data-platform='windows'] .navigation {
   color: var(--muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+.update-version-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.text-button {
+  min-height: 30px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+}
+.text-button[data-update-mode='update'],
+.text-button[data-update-mode='progress'] {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.text-button[data-update-mode='update']:not(:disabled):hover,
+.text-button[data-update-mode='progress']:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--accent) 52%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+.update-action-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  stroke-width: 2.4;
+}
+.text-button:not(:disabled):hover {
+  color: color-mix(in srgb, var(--accent) 72%, var(--text));
+}
+.text-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.text-button:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 /* Release notes are markdown from GitHub: shown as written, wrapped, and capped
    so a long changelog cannot push the rest of the page away. */

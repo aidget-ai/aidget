@@ -22,6 +22,76 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  release-cache:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macos-x64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+          - name: windows-x64
+            os: windows-2022
+            target: ''
+          - name: linux-x64
+            os: ubuntu-22.04
+            target: ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Add Rust target
+        if: matrix.target != ''
+        run: rustup target add "${{ matrix.target }}"
+
+      - name: Check release dependency cache
+        id: release-cache
+        uses: Swatinem/rust-cache@v2.9.3
+        with:
+          shared-key: release-deps
+          lookup-only: true
+          save-if: false
+
+      - name: Restore and save release dependency cache
+        if: steps.release-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2.9.3
+        with:
+          shared-key: release-deps
+          save-if: true
+
+      - if: steps.release-cache.outputs.cache-hit != 'true'
+        uses: pnpm/setup@v3.1.1
+        with:
+          version: 12.15.0
+          runtime: node@24
+          cache: true
+          install: false
+
+      - if: runner.os == 'Linux' && steps.release-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libayatana-appindicator3-dev librsvg2-dev libwebkit2gtk-4.1-dev rpm
+
+      - if: steps.release-cache.outputs.cache-hit != 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Warm release dependencies with target
+        if: steps.release-cache.outputs.cache-hit != 'true' && matrix.target != ''
+        run: pnpm tauri build --ci --no-bundle --target "${{ matrix.target }}"
+
+      - name: Warm release dependencies
+        if: steps.release-cache.outputs.cache-hit != 'true' && matrix.target == ''
+        run: pnpm tauri build --ci --no-bundle
+
   cross-platform:
     strategy:
       fail-fast: false
@@ -45,6 +115,8 @@ jobs:
           install: false
 
       - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - if: runner.os == 'Linux'
         run: |

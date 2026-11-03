@@ -26,7 +26,6 @@ describe('release assets', () => {
       ['aidget-darwin-arm64.zip', 'aidget-darwin-arm64.zip'],
       ['aidget-darwin-amd64.zip', 'aidget-darwin-amd64.zip'],
       ['aidget_0.2.0_x64-setup.exe', 'aidget-windows-amd64.exe'],
-      ['aidget_0.2.0_amd64.AppImage', 'aidget-linux-amd64.AppImage'],
       ['aidget_0.2.0_amd64.deb', 'aidget-linux-amd64.deb'],
       ['aidget-0.2.0-1.x86_64.rpm', 'aidget-linux-amd64.rpm'],
     ]) {
@@ -36,6 +35,7 @@ describe('release assets', () => {
       'notes.txt',
       'other_0.2.0_x64.dmg',
       'aidget_0.2.0_arm64-setup.exe',
+      'aidget_0.2.0_amd64.AppImage',
       'aidget-darwin-arm64.zip.bak',
     ]) {
       expect(() => assetName(bad)).toThrow();
@@ -51,7 +51,6 @@ describe('release assets', () => {
       await mkdir(join(input, 'dmg'), { recursive: true });
       await mkdir(join(input, 'appzip'), { recursive: true });
       await mkdir(join(input, 'nsis'), { recursive: true });
-      await mkdir(join(input, 'appimage'), { recursive: true });
       await mkdir(join(input, 'deb'), { recursive: true });
       await mkdir(join(input, 'rpm'), { recursive: true });
 
@@ -61,7 +60,6 @@ describe('release assets', () => {
         ['appzip/aidget-darwin-arm64.zip', 'arm-app'],
         ['appzip/aidget-darwin-amd64.zip', 'intel-app'],
         ['nsis/aidget_0.2.0_x64-setup.exe', 'windows'],
-        ['appimage/aidget_0.2.0_amd64.AppImage', 'appimage'],
         ['deb/aidget_0.2.0_amd64.deb', 'deb'],
         ['rpm/aidget-0.2.0-1.x86_64.rpm', 'rpm'],
       ];
@@ -70,7 +68,7 @@ describe('release assets', () => {
       }
 
       const names = await collectAssets({ input, output });
-      expect(names).toHaveLength(8);
+      expect(names).toHaveLength(7);
       expect(await readFile(join(output, 'aidget-linux-amd64.rpm'), 'utf8')).toBe('rpm');
       expect(await readFile(join(output, 'SHA256SUMS'), 'utf8')).toContain(
         'aidget-windows-amd64.exe',

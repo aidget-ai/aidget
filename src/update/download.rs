@@ -21,15 +21,11 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 /// `progress` receives `(written, total)`, where `total` is 0 when the response
 /// carries no length. The caller verifies the returned digest before anything
 /// treats the file as installable.
-pub fn to_file(
-    url: &str,
-    token: Option<&str>,
-    dest: &Path,
-    progress: &mut dyn FnMut(u64, u64),
-) -> Result<String> {
+pub fn to_file(url: &str, dest: &Path, progress: &mut dyn FnMut(u64, u64)) -> Result<String> {
     fetch::ensure_secure(url)?;
     let client = fetch::client()?;
-    let mut response = fetch::github_get(&client, url, token)
+    let mut response = client
+        .get(url)
         .timeout(DOWNLOAD_TIMEOUT)
         .send()
         .map_err(|error| Error::Other(format!("download: {error}")))?;
@@ -68,10 +64,11 @@ pub fn to_file(
 }
 
 /// Read a small text asset, such as `SHA256SUMS`.
-pub fn text(url: &str, token: Option<&str>) -> Result<String> {
+pub fn text(url: &str) -> Result<String> {
     fetch::ensure_secure(url)?;
     let client = fetch::client()?;
-    let mut response = fetch::github_get(&client, url, token)
+    let mut response = client
+        .get(url)
         .timeout(Duration::from_secs(30))
         .send()
         .map_err(|error| Error::Other(format!("download: {error}")))?;

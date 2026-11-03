@@ -13,31 +13,8 @@ use crate::common::error::{Error, Result};
 use crate::update::fetch;
 use crate::update::target::Target;
 
-/// The repository release builds read.
+/// The repository every build reads for releases.
 pub const REPOSITORY: &str = "aidget-ai/aidget";
-
-/// The repository development builds read.
-///
-/// A debug build follows the fork so testing an update needs no release in the
-/// upstream repository; only a release build can read [`REPOSITORY`].
-#[cfg(debug_assertions)]
-pub const DEV_REPOSITORY: &str = "kalinplus/aidget";
-
-/// Where this build reads releases from.
-///
-/// `#[cfg]` rather than `cfg!`: a release binary must not carry the test
-/// repository's name at all, and a runtime branch would leave it in the string
-/// table for anyone to point the updater at.
-pub fn repository() -> &'static str {
-    #[cfg(debug_assertions)]
-    {
-        DEV_REPOSITORY
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        REPOSITORY
-    }
-}
 
 /// Where the release feed lives. Tests point [`latest`] elsewhere instead.
 pub const API_BASE: &str = "https://api.github.com";
@@ -49,8 +26,6 @@ pub enum PackageKind {
     MacApp,
     /// Windows: the NSIS installer.
     WindowsSetup,
-    /// Linux: a single-file `AppImage`, replaced in place.
-    AppImage,
     /// Linux: a distribution package upgraded through the package manager.
     Deb,
     /// Linux: a distribution package upgraded through the package manager.
@@ -63,7 +38,6 @@ impl PackageKind {
         match self {
             PackageKind::MacApp => ".zip",
             PackageKind::WindowsSetup => ".exe",
-            PackageKind::AppImage => ".AppImage",
             PackageKind::Deb => ".deb",
             PackageKind::Rpm => ".rpm",
         }
@@ -81,7 +55,7 @@ pub fn latest(base: &str, repository: &str, token: Option<&str>) -> Result<Optio
     let url = format!("{base}/repos/{repository}/releases/latest");
     fetch::ensure_secure(&url)?;
     let client = fetch::client()?;
-    let mut response = fetch::github_get(&client, &url, token)
+    let mut response = fetch::github_api_get(&client, &url, token)?
         .timeout(Duration::from_secs(30))
         .send()
         .map_err(|error| Error::Other(format!("update feed: {error}")))?;

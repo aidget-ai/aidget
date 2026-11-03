@@ -66,6 +66,25 @@ For packaging trials, start with `v0.1.1-beta.0` and increment the beta number
 whenever a code or workflow fix is required. Keep each failed tag. A beta tests
 the same checks, packaging, bilingual notes and asset uploads as a stable release.
 
+## Pipeline caching
+
+The Check workflow warms release dependency caches on every push to `main`.
+It covers macOS Apple Silicon, macOS Intel, Windows x64 and Linux x64 with the
+same `release-deps` cache key used by the Release build. A cache hit skips the
+warm-up compile; a miss runs a release build without packaging and saves its
+dependencies. Each matrix job first performs a `lookup-only` probe. On an exact
+hit it also skips cache restoration, pnpm setup/install, Linux package installation
+and compilation; only a miss performs those steps.
+
+Release builds and verification restore the `main` cache but do not save
+tag-scoped caches. A cold first run still needs a full compile. Use per-job
+timestamps and cache hits to identify regressions before removing platform
+checks or assets.
+
+Verification, packaging and bilingual notes start together after tag metadata
+is validated. The publish job waits for all three and only creates the draft
+after the four build artifacts and `release-notes` artifact exist.
+
 ## Release assets
 
 Every successful release contains:
@@ -75,20 +94,20 @@ Every successful release contains:
 - `aidget-darwin-arm64.zip`
 - `aidget-darwin-amd64.zip`
 - `aidget-windows-amd64.exe`
-- `aidget-linux-amd64.AppImage`
 - `aidget-linux-amd64.deb`
 - `aidget-linux-amd64.rpm`
 - `SHA256SUMS`
 
-DeepSeek generates the English notes from commit subjects since the latest
-published stable release. When there is no stable release, it uses the full
-history, including the root commit. Failed tags do not set the changelog boundary.
+DeepSeek's `deepseek-flash` model generates the English notes from commit
+subjects since the latest published stable release. When there is no stable
+release, it uses the full history, including the root commit. Failed tags do not
+set the changelog boundary.
 A second DeepSeek call adds a Simplified Chinese translation below
 `<!-- lang:zh -->`. Fixed unsigned installation instructions and contributor
 thanks are appended to each language after generation and translation. Contributors
 come from the same commit range: authors, coauthors, explicit reporter credits and
 referenced issue/PR authors. Maintainer `micooz`, bots and coding agents are
-excluded; only public names and known GitHub profile links are shown. GitHub lookup
+excluded; only public names are shown, without hyperlinks. GitHub lookup
 failures abort publication rather than silently dropping names. The notes step
 uses `GH_TOKEN` with read access to issues and pull requests.
 
@@ -97,6 +116,10 @@ The macOS ZIP retains its `.app` directory. Names no longer include versions;
 `SHA256SUMS` covers the exact public filenames. Beta.1 and older clients require
 one manual installation of beta.2 or later to recognize these new names. Published
 releases and their original assets are left unchanged.
+
+AppImage is no longer built or published. Users who installed beta.1 or beta.2
+from an AppImage must manually migrate to the DEB or RPM package; those old
+builds cannot self-update to a release without a matching AppImage asset.
 
 ## Failure and retry rules
 
@@ -117,14 +140,11 @@ The current macOS and Windows artifacts are unsigned. macOS users may see
 Gatekeeper warnings, and Windows users may see SmartScreen warnings.
 
 The app checks the latest stable GitHub Release and verifies update downloads
-against `SHA256SUMS`. macOS uses the `.zip` assets for application replacement.
-Beta releases do not appear in the stable update check.
+against `SHA256SUMS`. macOS uses the `.zip` assets for application replacement;
+Linux uses DEB or RPM through the package manager already on the machine. Beta
+releases do not appear in the stable update check.
 
 RPM beta packages use the core version as RPM `Version` and
 `0.beta.N.1` as RPM `Release`, which sorts before the stable release's `1`.
 The packaged executable retains the full beta version. Public asset filenames
 do not include the version.
-
-The first live release is also the first end-to-end test of GitHub-hosted macOS,
-Windows and Linux packaging. Until it runs, treat those packaging paths as
-unverified.

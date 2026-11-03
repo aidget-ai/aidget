@@ -27,6 +27,7 @@
     "@tauri-apps/cli": "^2.12.3",
     "@types/node": "^26.6.5",
     "happy-dom": "^21.0.4",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "yaml": "^2.9.1"
   }
 }

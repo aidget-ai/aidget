@@ -21,11 +21,16 @@ describe('main window locale', () => {
   it('translates GitHub token network settings in both supported languages', () => {
     expect(translate('zh', 'network')).toBe('网络');
     expect(translate('zh', 'githubToken')).toBe('GitHub 令牌');
-    expect(translate('zh', 'githubTokenDescription')).toBe('用于社区组件的拉取和安装。');
+    expect(translate('zh', 'githubTokenDescription')).toBe(
+      '用于社区组件的拉取和安装，以及更新检查。',
+    );
     expect(translate('zh', 'githubTokenPlaceholder')).toBe('ghp_xxx');
     expect(translate('zh', 'communityGithubTokenHint')).toContain('配置 GitHub 令牌');
     expect(translate('en', 'network')).toBe('Network');
     expect(translate('en', 'githubToken')).toBe('GitHub token');
+    expect(translate('en', 'githubTokenDescription')).toBe(
+      'Used to load and install community widgets and check for updates.',
+    );
   });
 
   it('uses compact community action labels', () => {

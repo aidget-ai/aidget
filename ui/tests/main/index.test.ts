@@ -145,17 +145,13 @@ describe('update row', () => {
     prepareDocument();
 
     // The locale pass is the only thing that names a button here: a button
-    // without a key renders with no text at all, which is how the install button
-    // shipped empty once.
-    for (const selector of [
-      '[data-update-check]',
-      '[data-update-download]',
-      '[data-update-install]',
-    ]) {
+    // without a key renders with no text at all.
+    for (const selector of ['[data-update-action]', '[data-update-header]']) {
       const button = document.querySelector<HTMLButtonElement>(selector);
       expect(button, selector).not.toBeNull();
-      const key = button!.dataset.message;
-      expect(key, `${selector} needs a data-message key`).toBeTruthy();
+      const label = button!.querySelector<HTMLElement>('[data-update-label]');
+      const key = label?.dataset.message;
+      expect(key, `${selector} needs a labelled data-message key`).toBeTruthy();
       expect(translate('en', key as never), `${selector} key ${key} has no text`).not.toBe('');
     }
   });
