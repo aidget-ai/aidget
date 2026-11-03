@@ -229,9 +229,40 @@ describe('update actions', () => {
     const dialog = document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!;
     expect(dialog.open).toBe(true);
     expect(dialog.querySelector('h2')?.textContent).toBe('v0.1.3 release notes');
-    expect(dialog.querySelector('[data-update-notes-range]')?.textContent).toBe('v0.1.0 → v0.1.3');
+    expect(dialog.querySelector('[data-update-notes-range]')).toBeNull();
     expect(dialog.textContent).toContain('Fixes the updater.');
-    expect(dialog.textContent).toContain('v0.1.3');
+    expect(dialog.querySelector('.release-version')).toBeNull();
+  });
+
+  it('keeps the range and source versions when notes span multiple releases', async () => {
+    const page = mount();
+    await page.refresh();
+    mocks.handlers.get('aidget://update')!({
+      payload: snapshot('found', {
+        latest: '0.1.3',
+        notes: {
+          from: '0.1.0',
+          to: '0.1.3',
+          releases: [
+            {
+              version: '0.1.3',
+              body: '## Improvements\n\n- Newest change.',
+            },
+            {
+              version: '0.1.2',
+              body: '## Improvements\n\n- Older change.',
+            },
+          ],
+        },
+      }),
+    });
+
+    document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.click();
+    const dialog = document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!;
+    expect(dialog.querySelector('[data-update-notes-range]')?.textContent).toBe('v0.1.0 → v0.1.3');
+    expect(
+      [...dialog.querySelectorAll('.release-version')].map((badge) => badge.textContent),
+    ).toEqual(['v0.1.3', 'v0.1.2']);
   });
 
   it('uses the configured language and closes the release-notes dialog', async () => {
@@ -270,12 +301,59 @@ describe('update actions', () => {
     document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.click();
     const dialog = document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!;
     expect(dialog.querySelector('h2')?.textContent).toBe('v0.2.0 更新内容');
-    expect(dialog.querySelector('[data-update-notes-range]')?.textContent).toBe('v0.1.0 → v0.2.0');
+    expect(dialog.querySelector('[data-update-notes-range]')).toBeNull();
+    expect(dialog.querySelector('.release-version')).toBeNull();
     expect(dialog.textContent).toContain('中文更新。');
     expect(dialog.textContent).not.toContain('English change.');
 
     dialog.querySelector<HTMLButtonElement>('.community-dialog-close')!.click();
     expect(dialog.open).toBe(false);
+  });
+
+  it('keeps the open release notes stable across progress updates', async () => {
+    const page = mount();
+    await page.refresh();
+    const notes = {
+      from: '0.1.0',
+      to: '0.1.3',
+      releases: [
+        {
+          version: '0.1.3',
+          body: '## Improvements\n\n- Fixes the updater.',
+        },
+      ],
+    };
+    mocks.handlers.get('aidget://update')!({
+      payload: snapshot('downloading', { latest: '0.1.3', done: 1, total: 10, notes }),
+    });
+
+    document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.click();
+    const dialog = document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!;
+    const content = dialog.querySelector<HTMLElement>('.release-notes-content')!;
+    const close = dialog.querySelector<HTMLButtonElement>('.community-dialog-close')!;
+    content.scrollTop = 200;
+    close.focus();
+
+    mocks.handlers.get('aidget://update')!({
+      payload: snapshot('downloading', { latest: '0.1.3', done: 2, total: 10, notes }),
+    });
+
+    expect(dialog.querySelector('.release-notes-content')).toBe(content);
+    expect(content.scrollTop).toBe(200);
+    expect(document.activeElement).toBe(close);
+
+    mocks.handlers.get('aidget://update')!({
+      payload: snapshot('downloading', {
+        latest: '0.1.3',
+        done: 3,
+        total: 10,
+        notes: {
+          ...notes,
+          releases: [{ ...notes.releases[0], body: '## Improvements\n\n- Corrected note.' }],
+        },
+      }),
+    });
+    expect(dialog.textContent).toContain('Corrected note.');
   });
 });
 

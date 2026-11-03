@@ -97,6 +97,8 @@ export function createUpdatePage(
   let noticeTimer: number | undefined;
   let previousState: UpdateState | undefined;
   let poll: number | undefined;
+  let renderedNotes: UpdateNotes | undefined;
+  let renderedNotesLocale: ReturnType<typeof resolvedLocale> | undefined;
 
   function stopNotice() {
     window.clearTimeout(noticeTimer);
@@ -141,13 +143,25 @@ export function createUpdatePage(
   }
 
   function renderNotesDialog(current: UpdateNotes) {
+    const currentLocale = resolvedLocale(locale());
+    const previous = renderedNotes;
+    const unchanged =
+      previous !== undefined &&
+      currentLocale === renderedNotesLocale &&
+      current.from === previous.from &&
+      current.to === previous.to &&
+      current.releases.length === previous.releases.length &&
+      current.releases.every(
+        (release, index) =>
+          release.version === previous.releases[index].version &&
+          release.body === previous.releases[index].body,
+      );
+    if (unchanged) {
+      return;
+    }
     const title = document.createElement('h2');
     title.id = 'update-notes-title';
     title.textContent = t('updateNotesTitle').replace('{version}', current.to.replace(/^v/, ''));
-    const range = document.createElement('p');
-    range.className = 'update-notes-range';
-    range.dataset.updateNotesRange = '';
-    range.textContent = versionRange(current.from, current.to);
     const content = document.createElement('div');
     content.className = 'community-dialog-content release-notes-content';
     renderReleaseNotes(content, current, resolvedLocale(locale()), t('otherChanges'), openExternal);
@@ -158,11 +172,20 @@ export function createUpdatePage(
     close.addEventListener('click', () => notesDialog.close());
     const heading = document.createElement('div');
     heading.className = 'community-dialog-header update-notes-header';
-    heading.append(title, range);
+    heading.append(title);
+    if (current.releases.length > 1) {
+      const range = document.createElement('p');
+      range.className = 'update-notes-range';
+      range.dataset.updateNotesRange = '';
+      range.textContent = versionRange(current.from, current.to);
+      heading.append(range);
+    }
     const footer = document.createElement('div');
     footer.className = 'community-dialog-footer';
     footer.append(close);
     notesDialog.replaceChildren(heading, content, footer);
+    renderedNotes = current;
+    renderedNotesLocale = currentLocale;
   }
 
   function showNotes() {

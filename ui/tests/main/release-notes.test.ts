@@ -61,6 +61,43 @@ describe('release-note language selection', () => {
 });
 
 describe('release-note rendering', () => {
+  it('omits the source version when notes contain a single release', () => {
+    const root = document.createElement('div');
+    document.body.append(root);
+
+    renderReleaseNotes(
+      root,
+      {
+        from: '1.0.0',
+        to: '1.1.0',
+        releases: [
+          {
+            version: '1.1.0',
+            body: `# Changelog
+
+## Features
+
+- Only change.
+
+<!-- lang:zh -->
+
+# Changelog
+
+## 新功能
+
+### 安装说明
+`,
+          },
+        ],
+      },
+      'en',
+      'Other changes',
+      () => {},
+    );
+
+    expect(root.querySelector('.release-version')).toBeNull();
+  });
+
   it('merges categories and adds the source version to every change', () => {
     const root = document.createElement('div');
     document.body.append(root);

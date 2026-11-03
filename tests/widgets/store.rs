@@ -361,6 +361,22 @@ fn ignores_unused_config_fields_but_rejects_unknown_board_fields() {
     assert!(store.load_board().is_err());
 }
 
+#[cfg(unix)]
+#[test]
+fn canonicalized_store_uses_the_resolved_root_for_instance_paths() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("data");
+    fs::create_dir_all(&root).unwrap();
+    let alias = dir.path().join("alias");
+    std::os::unix::fs::symlink(&root, &alias).unwrap();
+
+    let store = Store::new(&alias).canonicalized().unwrap();
+
+    let root = fs::canonicalize(root).unwrap();
+    assert_eq!(store.root(), root);
+    assert_eq!(store.socket_path(), root.join("run/ui.sock"));
+}
+
 #[test]
 fn patch_region_reports_missing_and_duplicate_regions() {
     let html = r#"<div data-aidget-region="a"></div><div data-aidget-region="a"></div>"#;

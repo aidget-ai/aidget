@@ -130,10 +130,11 @@ pub struct ScreenshotArgs {
 impl AidgetMcp {
     /// Create an MCP server using this store's isolated bridge endpoint.
     pub fn new(store: Store) -> crate::common::error::Result<Self> {
+        let store = store.canonicalized()?;
         let socket = store.socket_path();
         Ok(AidgetMcp {
             client: Arc::new(Client::new(socket)),
-            home: dunce::canonicalize(store.root())?,
+            home: store.root().to_path_buf(),
             tool_router: Self::tool_router(),
         })
     }

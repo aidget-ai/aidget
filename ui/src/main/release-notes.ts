@@ -80,6 +80,7 @@ export function renderReleaseNotes(
     });
     return result;
   };
+  const showVersion = notes.releases.length > 1;
   root.replaceChildren();
   for (const category of categories.values()) {
     const section = document.createElement('section');
@@ -105,7 +106,9 @@ export function renderReleaseNotes(
           for (const item of token.items) {
             const row = document.createElement('li');
             appendInlineTokens(row, item.tokens);
-            row.append(versionBadge(entry.version));
+            if (showVersion) {
+              row.append(versionBadge(entry.version));
+            }
             list.append(row);
           }
           continue;
@@ -129,7 +132,9 @@ export function renderReleaseNotes(
         } else {
           block.textContent = 'text' in token ? token.text : token.raw;
         }
-        block.append(versionBadge(entry.version));
+        if (showVersion) {
+          block.append(versionBadge(entry.version));
+        }
         section.append(block);
       }
     }

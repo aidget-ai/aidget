@@ -90,7 +90,38 @@ fn explicit_home_is_used_in_a_child_process() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(std::path::Path::new(report["root"].as_str().unwrap()), home);
+    assert_eq!(
+        std::path::Path::new(report["root"].as_str().unwrap()),
+        dunce::canonicalize(home).unwrap()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn aliased_home_is_canonicalized_before_ipc_paths() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("data");
+    std::fs::create_dir_all(&root).unwrap();
+    let alias = temp.path().join("alias");
+    std::os::unix::fs::symlink(&root, &alias).unwrap();
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_aidget"))
+        .args(["doctor", "--json", "--home", alias.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let root = dunce::canonicalize(root).unwrap();
+    assert_eq!(std::path::Path::new(report["root"].as_str().unwrap()), root);
+    assert_eq!(
+        report["bridge"].as_str().unwrap(),
+        root.join("run/ui.sock").to_string_lossy()
+    );
 }
 
 #[test]
@@ -128,7 +159,7 @@ fn the_default_directory_ignores_the_removed_home_environment_variable() {
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         std::path::Path::new(report["root"].as_str().unwrap()),
-        sandbox.path().join(".aidget")
+        dunce::canonicalize(sandbox.path().join(".aidget")).unwrap()
     );
     assert!(!other.exists());
 }

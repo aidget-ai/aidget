@@ -193,6 +193,7 @@ pub enum CommunityCommand {
 pub fn run(cli: Cli) -> Result<()> {
     let store = cli.store()?;
     store.ensure_layout()?;
+    let store = store.canonicalized()?;
     if let Err(error) = crate::runtime::process::publish_cli(store.root()) {
         eprintln!("aidget: cannot publish the stable CLI entry: {error}");
     }

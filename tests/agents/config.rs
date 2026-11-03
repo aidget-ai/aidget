@@ -271,6 +271,45 @@ fn dsh_enable_deduplicates_matching_home_entries() {
 }
 
 #[test]
+fn dsh_legacy_id_is_replaced_and_removed() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("cordis.patch.yml");
+    fs::write(
+        &path,
+        "- insert:\n  - id: magpie-mcp-aidget\n    name: \"@deepseek-ai/dsh-mcp-client\"\n    config:\n      serverName: aidget\n      transport: stdio\n      command: /old\n      args: [mcp]\n",
+    )
+    .unwrap();
+    let target = McpTarget {
+        path: path.clone(),
+        format: McpFormat::Dsh,
+    };
+
+    assert!(!mcp_state(&target, &launch("/new")).unwrap().installed);
+    set_mcp(&target, &launch("/new"), true, temp.path(), "dsh").unwrap();
+
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(!text.contains("magpie-mcp-aidget"));
+    assert_eq!(text.matches("aidget-mcp").count(), 1);
+    assert!(mcp_state(&target, &launch("/new")).unwrap().installed);
+
+    fs::write(
+        &path,
+        "- insert:\n  - id: magpie-mcp-aidget\n    name: \"@deepseek-ai/dsh-mcp-client\"\n    config:\n      serverName: aidget\n      transport: stdio\n      command: /new\n      args: [mcp]\n",
+    )
+    .unwrap();
+    assert!(mcp_state(&target, &launch("/new")).unwrap().installed);
+    set_mcp(&target, &launch("/new"), true, temp.path(), "dsh").unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(!text.contains("magpie-mcp-aidget"));
+    assert_eq!(text.matches("aidget-mcp").count(), 1);
+
+    set_mcp(&target, &launch("/new"), false, temp.path(), "dsh").unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(!text.contains("magpie-mcp-aidget"));
+    assert!(!text.contains("aidget-mcp"));
+}
+
+#[test]
 fn dsh_home_patch_with_non_list_root_is_rejected() {
     let temp = tempdir().unwrap();
     let path = temp.path().join("cordis.patch.yml");

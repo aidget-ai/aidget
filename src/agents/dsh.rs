@@ -6,6 +6,9 @@ use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+const AIDGET_DSH_ID: &str = "aidget-mcp";
+const LEGACY_AIDGET_DSH_ID: &str = "magpie-mcp-aidget";
+
 /// Keep the home patch authoritative by removing profile duplicates first.
 /// Restore profile patches if the home write fails.
 pub fn set_mcp(
@@ -26,16 +29,16 @@ pub fn set_mcp(
         .transpose()?
         .flatten();
     let installed = state == Some(true);
-    let duplicate_home_entry = enabled
+    let home_needs_normalization = enabled
         && installed
         && current
             .as_deref()
-            .map(dsh_has_duplicate_aidget)
+            .map(dsh_needs_normalization)
             .transpose()?
             .unwrap_or(false);
 
     let global_next = if enabled {
-        (!installed || duplicate_home_entry)
+        (!installed || home_needs_normalization)
             .then(|| edit_dsh(&target.path, current.as_deref(), launch, true))
             .transpose()?
     } else {
@@ -228,7 +231,14 @@ fn is_empty_after_aidget_removal(entry: &serde_yaml::Value) -> bool {
 }
 
 fn is_aidget_dsh_item(item: &serde_yaml::Value) -> bool {
-    item.get("id").and_then(serde_yaml::Value::as_str) == Some("aidget-mcp")
+    matches!(
+        item.get("id").and_then(serde_yaml::Value::as_str),
+        Some(AIDGET_DSH_ID | LEGACY_AIDGET_DSH_ID)
+    )
+}
+
+fn is_legacy_aidget_dsh_item(item: &serde_yaml::Value) -> bool {
+    item.get("id").and_then(serde_yaml::Value::as_str) == Some(LEGACY_AIDGET_DSH_ID)
 }
 
 fn dsh_entry_has_aidget(entry: &serde_yaml::Value) -> bool {
@@ -238,7 +248,7 @@ fn dsh_entry_has_aidget(entry: &serde_yaml::Value) -> bool {
         .is_some_and(|items| items.iter().any(is_aidget_dsh_item))
 }
 
-fn dsh_has_duplicate_aidget(text: &str) -> Result<bool> {
+fn dsh_needs_normalization(text: &str) -> Result<bool> {
     let document: serde_yaml::Value = if text.trim().is_empty() {
         serde_yaml::Value::Sequence(Vec::new())
     } else {
@@ -250,13 +260,13 @@ fn dsh_has_duplicate_aidget(text: &str) -> Result<bool> {
             "dsh patch root is not a list".to_string(),
         ));
     };
-    Ok(entries
+    let items = entries
         .iter()
         .filter_map(|entry| entry.get("insert").and_then(serde_yaml::Value::as_sequence))
         .flat_map(|items| items.iter())
         .filter(|item| is_aidget_dsh_item(item))
-        .count()
-        > 1)
+        .collect::<Vec<_>>();
+    Ok(items.len() > 1 || items.iter().any(|item| is_legacy_aidget_dsh_item(item)))
 }
 
 /// Read whether all named aidget inserts match this launch command.

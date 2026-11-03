@@ -53,6 +53,12 @@ impl Store {
         Store { root: root.into() }
     }
 
+    /// Resolve filesystem aliases before deriving the instance's socket and
+    /// launcher paths.
+    pub fn canonicalized(&self) -> Result<Self> {
+        Ok(Self::new(dunce::canonicalize(&self.root)?))
+    }
+
     /// Serialize installation and author writes across GUI and CLI processes.
     pub fn write_lock(&self) -> Result<fs::File> {
         let file = fs::OpenOptions::new()
