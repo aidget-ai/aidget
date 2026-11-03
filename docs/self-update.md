@@ -95,9 +95,13 @@ as "nothing to do".
 
 **Release notes are retained.** `state/update/releases.json` atomically stores the
 last installed-to-latest range and the newest five stable releases. When an update
-is installed, its retained range remains available; without a matching range, the
-newest five stable releases are shown. The cache is versioned and size-bounded.
-A malformed cache fails service initialization; an unwritable cache fails the check.
+is installed, its retained range remains available. A pending or installed range
+survives restarts while either endpoint matches the running version. Release builds
+exclude the range start: a build behind the latest shows only newer releases, while
+an already-latest build shows just its own release, bounded below by the previous
+stable version. Source builds fall back to the newest five stable releases. The
+cache is versioned and size-bounded. A malformed cache fails service initialization;
+an unwritable cache fails the check.
 
 The dialog selects the requested language from the bilingual release body,
 excluding installation and thanks footers. It merges categories across releases

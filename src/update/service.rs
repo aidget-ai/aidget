@@ -83,7 +83,8 @@ impl UpdateService {
     ) -> Result<Self> {
         let notes_path = notes_path.into();
         let notes_cache = notes::load(&notes_path)?;
-        let retained = notes::initial(&notes_cache).map(Box::new);
+        let current = version::is_released(build).then_some(build);
+        let retained = notes::initial(&notes_cache, current).map(Box::new);
         Ok(UpdateService {
             snapshot: Arc::new(Mutex::new(UpdateSnapshot {
                 state: UpdateState::Idle,

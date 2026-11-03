@@ -83,7 +83,7 @@ export async function generateEnglishChangelog({
     (await git(['log', range, '--pretty=format:%s', '--no-merges'])).trim(),
     'release commit list',
   );
-  const prompt = `Based on the following git commit messages, generate a concise and user-friendly changelog in markdown format. Group changes by category (e.g., Features, Bug Fixes, Improvements). Only include meaningful changes, skip trivial commits. Use clear, non-technical language where possible. Output ONLY the changelog content without any preamble. Do not add installation instructions or contributor acknowledgments; these are appended separately.
+  const prompt = `Based on the following git commit messages, generate a concise and user-friendly changelog in markdown format. Start directly with the category sections. Use exactly \`##\` (level 2) for every category heading, for example \`## Features\` and \`## Bug Fixes\`. Do not add a document title, a \`# Changelog\` or \`## Changelog\` heading, and do not use \`#\` or \`###\` headings anywhere. Group changes by category (e.g., Features, Bug Fixes, Improvements). Only include meaningful changes, skip trivial commits. Use clear, non-technical language where possible. Output ONLY the changelog content without any preamble. Do not add installation instructions or contributor acknowledgments; these are appended separately.
 
 Commit messages:
 ${commits}`;

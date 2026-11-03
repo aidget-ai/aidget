@@ -84,15 +84,32 @@ pub(crate) fn save(path: &Path, cache: &NotesCache) -> Result<()> {
 }
 
 /// Notes to show before the first network check completes.
-pub(crate) fn initial(cache: &NotesCache) -> Option<UpdateNotes> {
-    cache.last_range.clone().or_else(|| cache.recent.clone())
+///
+/// A retained range is reused when `current` is either endpoint; otherwise recent
+/// notes are filtered for a released `current`.
+pub(crate) fn initial(cache: &NotesCache, current: Option<&str>) -> Option<UpdateNotes> {
+    let current = current.map(version::normalised);
+    let retained = cache.last_range.as_ref().filter(|notes| {
+        current
+            .as_deref()
+            .is_none_or(|current| notes.from == current || notes.to == current)
+    });
+    retained.cloned().or_else(|| {
+        cache
+            .recent
+            .as_ref()
+            .and_then(|notes| match current.as_deref() {
+                Some(current) => notes_for_release(notes, current),
+                None => Some(notes.clone()),
+            })
+    })
 }
 
 /// Refresh retained bundles and choose the one matching the running build.
 ///
-/// A newer target always replaces `last_range`. Once installed, that bundle is
-/// reused because its target equals the running version. Without a matching
-/// retained range, the newest five stable releases are shown.
+/// A newer target replaces `last_range`; once installed, that bundle is reused.
+/// Otherwise release builds exclude the range start and source builds see the
+/// newest five stable releases.
 pub(crate) fn select(
     cache: &mut NotesCache,
     current: Option<&str>,
@@ -146,7 +163,13 @@ pub(crate) fn select(
     {
         return Ok(cache.last_range.clone());
     }
-    Ok(cache.recent.clone())
+    match current.as_deref() {
+        Some(current) => Ok(cache
+            .recent
+            .as_ref()
+            .and_then(|notes| notes_for_release(notes, current))),
+        None => Ok(cache.recent.clone()),
+    }
 }
 
 /// Notes for one exact installed-to-target range, regardless of newer releases
@@ -188,4 +211,52 @@ fn bundle<'a>(
 
 fn non_empty(notes: UpdateNotes) -> Option<UpdateNotes> {
     (!notes.releases.is_empty()).then_some(notes)
+}
+
+/// Notes newer than a release build's range start, or just its own release when
+/// it is already latest.
+fn notes_for_release(notes: &UpdateNotes, current: &str) -> Option<UpdateNotes> {
+    let current = version::normalised(current);
+    if current == notes.to {
+        let current_version = semver::Version::parse(&current).ok()?;
+        let latest = notes
+            .releases
+            .iter()
+            .find(|release| release.version == current)?;
+        let from = notes
+            .releases
+            .iter()
+            .find(|release| {
+                semver::Version::parse(&release.version)
+                    .is_ok_and(|release| release.cmp_precedence(&current_version).is_lt())
+            })
+            .map_or_else(
+                || latest.version.clone(),
+                |previous| previous.version.clone(),
+            );
+        return Some(UpdateNotes {
+            from,
+            to: notes.to.clone(),
+            releases: vec![latest.clone()],
+        });
+    }
+    let current_version = semver::Version::parse(&current).ok()?;
+    let releases = notes
+        .releases
+        .iter()
+        .filter(|release| {
+            semver::Version::parse(&release.version).is_ok_and(|release| {
+                release.cmp_precedence(&current_version) == std::cmp::Ordering::Greater
+            })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if releases.is_empty() {
+        return None;
+    }
+    Some(UpdateNotes {
+        from: current,
+        to: notes.to.clone(),
+        releases,
+    })
 }

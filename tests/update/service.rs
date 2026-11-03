@@ -418,7 +418,7 @@ fn an_installed_target_reuses_the_retained_range() {
 }
 
 #[test]
-fn no_retained_range_falls_back_to_the_five_newest_stable_releases() {
+fn an_installed_release_does_not_include_the_previous_release_notes() {
     let body = release_list(&[
         ("v8.0.0", "eight", false, false),
         ("v7.0.0", "seven", false, false),
@@ -429,6 +429,149 @@ fn no_retained_range_falls_back_to_the_five_newest_stable_releases() {
     ]);
     let base = super::serve_once(200, &body);
     let service = UpdateService::for_build(&base, "owner/repo", "8.0.0");
+
+    let snapshot = block_on(service.check(None));
+    let notes = snapshot.notes.expect("the target release keeps its notes");
+
+    assert_eq!(snapshot.state, UpdateState::Latest);
+    assert_eq!(notes.from, "7.0.0");
+    assert_eq!(notes.to, "8.0.0");
+    assert_eq!(
+        notes
+            .releases
+            .iter()
+            .map(|release| release.version.as_str())
+            .collect::<Vec<_>>(),
+        vec!["8.0.0"]
+    );
+}
+
+#[test]
+fn a_retained_cache_excludes_the_starting_release_before_a_check() {
+    let directory = tempfile::tempdir().unwrap();
+    let cache = directory.path().join("update/releases.json");
+    std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
+    std::fs::write(
+        &cache,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "lastRange": null,
+            "recent": {
+                "from": "7.0.0",
+                "to": "8.0.0",
+                "releases": [
+                    { "version": "8.0.0", "body": "eight" },
+                    { "version": "7.0.0", "body": "seven" }
+                ]
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let service =
+        UpdateService::for_build_with_cache("unused", "owner/repo", "8.0.0", &cache).unwrap();
+    let notes = service.snapshot().notes.expect("the target release notes");
+
+    assert_eq!(notes.from, "7.0.0");
+    assert_eq!(notes.to, "8.0.0");
+    assert_eq!(
+        notes
+            .releases
+            .iter()
+            .map(|release| release.version.as_str())
+            .collect::<Vec<_>>(),
+        vec!["8.0.0"]
+    );
+}
+
+#[test]
+fn a_pending_retained_range_survives_a_restart() {
+    let directory = tempfile::tempdir().unwrap();
+    let cache = directory.path().join("update/releases.json");
+    std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
+    std::fs::write(
+        &cache,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "lastRange": {
+                "from": "1.0.0",
+                "to": "8.0.0",
+                "releases": [
+                    { "version": "8.0.0", "body": "eight" },
+                    { "version": "7.0.0", "body": "seven" },
+                    { "version": "6.0.0", "body": "six" },
+                    { "version": "5.0.0", "body": "five" },
+                    { "version": "4.0.0", "body": "four" },
+                    { "version": "3.0.0", "body": "three" },
+                    { "version": "2.0.0", "body": "two" }
+                ]
+            },
+            "recent": {
+                "from": "4.0.0",
+                "to": "8.0.0",
+                "releases": [
+                    { "version": "8.0.0", "body": "eight" },
+                    { "version": "7.0.0", "body": "seven" },
+                    { "version": "6.0.0", "body": "six" },
+                    { "version": "5.0.0", "body": "five" },
+                    { "version": "4.0.0", "body": "four" }
+                ]
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let service =
+        UpdateService::for_build_with_cache("unused", "owner/repo", "1.0.0", &cache).unwrap();
+    let notes = service.snapshot().notes.expect("the pending range");
+
+    assert_eq!(notes.from, "1.0.0");
+    assert_eq!(notes.to, "8.0.0");
+    assert_eq!(notes.releases.len(), 7);
+}
+
+#[test]
+fn empty_latest_notes_do_not_show_the_previous_release() {
+    let directory = tempfile::tempdir().unwrap();
+    let cache = directory.path().join("update/releases.json");
+    std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
+    std::fs::write(
+        &cache,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "lastRange": null,
+            "recent": {
+                "from": "7.0.0",
+                "to": "8.0.0",
+                "releases": [
+                    { "version": "7.0.0", "body": "seven" }
+                ]
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let service =
+        UpdateService::for_build_with_cache("unused", "owner/repo", "8.0.0", &cache).unwrap();
+
+    assert_eq!(service.snapshot().notes, None);
+}
+
+#[test]
+fn a_source_build_falls_back_to_the_five_newest_stable_releases() {
+    let body = release_list(&[
+        ("v8.0.0", "eight", false, false),
+        ("v7.0.0", "seven", false, false),
+        ("v6.0.0", "six", false, false),
+        ("v5.0.0", "five", false, false),
+        ("v4.0.0", "four", false, false),
+        ("v3.0.0", "three", false, false),
+    ]);
+    let base = super::serve_once(200, &body);
+    let service = UpdateService::for_build(&base, "owner/repo", "0.1.0-3-g5de53c8-dirty");
 
     let snapshot = block_on(service.check(None));
     let notes = snapshot.notes.expect("recent stable notes");
