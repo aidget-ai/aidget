@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use aidget::agents::skill::{ensure_skill, set_skill, skill_state, skill_tree_hash, SKILL_CONTENT};
+use aidget::agents::skill::{ensure_skill, set_skill, skill_content, skill_state, skill_tree_hash};
 use aidget::widgets::store::Store;
 use serde_json::json;
 use tempfile::tempdir;
@@ -18,17 +18,20 @@ fn embedded_skill_is_materialized_under_the_store_root() {
     let temp = tempdir().unwrap();
     let store = Store::new(temp.path());
     let directory = ensure_skill(&store).unwrap();
-    assert_eq!(directory, temp.path().join("skills/aidget"));
+    assert_eq!(
+        directory,
+        fs::canonicalize(temp.path()).unwrap().join("skills/aidget")
+    );
     assert_eq!(
         fs::read_to_string(directory.join("SKILL.md")).unwrap(),
-        SKILL_CONTENT
+        skill_content(&store).unwrap()
     );
 
     fs::write(directory.join("SKILL.md"), "stale").unwrap();
     ensure_skill(&store).unwrap();
     assert_eq!(
         fs::read_to_string(directory.join("SKILL.md")).unwrap(),
-        SKILL_CONTENT
+        skill_content(&store).unwrap()
     );
 }
 
@@ -71,7 +74,7 @@ fn install_replaces_the_whole_legacy_directory_without_a_backup() {
     fs::write(path.join("SKILL.md"), "old").unwrap();
     fs::write(path.join("notes.txt"), "remove me").unwrap();
 
-    assert!(skill_state(&path, &source).unwrap().conflict.is_some());
+    assert!(skill_state(&path, &source).unwrap().replaceable);
     set_skill(&path, &source, true).unwrap();
 
     assert!(skill_state(&path, &source).unwrap().installed);
@@ -100,18 +103,6 @@ fn remove_only_unlinks_the_agent_and_keeps_the_source() {
 }
 
 #[test]
-fn an_ordinary_directory_is_not_removed_as_a_managed_skill() {
-    let temp = tempdir().unwrap();
-    let source = source(temp.path(), "skill");
-    let path = temp.path().join("agent/skills/aidget");
-    fs::create_dir_all(&path).unwrap();
-    fs::write(path.join("SKILL.md"), "mine").unwrap();
-
-    assert!(set_skill(&path, &source, false).is_err());
-    assert_eq!(fs::read_to_string(path.join("SKILL.md")).unwrap(), "mine");
-}
-
-#[test]
 fn a_current_marked_copy_counts_as_installed_until_it_becomes_stale() {
     let temp = tempdir().unwrap();
     let source = source(temp.path(), "first");
@@ -131,7 +122,7 @@ fn a_current_marked_copy_counts_as_installed_until_it_becomes_stale() {
 
     assert!(skill_state(&path, &source).unwrap().installed);
     fs::write(source.join("SKILL.md"), "second").unwrap();
-    assert!(skill_state(&path, &source).unwrap().conflict.is_some());
+    assert!(skill_state(&path, &source).unwrap().replaceable);
 
     set_skill(&path, &source, true).unwrap();
     assert!(skill_state(&path, &source).unwrap().installed);
@@ -150,7 +141,7 @@ fn a_wrong_link_is_replaced_and_its_target_is_not_modified() {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::os::unix::fs::symlink(&other, &path).unwrap();
 
-    assert!(skill_state(&path, &source).unwrap().conflict.is_some());
+    assert!(skill_state(&path, &source).unwrap().replaceable);
     set_skill(&path, &source, true).unwrap();
 
     assert_eq!(fs::read_to_string(path.join("SKILL.md")).unwrap(), "right");
@@ -213,4 +204,80 @@ fn skill_tree_hash_changes_with_nested_content() {
     let second = skill_tree_hash(&source).unwrap();
 
     assert_ne!(first, second);
+}
+
+#[test]
+fn uninstall_removes_an_unmanaged_named_directory() {
+    let temp = tempdir().unwrap();
+    let source = source(temp.path(), "current");
+    let path = temp.path().join("agent/skills/aidget");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("SKILL.md"), "other").unwrap();
+    set_skill(&path, &source, false).unwrap();
+    assert!(!path.exists());
+    assert_eq!(
+        fs::read_to_string(source.join("SKILL.md")).unwrap(),
+        "current"
+    );
+}
+
+#[test]
+fn both_install_and_uninstall_reject_the_source_directory() {
+    let temp = tempdir().unwrap();
+    let source = source(temp.path(), "keep");
+    for enabled in [true, false] {
+        assert!(set_skill(&source, &source, enabled).is_err());
+        assert_eq!(fs::read_to_string(source.join("SKILL.md")).unwrap(), "keep");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn uninstall_of_another_instances_link_keeps_its_target() {
+    let temp = tempdir().unwrap();
+    let current = source(temp.path(), "current");
+    let other = temp.path().join("other");
+    fs::create_dir(&other).unwrap();
+    fs::write(other.join("SKILL.md"), "keep").unwrap();
+    let path = temp.path().join("aidget");
+    std::os::unix::fs::symlink(&other, &path).unwrap();
+    set_skill(&path, &current, false).unwrap();
+    assert!(fs::symlink_metadata(path).is_err());
+    assert_eq!(fs::read_to_string(other.join("SKILL.md")).unwrap(), "keep");
+}
+
+#[test]
+fn rendered_skill_binds_all_cli_examples_to_its_home() {
+    let temp = tempdir().unwrap();
+    let store = Store::new(temp.path().join("space '中文"));
+    let directory = ensure_skill(&store).unwrap();
+    let content = fs::read_to_string(directory.join("SKILL.md")).unwrap();
+    assert!(content.starts_with("---\nname: aidget\n"));
+    assert!(content.contains("otherwise use the bound CLI"));
+    assert!(!content.contains("$HOME/.aidget"));
+    for line in content
+        .lines()
+        .filter(|line| line.starts_with("\"$AIDGET\""))
+    {
+        assert!(
+            line.contains(&format!(
+                "--home {}",
+                aidget::common::utils::shell_quote(
+                    &fs::canonicalize(store.root()).unwrap().to_string_lossy()
+                )
+            )),
+            "{line}"
+        );
+    }
+}
+
+#[test]
+fn a_destination_containing_the_source_is_never_removed() {
+    let temp = tempdir().unwrap();
+    let source = source(temp.path(), "keep");
+    let path = temp.path().join("store");
+    for enabled in [true, false] {
+        assert!(set_skill(&path, &source, enabled).is_err());
+        assert_eq!(fs::read_to_string(source.join("SKILL.md")).unwrap(), "keep");
+    }
 }

@@ -104,7 +104,7 @@ fn run<F: std::future::Future>(f: F) -> F::Output {
 }
 
 #[test]
-fn magpie_held_download_keeps_version_notes_asset_and_install_identity() {
+fn held_download_keeps_version_notes_asset_and_install_identity() {
     let feed = Feed::new();
     let service = feed.service();
     let ready = run(check_and_maybe_download(service.clone(), None, true));

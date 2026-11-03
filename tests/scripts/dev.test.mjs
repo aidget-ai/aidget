@@ -7,35 +7,62 @@ import { promisify } from 'node:util';
 
 import { expect, test } from 'vite-plus/test';
 
-import { devArgs, devEnvironment } from '../../scripts/dev.mjs';
+import { devArgs, pnpmCommand } from '../../scripts/dev.mjs';
 
 test('only macOS uses a Cargo runner to launch a bundle', () => {
   const args = ['--release', '--', '--features', 'example', '--', 'ui'];
-  expect(devArgs(args, 'linux')).toEqual(['exec', 'tauri', 'dev', ...args]);
-  const mac = devArgs(args, 'darwin');
+  expect(devArgs(args, 'linux', '/tmp/repo')).toEqual([
+    'exec',
+    'tauri',
+    'dev',
+    '--release',
+    '--',
+    '--features',
+    'example',
+    '--',
+    'ui',
+    '--home',
+    resolve('/tmp/repo/.aidget'),
+  ]);
+  const mac = devArgs(args, 'darwin', '/tmp/repo');
   expect(mac.slice(0, 5)).toEqual(['exec', 'tauri', 'dev', '--release', '--']);
   expect(mac[5]).toBe('--config');
   expect(mac[6]).toContain('runner');
-  expect(mac.slice(7)).toEqual(['--features', 'example', '--', 'ui']);
+  expect(mac.slice(7)).toEqual([
+    '--features',
+    'example',
+    '--',
+    'ui',
+    '--home',
+    resolve('/tmp/repo/.aidget'),
+  ]);
 });
 
-test('development uses an isolated data directory and socket', () => {
-  const root = resolve('/tmp/aidget');
-
-  expect(
-    devEnvironment(root, {
-      PATH: '/usr/bin',
-    }),
-  ).toEqual({
-    AIDGET_HOME: resolve(root, '.aidget'),
-    PATH: '/usr/bin',
-  });
+test('development accepts an explicit data directory', () => {
+  for (const platform of ['linux', 'win32', 'darwin']) {
+    expect(devArgs(['--home', '/tmp/custom home'], platform).slice(-3)).toEqual([
+      '--',
+      '--home',
+      resolve('/tmp/custom home'),
+    ]);
+    expect(devArgs(['--home=/tmp/custom home'], platform).slice(-2)).toEqual([
+      '--home',
+      resolve('/tmp/custom home'),
+    ]);
+    expect(devArgs(['--', '--', 'ui', '--home', '/tmp/app home'], platform).slice(-3)).toEqual([
+      'ui',
+      '--home',
+      '/tmp/app home',
+    ]);
+  }
 });
 
-test('development preserves an explicit data directory', () => {
-  expect(devEnvironment('/tmp/aidget', { AIDGET_HOME: '/tmp/aidget-test' })).toEqual({
-    AIDGET_HOME: '/tmp/aidget-test',
-  });
+test('development rejects a missing or conflicting home argument', () => {
+  expect(() => devArgs(['--home'])).toThrow('--home requires a directory');
+  expect(() => devArgs(['--home='])).toThrow('--home requires a directory');
+  expect(() => devArgs(['--home', '/tmp/one', '--', '--', '--home', '/tmp/two'])).toThrow(
+    'not both',
+  );
 });
 
 test.skipIf(process.platform === 'win32')(
@@ -59,7 +86,13 @@ test.skipIf(process.platform === 'win32')(
       );
       const forwarded = JSON.parse(stdout);
       expect(forwarded.slice(0, 4)).toEqual(['exec', 'tauri', 'dev', '--no-watch']);
-      expect(forwarded.slice(-3)).toEqual(['--', 'ui', '--no-main-window']);
+      expect(forwarded.slice(-5)).toEqual([
+        '--',
+        'ui',
+        '--no-main-window',
+        '--home',
+        join(root, '.aidget'),
+      ]);
       if (process.platform === 'darwin') {
         expect(forwarded[6]).toContain(join(root, 'scripts/dev.mjs'));
       }
@@ -113,3 +146,27 @@ test.skipIf(process.platform !== 'darwin')(
     }
   },
 );
+
+test('development passes its data directory as an application argument', () => {
+  for (const platform of ['linux', 'win32', 'darwin']) {
+    expect(devArgs([], platform, '/tmp/aidget-repo').slice(-3)).toEqual([
+      '--',
+      '--home',
+      resolve('/tmp/aidget-repo/.aidget'),
+    ]);
+  }
+});
+
+test('Windows launches pnpm directly and preserves path arguments', () => {
+  const args = ['exec', 'tauri', 'dev', '--', '--', '--home', 'C:\\data space'];
+  expect(pnpmCommand(args, 'win32', 'C:\\pnpm space\\pnpm.exe')).toEqual([
+    'C:\\pnpm space\\pnpm.exe',
+    ...args,
+  ]);
+  expect(pnpmCommand(args, 'win32', 'C:\\pnpm space\\pnpm.cjs')).toEqual([
+    process.execPath,
+    'C:\\pnpm space\\pnpm.cjs',
+    ...args,
+  ]);
+  expect(() => pnpmCommand(args, 'win32', '')).toThrow('pnpm dev');
+});

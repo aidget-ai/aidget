@@ -124,9 +124,9 @@ pnpm install
 pnpm dev
 ```
 
-> To run development, tests, or a portable setup against an isolated directory, point `AIDGET_HOME` at a throwaway path:
+> `pnpm dev` uses the repository's `.aidget/` directory by default, separate from an installed copy. Override it with `--home` when needed:
 >
-> `AIDGET_HOME=/tmp/aidget-dev pnpm dev`
+> `pnpm dev --home /tmp/aidget-dev`
 
 ### Build
 
@@ -162,6 +162,7 @@ cargo test
 ### CLI
 
 ```text
+aidget [--home DIR] <command> [options]
 aidget ui [--background]
 aidget mcp
 aidget widget list|show|create|update|patch|delete

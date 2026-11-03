@@ -16,6 +16,36 @@ pub fn executable_paths_match(configured: &str, current: &str) -> bool {
         == dunce::simplified(Path::new(current)).as_os_str()
 }
 
+/// Quote one literal argument for a POSIX shell, including embedded single quotes.
+pub fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+/// Quote a literal Windows argument, escaping quotes and trailing backslashes.
+pub fn windows_quote(value: &str) -> String {
+    let mut quoted = String::from("\"");
+    let mut backslashes = 0;
+    for character in value.chars() {
+        if character == '\\' {
+            backslashes += 1;
+            continue;
+        }
+        quoted.extend(std::iter::repeat_n(
+            '\\',
+            if character == '"' {
+                backslashes * 2 + 1
+            } else {
+                backslashes
+            },
+        ));
+        quoted.push(character);
+        backslashes = 0;
+    }
+    quoted.extend(std::iter::repeat_n('\\', backslashes * 2));
+    quoted.push('"');
+    quoted
+}
+
 /// Read a cache file without allocating beyond its documented size limit.
 pub fn read_bounded(path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
     let mut bytes = Vec::new();

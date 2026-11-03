@@ -33,19 +33,7 @@ fn main() {
         Err(error) => error.exit(),
     };
     let json = cli.json;
-    let result = match cli.command {
-        // Launching the bundled app (or `tauri dev`) passes no arguments.
-        None => run_ui(true, false),
-        Some(Command::Ui {
-            background,
-            no_main_window,
-        }) => run_ui(!background && !no_main_window, background),
-        Some(Command::Mcp) => run_mcp(),
-        other => aidget::interfaces::cli::run(Cli {
-            command: other,
-            json,
-        }),
-    };
+    let result = run(cli);
     if let Err(error) = result {
         if json {
             match serde_json::to_string(&ErrorBody::from(&error)) {
@@ -59,10 +47,29 @@ fn main() {
     }
 }
 
-fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
-    let store = Store::open_default();
+fn run(cli: Cli) -> Result<()> {
+    let store = cli.store()?;
+    let json = cli.json;
+    match cli.command {
+        None => run_ui(store, true, false),
+        Some(Command::Ui {
+            background,
+            no_main_window,
+        }) => run_ui(store, !background && !no_main_window, background),
+        Some(Command::Mcp) => run_mcp(store),
+        other => aidget::interfaces::cli::run(Cli {
+            home: cli.home,
+            command: other,
+            json,
+        }),
+    }
+}
+
+fn run_ui(store: Store, show_main_window: bool, detach: bool) -> Result<()> {
     store.ensure_layout()?;
-    aidget::runtime::process::publish_cli(store.root());
+    if let Err(error) = aidget::runtime::process::publish_cli(store.root()) {
+        eprintln!("aidget: cannot publish the stable CLI entry: {error}");
+    }
     let client = aidget::transport::client::Client::new(store.socket_path());
     if client.is_running() {
         if show_main_window {
@@ -88,16 +95,10 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
         ));
     }
     if detach {
-        return aidget::runtime::process::spawn_ui();
+        return aidget::runtime::process::spawn_ui(store.root());
     }
 
-    let skill_directory = aidget::agents::skill::ensure_skill(&store)?;
-    for problem in aidget::agents::integration::migrate_skill_links(&skill_directory) {
-        eprintln!(
-            "agent skill migration {}: {}",
-            problem.agent_id, problem.message
-        );
-    }
+    aidget::agents::skill::ensure_skill(&store)?;
     let endpoint = aidget::transport::ipc::Endpoint::new(store.socket_path());
     let listener = endpoint
         .bind()
@@ -109,10 +110,18 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
     let store_for_server = Arc::new(store.clone());
 
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec!["ui", "--no-main-window"]),
-        ))
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .args([
+                    "--home",
+                    store.root().to_str().ok_or_else(|| {
+                        Error::InvalidParams("the data directory is not UTF-8".into())
+                    })?,
+                    "ui",
+                    "--no-main-window",
+                ])
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .register_uri_scheme_protocol("aidget", move |ctx, request| {
             aidget::transport::server::protocol::handle(&ctx, request, &store_for_protocol)
@@ -204,11 +213,12 @@ fn reopen_running_app(client: &aidget::transport::client::Client) -> Result<()> 
         .map(|_| ())
 }
 
-fn run_mcp() -> Result<()> {
-    let store = Store::open_default();
+fn run_mcp(store: Store) -> Result<()> {
     store.ensure_layout()?;
     store.prune_retained()?;
-    aidget::runtime::process::publish_cli(store.root());
+    if let Err(error) = aidget::runtime::process::publish_cli(store.root()) {
+        eprintln!("aidget: cannot publish the stable CLI entry: {error}");
+    }
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

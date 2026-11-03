@@ -1,5 +1,6 @@
 //! Generate frontend TypeScript declarations from the owning Rust types.
 use aidget::{
+    agents::{config::AgentResourceState, integration::*},
     community::model::*,
     runtime::ui::LocalWidgetDetails,
     widgets::{
@@ -22,6 +23,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let cfg = Config::default().with_large_int("number");
     let types = [
+        AgentResourceState::decl(&cfg),
+        AgentIntegration::decl(&cfg),
+        IntegrationState::decl(&cfg),
+        IntegrationResource::decl(&cfg),
+        AgentProblem::decl(&cfg),
+        IntegrationMutation::decl(&cfg),
         WidgetPermission::decl(&cfg),
         WidgetDragMode::decl(&cfg),
         WidgetPlatform::decl(&cfg),

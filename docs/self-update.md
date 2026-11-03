@@ -80,7 +80,7 @@ running app before copying, so nothing waits for it.
 has no terminal: the command runs through `pkexec`, which asks the desktop's polkit
 agent, with the tool passed as the absolute path `PATH` resolved. A package install
 never starts on quit, where the password prompt would appear as the window
-disappears — the rule Magpie applies too.
+disappears.
 
 **`state` says what is happening, `staged` what is available.** The window derives
 the available action from both fields. `UpdateSnapshot.staged` is read from the
@@ -235,7 +235,7 @@ directory with its `mod.rs`, registered in `tests/main.rs`. Frontend tests live 
   bypassed.
 - **A check must not discard a downloaded update.** Neither a failed feed nor a feed
   naming nothing newer says anything about a file that already downloaded and
-  verified. Magpie keeps `ready` in both cases for the same reason.
+  verified.
 - **`ditto -c -k` alone loses the `.app` wrapper.** Releases must pass
   `--keepParent`, or the archive holds `Contents/` at its root and there is nothing
   to swap in.

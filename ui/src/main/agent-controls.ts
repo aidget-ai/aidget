@@ -11,13 +11,14 @@ export interface AgentStripLabels {
   all: string;
   empty: string;
   installFor: string;
+  replaceFor: string;
   removeFrom: string;
 }
 
 const STACK_SHIFT = 8;
 
 /**
- * Draw Magpie-style Agent chips for one resource.
+ * Render Agent install controls for one resource.
  */
 export function renderAgentStrip(
   root: HTMLElement,
@@ -79,22 +80,21 @@ function agentButton(
   button.className = [
     'agent-chip',
     state.installed ? 'is-on' : '',
+    state.replaceable ? 'is-replaceable' : '',
     state.conflict ? 'has-conflict' : '',
   ]
     .filter(Boolean)
     .join(' ');
   button.dataset.agent = agent.id;
   button.setAttribute('aria-pressed', String(state.installed));
-  const action = state.installed
-    ? `${labels.removeFrom} ${agent.name}`
-    : labels.installFor.replace('{agent}', agent.name);
+  const action = (
+    state.installed ? labels.removeFrom : state.replaceable ? labels.replaceFor : labels.installFor
+  ).replace('{agent}', agent.name);
   button.setAttribute('aria-label', action);
-  button.title = state.conflict
-    ? `${agent.name}: ${state.conflict}`
-    : state.installed
-      ? `${action}\n${state.path}`
-      : `${action}${state.path}`;
-  button.disabled = busy;
+  const description = state.conflict ?? state.path;
+  button.setAttribute('aria-description', description);
+  button.title = state.conflict ? `${agent.name}: ${state.conflict}` : `${action}${state.path}`;
+  button.disabled = busy || !!state.conflict;
 
   const icon = agentIcon(agent.icon);
   if (icon?.monochrome) {

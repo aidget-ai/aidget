@@ -8,10 +8,27 @@
 - The platform WebView and packaging dependencies described in the README
 
 `pnpm dev` keeps development data and its IPC socket under `.aidget/` by default.
-Override it with `AIDGET_HOME`. This lets development and installed copies run
+Override it with `pnpm dev --home <directory>`. This lets development and installed copies run
 alongside each other with separate system-tray icons. On macOS, Cargo launches
 the executable from a minimal `aidget-dev.app` beside the compiled binary so the
 system can display its menu-bar icon.
+
+## Agent integrations
+
+MCP and Skill use the fixed name `aidget` and can be installed independently.
+Install replaces that entry; uninstall removes it without restoring an older
+configuration. All skips unreadable configurations. Startup updates only the
+instance's CLI entry and Skill source, leaving Agent entries untouched.
+
+MCP, child GUIs and autostart use an absolute `--home`. The page omits the
+argument for the OS default directory. Windows runs the `.cmd` entry through
+`cmd.exe`. Skills use MCP only when it identifies their bound directory;
+copied Skills need reinstalling to refresh, while links read source changes.
+
+MCP writes preserve neighbors and back up the original file under
+`<root>/state/agent-backups/`. Skill installation replaces the whole Agent
+`skills/aidget` entry without a backup. Removing a link preserves its target;
+the source and directories containing it cannot be removed or replaced.
 
 ## Pull requests
 
@@ -69,8 +86,8 @@ authorization and the Tauri ACL are tested independently.
 Run the app against a throwaway data directory:
 
 ```bash
-AIDGET_HOME=/tmp/aidget-dev cargo run -- ui --background
-AIDGET_HOME=/tmp/aidget-dev cargo run -- doctor
+cargo run -- --home /tmp/aidget-dev ui --background
+cargo run -- --home /tmp/aidget-dev doctor
 ```
 
 Never use a real agent configuration or `~/.aidget` as test data.

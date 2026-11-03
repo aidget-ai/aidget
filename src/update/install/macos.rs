@@ -1,6 +1,6 @@
 //! Replacing the running `.app` with a downloaded one, then starting it again.
 //!
-//! The swap follows Magpie: unpack beside the bundle so installing is a rename
+//! Unpack beside the bundle so installing is a rename
 //! on one volume, keep the previous app aside until the new one is in place, and
 //! only then drop it.
 

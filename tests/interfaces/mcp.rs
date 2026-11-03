@@ -290,7 +290,7 @@ async fn async_mcp_bridge_calls_leave_the_runtime_responsive() {
         )
         .unwrap();
     let (_bridge, list_received, heartbeat) = McpBridge::start(store.clone());
-    let mcp = AidgetMcp::new(store);
+    let mcp = AidgetMcp::new(store).unwrap();
     let (listing, heartbeat_sent) =
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             tokio::join!(mcp.list(), async {
@@ -330,4 +330,20 @@ async fn async_mcp_bridge_calls_leave_the_runtime_responsive() {
     let expected = mcp_error(Error::NotFound("missing".into()));
     assert_eq!(error.code, expected.code);
     assert_eq!(error.data, expected.data);
+}
+
+#[test]
+fn instructions_identify_the_canonical_data_directory() {
+    use aidget::interfaces::mcp::AidgetMcp;
+    use aidget::widgets::store::Store;
+    use rmcp::ServerHandler;
+    let home = tempfile::tempdir().unwrap();
+    let server = AidgetMcp::new(Store::new(home.path())).unwrap();
+    let info = server.get_info();
+    let instructions = info.instructions.unwrap();
+    assert!(instructions.starts_with(SERVER_INSTRUCTIONS));
+    assert!(instructions.contains(
+        &serde_json::to_string(&dunce::canonicalize(home.path()).unwrap().to_string_lossy())
+            .unwrap()
+    ));
 }

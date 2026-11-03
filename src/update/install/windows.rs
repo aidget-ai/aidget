@@ -1,40 +1,53 @@
-//! Running the NSIS installer that replaces this install.
-//!
-//! Windows cannot swap a running `.exe` the way macOS swaps a bundle, and Tauri
-//! ships an NSIS installer rather than a bare executable, so the install is the
-//! installer's job. Its flags are the ones Tauri's own updater passes.
+//! Replace a Windows installation through Tauri's NSIS installer.
 
 use std::path::Path;
 use std::process::Command;
 
 use crate::common::error::{Error, Result};
 
-/// The flags Tauri's NSIS installer understands for an update.
-///
-/// `/S` silent and `/UPDATE` because this is an update; `/R` has it start the
-/// new version once installed, as the signed-in user. A silent installer kills
-/// the running app before copying, which is why nothing here waits for it.
-pub fn installer_args(restart: bool) -> Vec<&'static str> {
-    let mut args = vec!["/S", "/UPDATE"];
+/// Silent update flags, with `/R /ARGS` preserving app arguments on restart.
+pub fn installer_args(restart: bool, current_args: &[String]) -> String {
+    let mut args = String::from("/S /UPDATE");
     if restart {
-        args.push("/R");
+        args.push_str(" /R");
+        if !current_args.is_empty() {
+            args.push_str(" /ARGS ");
+            args.push_str(
+                &current_args
+                    .iter()
+                    .map(|arg| crate::common::utils::windows_quote(arg))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
+        }
     }
     args
 }
 
-/// Hand the downloaded `-setup.exe` to the system and return.
-///
-/// Nothing waits: the installer is a separate program that outlives this one and
-/// stops it, so a failure after this point cannot be reported in the window.
+/// Start the installer without waiting: it stops the running app before copying.
 pub fn install(staged: &Path, restart: bool) -> Result<()> {
-    Command::new(staged)
-        .args(installer_args(restart))
-        .spawn()
-        .map_err(|error| {
-            Error::Other(format!(
-                "cannot start the installer {}: {error}",
-                staged.display()
-            ))
-        })?;
+    let current_args = std::env::args_os()
+        .skip(1)
+        .map(|arg| {
+            arg.into_string()
+                .map_err(|_| Error::InvalidParams("update restart arguments are not UTF-8".into()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let arguments = installer_args(restart, &current_args);
+    let mut command = Command::new(staged);
+    #[cfg(windows)]
+    {
+        // NSIS reads /ARGS from the raw command line before launching the app.
+        use std::os::windows::process::CommandExt;
+        command.raw_arg(arguments);
+    }
+    #[cfg(not(windows))]
+    command.arg(arguments);
+    command.spawn().map_err(|error| {
+        Error::Other(format!(
+            "cannot start the installer {}: {error}",
+            staged.display()
+        ))
+    })?;
     Ok(())
 }

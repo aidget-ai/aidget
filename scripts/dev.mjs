@@ -5,33 +5,60 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Use Cargo's executable runner on macOS without changing its build or target options. */
-export function devArgs(args, platform = process.platform) {
-  if (platform !== 'darwin') {
-    return ['exec', 'tauri', 'dev', ...args];
-  }
+/** Forward Tauri, Cargo and app arguments while isolating development data. */
+export function devArgs(args, platform = process.platform, directory = root) {
   const separator = args.indexOf('--');
-  const tauriArgs = separator < 0 ? args : args.slice(0, separator);
-  const cargoArgs = separator < 0 ? [] : args.slice(separator + 1);
-  const runner = [process.execPath, fileURLToPath(import.meta.url), '--run-app'];
+  const tauriArgs = separator < 0 ? [...args] : args.slice(0, separator);
+  const forwarded = separator < 0 ? [] : args.slice(separator + 1);
+  const appSeparator = forwarded.indexOf('--');
+  const cargoArgs = appSeparator < 0 ? forwarded : forwarded.slice(0, appSeparator);
+  const appArgs = appSeparator < 0 ? [] : forwarded.slice(appSeparator + 1);
+  const homeIndex = tauriArgs.findIndex((arg) => arg === '--home' || arg.startsWith('--home='));
+  let home = resolve(directory, '.aidget');
+  if (homeIndex >= 0) {
+    const option = tauriArgs[homeIndex];
+    home = option === '--home' ? tauriArgs[homeIndex + 1] : option.slice('--home='.length);
+    if (!home || home.startsWith('--')) {
+      throw new Error('--home requires a directory');
+    }
+    if (appArgs.some((arg) => arg === '--home' || arg.startsWith('--home='))) {
+      throw new Error('pass --home either to dev or to the app, not both');
+    }
+    tauriArgs.splice(homeIndex, option === '--home' ? 2 : 1);
+    home = resolve(home);
+  }
+  if (!appArgs.some((arg) => arg === '--home' || arg.startsWith('--home='))) {
+    appArgs.push('--home', home);
+  }
+  const runnerArgs =
+    platform === 'darwin'
+      ? [
+          '--config',
+          `target.'cfg(target_os = "macos")'.runner = ${JSON.stringify([process.execPath, fileURLToPath(import.meta.url), '--run-app'])}`,
+        ]
+      : [];
   return [
     'exec',
     'tauri',
     'dev',
     ...tauriArgs,
     '--',
-    '--config',
-    `target.'cfg(target_os = "macos")'.runner = ${JSON.stringify(runner)}`,
+    ...runnerArgs,
     ...cargoArgs,
+    '--',
+    ...appArgs,
   ];
 }
 
-/** Keep development state and IPC separate from an installed aidget instance. */
-export function devEnvironment(root, environment = process.env) {
-  return {
-    ...environment,
-    AIDGET_HOME: environment.AIDGET_HOME ?? resolve(root, '.aidget'),
-  };
+/** Invoke pnpm without a shell so Windows preserves paths containing spaces. */
+export function pnpmCommand(args, platform = process.platform, entry = process.env.npm_execpath) {
+  if (platform !== 'win32') {
+    return ['pnpm', ...args];
+  }
+  if (!entry) {
+    throw new Error('start development with pnpm dev');
+  }
+  return /\.(?:c|m)?js$/iu.test(entry) ? [process.execPath, entry, ...args] : [entry, ...args];
 }
 
 async function main() {
@@ -59,10 +86,9 @@ async function main() {
     process.execve(executable, [executable, ...args.slice(2)], process.env);
     return;
   }
-  const child = spawn('pnpm', devArgs(args), {
+  const [program, ...commandArgs] = pnpmCommand(devArgs(args));
+  const child = spawn(program, commandArgs, {
     cwd: root,
-    env: devEnvironment(root),
-    shell: process.platform === 'win32',
     stdio: 'inherit',
   });
   child.on('error', (error) => {

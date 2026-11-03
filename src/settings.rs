@@ -221,8 +221,7 @@ pub struct Settings {
     pub auto_download: bool,
 }
 
-/// Downloading an update without asking is on by default, the way Magpie ships
-/// it; the toggle in the About page turns it off.
+/// Download updates automatically unless disabled on the About page.
 fn auto_download_default() -> bool {
     true
 }

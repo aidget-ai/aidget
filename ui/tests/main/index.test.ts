@@ -76,14 +76,16 @@ function integrationState(installed: boolean): IntegrationInfo {
   return {
     mcpCommand: '/Applications/aidget.app/Contents/MacOS/aidget',
     mcpArgs: ['mcp'],
+    mcpDisplayArgs: ['mcp'],
     skillDirectory: '/Users/test/.aidget/skills/aidget',
     skillContent: '',
+    dataDirectory: '/tmp/home',
     agents: [
       {
         id: 'codex',
         name: 'Codex',
         icon: 'codex-color',
-        mcp: { path: '/Users/test/.codex/config.toml', installed },
+        mcp: { path: '/Users/test/.codex/config.toml', installed, replaceable: false },
       },
     ],
   };
@@ -406,8 +408,10 @@ describe('main window navigation', () => {
           return Promise.resolve({
             agents: [],
             mcpArgs: [],
+            mcpDisplayArgs: [],
             mcpCommand: 'aidget mcp',
             skillContent: '',
+            dataDirectory: '/tmp/home',
             skillDirectory: '',
           });
         }

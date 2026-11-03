@@ -8,7 +8,7 @@ body:
       value: |
         Read [CONTRIBUTING.md](https://github.com/aidget-ai/aidget/blob/main/CONTRIBUTING.md) before submitting.
 
-        Keep this short and in your own words. Use a throwaway `AIDGET_HOME` for reproductions, and remove credentials, account identifiers, private widget contents and personal data from logs or screenshots.
+        Keep this short and in your own words. Use Remove credentials, account identifiers, private widget contents and personal data from logs or screenshots.
   - type: textarea
     id: what-happened
     attributes:
@@ -22,7 +22,7 @@ body:
       label: Reproduction
       description: Give the smallest command sequence, widget files, or Agent prompt that reproduces the issue.
       placeholder: |
-        AIDGET_HOME=/tmp/aidget-repro ...
+        aidget --home /tmp/aidget-repro ...
     validations:
       required: true
   - type: input

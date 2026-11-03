@@ -21,12 +21,58 @@ struct CopyMarker {
     tree_hash: String,
 }
 
-/// Materialize the embedded Skill under the active aidget data directory.
+/// Render the embedded Skill with this instance's absolute CLI and data directory.
+pub fn skill_content(store: &Store) -> Result<String> {
+    fs::create_dir_all(store.root())?;
+    let home = dunce::canonicalize(store.root())?;
+    let cli = crate::runtime::process::cli_link(&home);
+    let (header, _) = SKILL_CONTENT
+        .split_once("## Choose a transport")
+        .expect("embedded Skill has a transport section");
+    let (_, rest) = SKILL_CONTENT
+        .split_once("## Safety")
+        .expect("embedded Skill has a safety section");
+    let cli_path = cli.to_string_lossy();
+    #[cfg(not(windows))]
+    let commands = format!(
+        "```bash\nAIDGET={}\n\"$AIDGET\" doctor\n\"$AIDGET\" ui --background\n```",
+        crate::common::utils::shell_quote(&cli_path)
+    );
+    #[cfg(windows)]
+    let commands = format!(
+        "```bat\nset \"AIDGET={cli_path}\"\n\"$AIDGET\" doctor\n\"$AIDGET\" ui --background\n```"
+    );
+    let content = format!("{header}## Choose a transport\n\nData directory: {}. Use `aidget_*` MCP tools only when their server instructions\nidentify this directory; otherwise use the bound CLI below.\nKeep `--home` in every CLI invocation.\n\n{commands}\n\nRead `aidget_guide` over matching MCP or the bound CLI's `guide` command before\ncreating a widget or changing its layout, scripts or permissions.\nDo not edit the data directory by hand; direct writes bypass revisions.\n\n## Safety{rest}", serde_json::to_string(&home.to_string_lossy())?);
+    #[cfg(not(windows))]
+    return Ok(content.replace(
+        "\"$AIDGET\" ",
+        &format!(
+            "\"$AIDGET\" --home {} ",
+            crate::common::utils::shell_quote(&home.to_string_lossy())
+        ),
+    ));
+    #[cfg(windows)]
+    Ok(content
+        .replace(
+            "\"$AIDGET\"",
+            &format!("\"%AIDGET%\" --home \"{}\"", home.display()),
+        )
+        .replace("```bash", "```bat")
+        .replace(" \\\n", " ^\n"))
+}
+
+/// Materialize the instance-bound Skill under its active data directory.
 pub fn ensure_skill(store: &Store) -> Result<PathBuf> {
-    let directory = store.skills_dir().join("aidget");
+    let content = skill_content(store)?;
+    let directory = dunce::canonicalize(store.root())?.join("skills/aidget");
     let path = directory.join("SKILL.md");
-    if fs::read_to_string(&path).ok().as_deref() != Some(SKILL_CONTENT) {
-        atomic_write(&path, SKILL_CONTENT.as_bytes())?;
+    match fs::read_to_string(&path) {
+        Ok(current) if current == content => {}
+        Ok(_) => atomic_write(&path, content.as_bytes())?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            atomic_write(&path, content.as_bytes())?
+        }
+        Err(error) => return Err(error.into()),
     }
     Ok(directory)
 }
@@ -40,6 +86,7 @@ pub fn skill_state(path: &Path, source: &Path) -> Result<AgentResourceState> {
             return Ok(AgentResourceState {
                 path: path_text,
                 installed: false,
+                replaceable: false,
                 conflict: None,
             });
         }
@@ -50,16 +97,15 @@ pub fn skill_state(path: &Path, source: &Path) -> Result<AgentResourceState> {
             AgentResourceState {
                 path: path_text,
                 installed: true,
+                replaceable: false,
                 conflict: None,
             }
         } else {
             AgentResourceState {
                 path: path_text,
                 installed: false,
-                conflict: Some(format!(
-                    "the Skill link does not point to {}",
-                    source.display()
-                )),
+                replaceable: true,
+                conflict: None,
             }
         });
     }
@@ -67,26 +113,40 @@ pub fn skill_state(path: &Path, source: &Path) -> Result<AgentResourceState> {
         return Ok(AgentResourceState {
             path: path_text,
             installed: true,
+            replaceable: false,
             conflict: None,
         });
     }
     Ok(AgentResourceState {
         path: path_text,
         installed: false,
-        conflict: Some(format!(
-            "the Skill entry is not linked to {}",
-            source.display()
-        )),
+        replaceable: true,
+        conflict: None,
     })
 }
 
 /// Install or remove a Skill link, replacing any existing entry without a backup.
 pub fn set_skill(path: &Path, source: &Path, enabled: bool) -> Result<()> {
+    if std::path::absolute(path)? == std::path::absolute(source)? {
+        return Err(Error::InvalidParams(
+            "the Skill source and destination are the same directory".into(),
+        ));
+    }
     let exists = match fs::symlink_metadata(path) {
         Ok(_) => true,
         Err(error) if error.kind() == io::ErrorKind::NotFound => false,
         Err(error) => return Err(error.into()),
     };
+    if exists {
+        let metadata = fs::symlink_metadata(path)?;
+        if !is_link(path, &metadata)?
+            && fs::canonicalize(source)?.starts_with(fs::canonicalize(path)?)
+        {
+            return Err(Error::InvalidParams(
+                "the Skill destination contains its source directory".into(),
+            ));
+        }
+    }
     if enabled {
         if exists && entry_is_current(path, source)? {
             return Ok(());
@@ -95,12 +155,6 @@ pub fn set_skill(path: &Path, source: &Path, enabled: bool) -> Result<()> {
     }
     if !exists {
         return Ok(());
-    }
-    if !entry_is_current(path, source)? {
-        return Err(Error::InvalidParams(format!(
-            "{} is not a Skill entry managed by aidget",
-            path.display()
-        )));
     }
     remove_entry(path)
 }
@@ -116,25 +170,6 @@ fn entry_is_current(path: &Path, source: &Path) -> Result<bool> {
         return link_points_to(path, source);
     }
     Ok(metadata.is_dir() && managed_copy_is_current(path, source)?)
-}
-
-/// Automatic migration preserves links and copies owned by another aidget home,
-/// while allowing this instance to refresh a stale copy that it created.
-pub(crate) fn is_automatic_migration_candidate(path: &Path, source: &Path) -> Result<bool> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.into()),
-    };
-    if is_link(path, &metadata)? || !metadata.is_dir() {
-        return Ok(false);
-    }
-    let marker = match fs::read_to_string(path.join(MARKER_FILE)) {
-        Ok(text) => serde_json::from_str::<CopyMarker>(&text)?,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
-        Err(error) => return Err(error.into()),
-    };
-    Ok(marker.source == fs::canonicalize(source)?.to_string_lossy())
 }
 
 fn managed_copy_is_current(path: &Path, source: &Path) -> Result<bool> {
@@ -213,8 +248,7 @@ fn create_entry(path: &Path, source: &Path) -> Result<()> {
 
 #[cfg(windows)]
 fn create_entry(path: &Path, source: &Path) -> Result<()> {
-    // Match Magpie: a privileged symlink first, a junction when Windows
-    // refuses the privilege, then a marked copy when neither link is possible.
+    // Use a junction or marked copy when Windows cannot create a symlink.
     let link_error = match std::os::windows::fs::symlink_dir(source, path) {
         Ok(()) => match verify_created_link(path) {
             Ok(()) => return Ok(()),

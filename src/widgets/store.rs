@@ -66,14 +66,9 @@ impl Store {
     }
 
     pub fn default_root() -> PathBuf {
-        std::env::var_os("AIDGET_HOME")
-            .map(PathBuf::from)
-            .or_else(|| dirs::home_dir().map(|home| home.join(".aidget")))
+        dirs::home_dir()
+            .map(|home| home.join(".aidget"))
             .unwrap_or_else(|| PathBuf::from(".aidget"))
-    }
-
-    pub fn open_default() -> Self {
-        Store::new(Self::default_root())
     }
 
     pub fn root(&self) -> &Path {

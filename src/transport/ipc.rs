@@ -109,7 +109,7 @@ pub fn into_stream(stream: tokio::net::UnixStream) -> BoxedStream {
 /// Named pipe name for a `<root>/run/ui.sock` path.
 ///
 /// Named pipes live in one global namespace, so the name is derived from the
-/// path rather than fixed: separate `AIDGET_HOME` roots stay separate, and the
+/// path rather than fixed: separate data directories stay separate, and the
 /// path itself is not leaked into a name every local process can enumerate.
 pub fn pipe_name(socket_path: &Path) -> String {
     let mut hash = 0xcbf29ce484222325u64;

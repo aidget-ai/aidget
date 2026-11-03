@@ -69,3 +69,66 @@ fn json_is_available_for_agent_write_and_discovery_commands() {
 fn template_command_is_not_public() {
     assert!(Cli::try_parse_from(["aidget", "template", "list"]).is_err());
 }
+
+#[test]
+fn home_is_a_global_option_for_external_mcp_launches() {
+    assert!(Cli::try_parse_from(["aidget", "--home", "/tmp/development", "mcp"]).is_ok());
+    assert!(Cli::try_parse_from(["aidget", "doctor", "--home", "/tmp/development"]).is_ok());
+}
+
+#[test]
+fn explicit_home_is_used_in_a_child_process() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("development");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_aidget"))
+        .args(["doctor", "--json", "--home", home.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(std::path::Path::new(report["root"].as_str().unwrap()), home);
+}
+
+#[test]
+fn a_launcher_collision_is_reported_without_blocking_existing_cli_commands() {
+    let home = tempfile::tempdir().unwrap();
+    let entry = aidget::runtime::process::cli_link(home.path());
+    std::fs::write(&entry, "keep this file").unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_aidget"))
+        .args(["--home", home.path().to_str().unwrap(), "doctor", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8(output.stderr)
+        .unwrap()
+        .contains("cannot publish the stable CLI entry"));
+    assert_eq!(std::fs::read_to_string(entry).unwrap(), "keep this file");
+}
+
+#[cfg(unix)]
+#[test]
+fn the_default_directory_ignores_the_removed_home_environment_variable() {
+    let sandbox = tempfile::tempdir().unwrap();
+    let other = sandbox.path().join("removed-setting");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_aidget"))
+        .args(["doctor", "--json"])
+        .env("HOME", sandbox.path())
+        .env("AIDGET_HOME", &other)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        std::path::Path::new(report["root"].as_str().unwrap()),
+        sandbox.path().join(".aidget")
+    );
+    assert!(!other.exists());
+}

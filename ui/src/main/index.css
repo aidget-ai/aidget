@@ -968,6 +968,10 @@ body[data-platform='windows'] .navigation {
 .agent-chip.has-conflict {
   border-color: color-mix(in srgb, #d28a24 65%, var(--line));
 }
+.agent-chip.is-replaceable {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  border-style: dashed;
+}
 .agent-chip-all {
   height: 24px;
   flex: none;

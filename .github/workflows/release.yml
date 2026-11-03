@@ -176,7 +176,7 @@ jobs:
           pnpm tauri bundle --ci --bundles rpm --config "$RPM_CONFIG"
           EXPECTED=$(jq -r '.version + "-" + .bundle.linux.rpm.release' <<< "$RPM_CONFIG")
           test "$(rpm -qp --queryformat '%{VERSION}-%{RELEASE}' target/release/bundle/rpm/*.rpm)" = "$EXPECTED"
-          test "$(AIDGET_HOME=$(mktemp -d) target/release/aidget --version)" = "aidget ${RELEASE_TAG#v}"
+          test "$(target/release/aidget --version)" = "aidget ${RELEASE_TAG#v}"
 
       # Requesting both app and dmg keeps the .app available for the updater ZIP.
       - name: Zip the macOS app for the updater

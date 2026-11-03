@@ -15,11 +15,23 @@ use crate::widgets::store::{Store, WidgetEdit, CONFIG_FILE, CSS_FILE, HTML_FILE}
 #[derive(Parser)]
 #[command(name = "aidget", version, about = "Agent-controllable desktop widgets")]
 pub struct Cli {
+    /// Select the data directory (default: ~/.aidget).
+    #[arg(long, global = true)]
+    pub home: Option<PathBuf>,
     /// Emit machine-readable JSON for commands and errors.
     #[arg(long, global = true)]
     pub json: bool,
     #[command(subcommand)]
     pub command: Option<Command>,
+}
+
+impl Cli {
+    /// Resolve the selected data directory before dispatching a command.
+    pub fn store(&self) -> Result<Store> {
+        Ok(Store::new(std::path::absolute(
+            self.home.clone().unwrap_or_else(Store::default_root),
+        )?))
+    }
 }
 
 #[derive(Subcommand)]
@@ -179,9 +191,11 @@ pub enum CommunityCommand {
 }
 
 pub fn run(cli: Cli) -> Result<()> {
-    let store = Store::open_default();
+    let store = cli.store()?;
     store.ensure_layout()?;
-    crate::runtime::process::publish_cli(store.root());
+    if let Err(error) = crate::runtime::process::publish_cli(store.root()) {
+        eprintln!("aidget: cannot publish the stable CLI entry: {error}");
+    }
     let json = cli.json;
     match cli.command.unwrap_or(Command::Guide) {
         Command::Ui { .. } | Command::Mcp => Err(Error::Other(
@@ -192,7 +206,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Command::Displays => displays_command(&store, json),
         Command::Community { command } => {
             let client = Client::new(store.socket_path());
-            crate::runtime::process::ensure_ui(&client)?;
+            crate::runtime::process::ensure_ui(&client, store.root())?;
             let result = match command {
                 CommunityCommand::List => client.call_with_timeout(
                     "community_list",

@@ -5,37 +5,44 @@ use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use crate::agents::config::{self, AgentResourceState};
+use crate::agents::launch::McpLaunch;
 use crate::agents::registry::{builtin_agents, AgentSpec};
-use crate::agents::skill::{self, SKILL_CONTENT};
+use crate::agents::skill;
 use crate::common::error::{Error, Result};
 use crate::widgets::store::Store;
+use ts_rs::TS;
 
 /// Values and detected Agents the main window needs for integrations.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct IntegrationState {
     pub mcp_command: String,
     pub mcp_args: Vec<String>,
+    /// Presentation arguments only; installation always uses mcp_args.
+    pub mcp_display_args: Vec<String>,
     pub skill_directory: String,
     pub skill_content: String,
+    pub data_directory: String,
     pub agents: Vec<AgentIntegration>,
 }
 
 /// One detected Agent and the resources aidget can configure for it.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentIntegration {
     pub id: String,
     pub name: String,
     pub icon: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub mcp: Option<AgentResourceState>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub skills: Option<AgentResourceState>,
 }
 
 /// The resource a page installs or removes.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum IntegrationResource {
     Mcp,
@@ -52,7 +59,7 @@ pub struct IntegrationChange {
 }
 
 /// An Agent whose write failed while the rest of the batch continued.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentProblem {
     pub agent_id: String,
@@ -61,7 +68,7 @@ pub struct AgentProblem {
 }
 
 /// Result of one or more writes, with the state read back from disk.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct IntegrationMutation {
     pub state: IntegrationState,
@@ -71,18 +78,22 @@ pub struct IntegrationMutation {
 static WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// Read the current binary, packaged skill and every detected Agent's live state.
-pub fn integration_state() -> Result<IntegrationState> {
-    let store = Store::open_default();
-    let skill_directory = skill::ensure_skill(&store)?;
-    state_for(&current_executable()?, &skill_directory)
+pub fn integration_state(store: &Store) -> Result<IntegrationState> {
+    let skill_directory = skill::ensure_skill(store)?;
+    let launch = McpLaunch::for_root(store.root())?;
+    state_for(&launch, &skill_directory, store.root())
 }
 
 /// Install or remove one resource for selected detected Agents.
-pub fn set_agent_integration(change: IntegrationChange) -> Result<IntegrationMutation> {
-    let executable = current_executable()?;
-    let command = executable.to_string_lossy().into_owned();
-    let store = Store::open_default();
-    let skill_directory = skill::ensure_skill(&store)?;
+pub fn set_agent_integration(
+    store: &Store,
+    change: IntegrationChange,
+) -> Result<IntegrationMutation> {
+    let skill_directory = skill::ensure_skill(store)?;
+    let launch = McpLaunch::for_root(store.root())?;
+    if change.enabled {
+        crate::runtime::process::publish_cli(store.root())?;
+    }
     let agents = builtin_agents()
         .into_iter()
         .filter(AgentSpec::detected)
@@ -94,7 +105,7 @@ pub fn set_agent_integration(change: IntegrationChange) -> Result<IntegrationMut
         .map_err(|_| Error::Other("integration write lock is poisoned".to_string()))?;
     let problems = apply_change(
         &selected,
-        &command,
+        &launch,
         &skill_directory,
         store.root(),
         change.resource,
@@ -102,7 +113,7 @@ pub fn set_agent_integration(change: IntegrationChange) -> Result<IntegrationMut
     );
     drop(guard);
     Ok(IntegrationMutation {
-        state: state_for(&executable, &skill_directory)?,
+        state: state_for(&launch, &skill_directory, store.root())?,
         problems,
     })
 }
@@ -110,7 +121,7 @@ pub fn set_agent_integration(change: IntegrationChange) -> Result<IntegrationMut
 /// Apply one resource change to every selected Agent and collect per-Agent failures.
 pub fn apply_change(
     selected: &[&AgentSpec],
-    command: &str,
+    launch: &McpLaunch,
     skill_directory: &Path,
     backup_root: &Path,
     resource: IntegrationResource,
@@ -124,7 +135,7 @@ pub fn apply_change(
                     problems.push(problem(agent, resource, "this Agent has no MCP config"));
                     continue;
                 };
-                if let Err(error) = config::set_mcp(target, command, enabled, backup_root, agent.id)
+                if let Err(error) = config::set_mcp(target, launch, enabled, backup_root, agent.id)
                 {
                     problems.push(problem(agent, resource, &error.to_string()));
                 }
@@ -151,45 +162,10 @@ pub fn apply_change(
     problems
 }
 
-/// Replace every existing Skill copy for a detected Agent with the shared link.
-pub fn migrate_skill_links(source: &Path) -> Vec<AgentProblem> {
-    let agents = builtin_agents()
-        .into_iter()
-        .filter(AgentSpec::detected)
-        .collect::<Vec<_>>();
-    let selected = agents.iter().collect::<Vec<_>>();
-    migrate_existing_skills(&selected, source)
-}
-
-/// Replace existing Skill entries in the supplied Agent set.
-pub fn migrate_existing_skills(selected: &[&AgentSpec], source: &Path) -> Vec<AgentProblem> {
-    let mut problems = Vec::new();
-    let mut handled = HashMap::<std::path::PathBuf, std::result::Result<(), String>>::new();
-    for agent in selected {
-        let Some(root) = &agent.skills else {
-            continue;
-        };
-        let path = skill_path(root);
-        let result = handled.entry(path.clone()).or_insert_with(|| {
-            if !skill::is_automatic_migration_candidate(&path, source)
-                .map_err(|error| error.to_string())?
-            {
-                return Ok(());
-            }
-            if skill::skill_state(&path, source).is_ok_and(|state| state.installed) {
-                return Ok(());
-            }
-            skill::set_skill(&path, source, true).map_err(|error| error.to_string())
-        });
-        if let Err(message) = result {
-            problems.push(problem(agent, IntegrationResource::Skills, message));
-        }
-    }
-    problems
-}
-
-fn state_for(executable: &Path, skill_directory: &Path) -> Result<IntegrationState> {
-    let command = executable.to_string_lossy().into_owned();
+fn state_for(launch: &McpLaunch, skill_directory: &Path, root: &Path) -> Result<IntegrationState> {
+    let default_root = dirs::home_dir()
+        .ok_or_else(|| Error::Other("cannot determine the default user data directory".into()))?
+        .join(".aidget");
     let agents = builtin_agents()
         .into_iter()
         .filter(AgentSpec::detected)
@@ -202,7 +178,7 @@ fn state_for(executable: &Path, skill_directory: &Path) -> Result<IntegrationSta
                 mcp: agent
                     .mcp
                     .as_ref()
-                    .map(|target| config::mcp_state(target, &command))
+                    .map(|target| config::mcp_state(target, launch))
                     .transpose()?,
                 skills: agent.skills.as_ref().map(|root| {
                     let path = skill_path(root);
@@ -210,6 +186,7 @@ fn state_for(executable: &Path, skill_directory: &Path) -> Result<IntegrationSta
                         AgentResourceState {
                             path: path.to_string_lossy().into_owned(),
                             installed: false,
+                            replaceable: false,
                             conflict: Some(error.to_string()),
                         }
                     })
@@ -218,18 +195,14 @@ fn state_for(executable: &Path, skill_directory: &Path) -> Result<IntegrationSta
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(IntegrationState {
-        mcp_command: command,
-        mcp_args: vec!["mcp".to_string()],
+        mcp_command: launch.command.clone(),
+        mcp_args: launch.args.clone(),
+        mcp_display_args: McpLaunch::for_display(root, &default_root)?.args,
         skill_directory: skill_directory.to_string_lossy().into_owned(),
-        skill_content: SKILL_CONTENT.to_string(),
+        skill_content: std::fs::read_to_string(skill_directory.join("SKILL.md"))?,
+        data_directory: dunce::canonicalize(root)?.to_string_lossy().into_owned(),
         agents,
     })
-}
-
-fn current_executable() -> Result<std::path::PathBuf> {
-    // The command is pasted into Agent configs and batch files, which cannot
-    // invoke the `\\?\` verbatim paths `Path::canonicalize` emits on Windows.
-    Ok(dunce::canonicalize(std::env::current_exe()?)?)
 }
 
 /// Resolve the aidget Skill directory below one Agent's skills root.

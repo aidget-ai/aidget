@@ -1,7 +1,4 @@
 //! Installing a verified update.
-//!
-//! Each platform replaces its own kind of install; the platform that cannot is
-//! left out rather than faked.
 
 use std::path::Path;
 
@@ -87,16 +84,21 @@ impl Installation {
     }
 }
 
-/// A shell command that waits for `pid` to exit, then replaces itself with `exe`
-/// and appends whatever the new process prints to `log`.
-///
-/// Replacing a running bundle or binary is fine, but starting the new one while the
-/// old process is still alive can hand the launch to the dying process — and on
-/// Linux the new process can find the old instance over IPC, ask it to reopen, and
-/// exit, leaving nothing running. Both platforms share this shape.
-pub fn relaunch_script(exe: &Path, pid: u32, log: &Path) -> String {
+/// Wait for the old PID to release IPC, then exec the saved binary with its
+/// arguments and append output to the log.
+pub fn relaunch_script(exe: &Path, pid: u32, log: &Path, args: &[std::ffi::OsString]) -> String {
+    let arguments = args
+        .iter()
+        .map(|arg| crate::common::utils::shell_quote(&arg.to_string_lossy()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let arguments = if arguments.is_empty() {
+        String::new()
+    } else {
+        format!(" {arguments}")
+    };
     format!(
-        "while kill -0 {pid} 2>/dev/null; do sleep 0.2; done; exec {} >>{} 2>&1",
+        "while kill -0 {pid} 2>/dev/null; do sleep 0.2; done; exec {}{arguments} >>{} 2>&1",
         sh_quote(exe),
         sh_quote(log)
     )

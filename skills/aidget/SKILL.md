@@ -24,8 +24,11 @@ Use `aidget_guide` over MCP or `"$AIDGET" guide` over the CLI before
 creating a widget or changing its regions, surface, scripts or permissions.
 That guide is the canonical authoring contract.
 
-Do not edit `~/.aidget` by hand. Direct writes bypass revision bumps and can
-race the watcher.
+`--home <directory>` selects the data directory; the default is `~/.aidget`.
+App-installed Skills include it in their bound CLI commands.
+
+Do not edit the data directory by hand. Direct writes bypass revision bumps
+and can race the watcher.
 
 ## Safety
 

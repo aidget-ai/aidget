@@ -34,7 +34,8 @@ pub fn relaunch(exe: &Path) -> Result<()> {
     // owns the IPC endpoint, and the new one would find it, ask it to reopen, and
     // exit — leaving nothing running.
     let log = std::env::temp_dir().join("aidget-relaunch.log");
-    let script = super::relaunch_script(exe, std::process::id(), &log);
+    let args = std::env::args_os().skip(1).collect::<Vec<_>>();
+    let script = super::relaunch_script(exe, std::process::id(), &log, &args);
     Command::new("/bin/sh").arg("-c").arg(script).spawn()?;
     Ok(())
 }

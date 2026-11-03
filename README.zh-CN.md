@@ -124,9 +124,9 @@ pnpm install
 pnpm dev
 ```
 
-> 开发、测试或便携运行时，可以通过 `AIDGET_HOME` 环境变量指向隔离目录：
+> `pnpm dev` 默认使用仓库内的 `.aidget/` 目录，与正式版隔离；可通过 `--home` 指定其他目录：
 >
-> AIDGET_HOME=/tmp/aidget-dev pnpm dev
+> pnpm dev --home /tmp/aidget-dev
 
 ### 构建
 
@@ -162,6 +162,7 @@ cargo test
 ### CLI 程序
 
 ```text
+aidget [--home DIR] <command> [options]
 aidget ui [--background]
 aidget mcp
 aidget widget list|show|create|update|patch|delete

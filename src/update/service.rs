@@ -224,10 +224,8 @@ impl UpdateService {
     /// A failed check, which is about the feed and not about what is already on
     /// disk.
     ///
-    /// A downloaded and verified update stays installable: Magpie keeps its
-    /// `ready` state across a failed poll for the same reason, and the
-    /// Integrations page here keeps its last answer when a refresh fails. The
-    /// message is still reported, next to the update rather than instead of it.
+    /// A downloaded and verified update stays installable across a failed poll.
+    /// The error is reported alongside the update.
     fn fail_check(&self, error: &Error) -> UpdateSnapshot {
         if self.staged().is_some() {
             return UpdateSnapshot {

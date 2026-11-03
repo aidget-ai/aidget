@@ -8,8 +8,9 @@ or rendered surface.
 
 ## Data root
 
-The default root is the OS home directory's `.aidget` folder. `AIDGET_HOME`
-overrides it. On Windows the default is `C:\Users\<user>\.aidget`.
+The optional global CLI option `--home <directory>` selects the data root.
+The default is the OS home directory's `.aidget` folder
+(`C:\Users\<user>\.aidget` on Windows).
 
 ```text
 <root>/

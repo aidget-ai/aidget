@@ -30,6 +30,7 @@ aidget_guide is the complete Markdown authoring contract for regions, surfaces, 
 #[derive(Clone)]
 pub struct AidgetMcp {
     client: Arc<Client>,
+    home: std::path::PathBuf,
     tool_router: rmcp::handler::server::router::tool::ToolRouter<Self>,
 }
 
@@ -128,12 +129,13 @@ pub struct ScreenshotArgs {
 #[tool_router]
 impl AidgetMcp {
     /// Create an MCP server using this store's isolated bridge endpoint.
-    pub fn new(store: Store) -> Self {
+    pub fn new(store: Store) -> crate::common::error::Result<Self> {
         let socket = store.socket_path();
-        AidgetMcp {
+        Ok(AidgetMcp {
             client: Arc::new(Client::new(socket)),
+            home: dunce::canonicalize(store.root())?,
             tool_router: Self::tool_router(),
-        }
+        })
     }
 
     async fn call(&self, method: &str, params: Value) -> std::result::Result<Value, McpError> {
@@ -143,7 +145,8 @@ impl AidgetMcp {
         // whole transaction off async workers: Windows IPC owns a Tokio runtime.
         tokio::task::spawn_blocking(move || {
             if !server.client.is_running() {
-                crate::runtime::process::ensure_ui(&server.client).map_err(mcp_error)?;
+                crate::runtime::process::ensure_ui(&server.client, &server.home)
+                    .map_err(mcp_error)?;
             }
             server.client.call(&method, params).map_err(mcp_error)
         })
@@ -333,7 +336,11 @@ impl ServerHandler for AidgetMcp {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("aidget", env!("CARGO_PKG_VERSION")))
-            .with_instructions(SERVER_INSTRUCTIONS)
+            .with_instructions(format!(
+                "{SERVER_INSTRUCTIONS}\nData directory: {}. Use this MCP only for this directory.",
+                serde_json::to_string(&self.home.to_string_lossy())
+                    .expect("path text is serializable")
+            ))
     }
 }
 
@@ -378,7 +385,7 @@ pub fn mcp_error(error: Error) -> McpError {
 }
 
 pub async fn serve(store: Store) -> crate::common::error::Result<()> {
-    let server = AidgetMcp::new(store);
+    let server = AidgetMcp::new(store)?;
     let transport = rmcp::transport::stdio();
     let running = rmcp::service::serve_server(server, transport)
         .await

@@ -325,6 +325,7 @@ function renderIntegration() {
         all: t('agentAll'),
         empty: t('integrationNoAgents'),
         installFor: t('installFor'),
+        replaceFor: t('replaceFor'),
         removeFrom: t('removeFrom'),
       },
       integrationBusy,
@@ -353,15 +354,24 @@ function ensureIntegrationInfo() {
 }
 
 function renderIntegrationStatus() {
-  const message = integrationProblems.length
+  const problems = [...integrationProblems];
+  for (const agent of integrationInfo?.agents ?? []) {
+    for (const resource of ['mcp', 'skills'] as const) {
+      const error = agent[resource]?.conflict;
+      if (error) {
+        problems.push({ agentId: agent.id, resource, message: error });
+      }
+    }
+  }
+  const message = problems.length
     ? integrationFailureMessage(
-        integrationProblems.map((problem) => problem.agentId),
-        integrationProblems.map((problem) => problem.message),
+        problems.map((problem) => problem.agentId),
+        problems.map((problem) => problem.message),
       )
     : '';
   integrationStatuses.forEach((status) => {
     status.textContent = message;
-    status.classList.toggle('is-error', integrationProblems.length > 0);
+    status.classList.toggle('is-error', problems.length > 0);
     status.hidden = message.length === 0;
   });
 }

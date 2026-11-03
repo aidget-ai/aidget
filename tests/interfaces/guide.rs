@@ -64,7 +64,7 @@ fn cli_prints_the_shared_markdown_guide() {
     let home = tempfile::tempdir().unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_aidget"))
         .arg("guide")
-        .env("AIDGET_HOME", home.path())
+        .args(["--home", home.path().to_str().unwrap()])
         .output()
         .unwrap();
 
@@ -76,7 +76,7 @@ fn cli_prints_the_shared_markdown_guide() {
 #[tokio::test]
 async fn mcp_returns_the_same_markdown_guide() {
     let home = tempfile::tempdir().unwrap();
-    let server = AidgetMcp::new(Store::new(home.path()));
+    let server = AidgetMcp::new(Store::new(home.path())).unwrap();
     let result = server.guide().await;
 
     assert!(!result.is_error.unwrap_or(false));
@@ -90,7 +90,7 @@ fn guide_rejects_the_removed_json_mode() {
     let home = tempfile::tempdir().unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_aidget"))
         .args(["guide", "--json"])
-        .env("AIDGET_HOME", home.path())
+        .args(["--home", home.path().to_str().unwrap()])
         .output()
         .unwrap();
 

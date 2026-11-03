@@ -255,3 +255,25 @@ fn remove_window_decorations_makes_the_client_fill_the_window() {
     assert_eq!(outer.right - outer.left, client.right - client.left);
     assert_eq!(outer.bottom - outer.top, client.bottom - client.top);
 }
+
+#[cfg(unix)]
+#[test]
+fn shell_quotes_preserve_literal_arguments() {
+    let literal = "space ' \" $HOME $(printf injected) 中文\n";
+    let quoted = aidget::common::utils::shell_quote(literal);
+    let output = std::process::Command::new("/bin/sh")
+        .args(["-c", &format!("printf '%s' {quoted}")])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, literal.as_bytes());
+}
+
+#[test]
+fn windows_quoting_preserves_quotes_and_trailing_backslashes() {
+    use aidget::common::utils::windows_quote;
+    assert_eq!(windows_quote(""), "\"\"");
+    assert_eq!(windows_quote("C:\\data space\\"), r#""C:\data space\\""#);
+    assert_eq!(windows_quote("a\"b"), r#""a\"b""#);
+    assert_eq!(windows_quote("中文"), "\"中文\"");
+}

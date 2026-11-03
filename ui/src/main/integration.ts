@@ -1,43 +1,21 @@
-export interface AgentResourceState {
-  path: string;
-  installed: boolean;
-  conflict?: string;
-}
+import type { AgentIntegration, IntegrationResource, IntegrationState } from '../types/rust';
 
-export interface AgentIntegration {
-  id: string;
-  name: string;
-  icon: string;
-  mcp?: AgentResourceState;
-  skills?: AgentResourceState;
-}
+export type {
+  AgentResourceState,
+  AgentIntegration,
+  AgentProblem,
+  IntegrationMutation,
+  IntegrationResource,
+  IntegrationState as IntegrationInfo,
+} from '../types/rust';
 
-export interface IntegrationInfo {
-  mcpCommand: string;
-  mcpArgs: string[];
-  skillDirectory: string;
-  skillContent: string;
-  agents: AgentIntegration[];
-}
-
-export interface AgentProblem {
-  agentId: string;
-  resource: IntegrationResource;
-  message: string;
-}
-
-export interface IntegrationMutation {
-  state: IntegrationInfo;
-  problems: AgentProblem[];
-}
-
-export type IntegrationResource = 'mcp' | 'skills';
+type IntegrationInfo = IntegrationState;
 
 /**
- * Render the complete MCP launch command with whitespace-bearing parts quoted.
+ * Render the MCP display command with the default home omitted by the backend.
  */
-export function mcpCommandLine(info: Pick<IntegrationInfo, 'mcpCommand' | 'mcpArgs'>) {
-  return [info.mcpCommand, ...info.mcpArgs]
+export function mcpCommandLine(info: Pick<IntegrationInfo, 'mcpCommand' | 'mcpDisplayArgs'>) {
+  return [info.mcpCommand, ...info.mcpDisplayArgs]
     .map((part) => (/[\s"']/u.test(part) ? JSON.stringify(part) : part))
     .join(' ');
 }

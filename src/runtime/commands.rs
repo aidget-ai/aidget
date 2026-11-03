@@ -171,16 +171,22 @@ async fn main_widget_details(
 }
 
 #[tauri::command]
-fn integration_state() -> std::result::Result<crate::agents::integration::IntegrationState, String>
-{
-    crate::agents::integration::integration_state().map_err(|error| error.to_string())
+fn integration_state(
+    app: tauri::AppHandle,
+) -> std::result::Result<crate::agents::integration::IntegrationState, String> {
+    let root = app.state::<ui::UiState>().root.lock().unwrap().clone();
+    crate::agents::integration::integration_state(&Store::new(root))
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 fn set_agent_integration(
+    app: tauri::AppHandle,
     change: crate::agents::integration::IntegrationChange,
 ) -> std::result::Result<crate::agents::integration::IntegrationMutation, String> {
-    crate::agents::integration::set_agent_integration(change).map_err(|error| error.to_string())
+    let root = app.state::<ui::UiState>().root.lock().unwrap().clone();
+    crate::agents::integration::set_agent_integration(&Store::new(root), change)
+        .map_err(|error| error.to_string())
 }
 
 /// Persist appearance and behavior preferences and apply the primary-click tray

@@ -22,7 +22,7 @@ impl AgentSpec {
     }
 }
 
-/// Every built-in local target in Magpie that can receive MCP servers or skills.
+/// Built-in local targets that can receive MCP servers or skills.
 pub fn builtin_agents() -> Vec<AgentSpec> {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let config = env_path("XDG_CONFIG_HOME").unwrap_or_else(|| home.join(".config"));
@@ -609,7 +609,7 @@ fn grok_app_dir(home: &Path) -> PathBuf {
 }
 
 fn zed_dir(home: &Path, config: &Path) -> PathBuf {
-    if let Some(path) = env_path("MAGPIE_ZED_CONFIG_DIR") {
+    if let Some(path) = env_path("AIDGET_ZED_CONFIG_DIR") {
         return path;
     }
     if cfg!(windows) {

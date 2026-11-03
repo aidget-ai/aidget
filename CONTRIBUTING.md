@@ -29,7 +29,7 @@ Anyone may open an Issue. Use one of the repository's Issue Forms.
 - Describe the problem in your own words. Do not submit an unreviewed wall of
   agent-generated text.
 - Include a minimal reproduction, the aidget version and the platform.
-- Use a throwaway `AIDGET_HOME` for reproductions.
+- Use a throwaway data directory with `--home` for reproductions.
 - Remove credentials, account identifiers, private widget contents and personal
   data from logs and screenshots.
 - Explain why the problem matters and whether you want to implement the change.
@@ -71,8 +71,8 @@ AIDGET_CHECK_TARGET=1 cargo check --lib
 cargo test
 ```
 
-Use `AIDGET_HOME=/tmp/aidget-<name>` for runtime checks. Never test against the
-real `~/.aidget` or a live Agent configuration.
+Use `--home /tmp/aidget-<name>` for runtime checks. Never test against the real
+`~/.aidget` or a live Agent configuration.
 
 Platform-specific behavior must be tested on that platform and named in the pull
 request. A cross-target `cargo check --lib` is not a runtime test.
