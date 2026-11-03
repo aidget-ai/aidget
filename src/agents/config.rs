@@ -6,7 +6,7 @@ use toml_edit::{value, DocumentMut, Item, Table};
 
 use crate::agents::{dsh, jsonc, launch::McpLaunch};
 use crate::common::error::{Error, Result};
-use crate::common::utils::{atomic_write, executable_paths_match};
+use crate::common::utils::{atomic_write, decode_text, executable_paths_match, read_text};
 use ts_rs::TS;
 
 /// MCP configuration shape used by one Agent.
@@ -102,11 +102,16 @@ pub fn set_mcp(
     if target.format == McpFormat::Dsh {
         return dsh::set_mcp(target, launch, enabled, backup_root, agent);
     }
-    let current = if target.path.exists() {
-        Some(fs::read_to_string(&target.path)?)
+    let current_bytes = if target.path.exists() {
+        Some(fs::read(&target.path)?)
     } else {
         None
     };
+    let current = current_bytes
+        .as_deref()
+        .map(decode_text)
+        .transpose()?
+        .map(|text| text.into_owned());
     if let Some(text) = &current {
         match read_mcp_text(target, text, launch)? {
             Some(true) if enabled => return Ok(()),
@@ -126,14 +131,14 @@ pub fn set_mcp(
     if current.as_deref() == Some(next.as_str()) {
         return Ok(());
     }
-    if let Some(text) = current {
-        backup_bytes(backup_root, agent, &target.path, text.as_bytes())?;
+    if let Some(bytes) = current_bytes {
+        backup_bytes(backup_root, agent, &target.path, &bytes)?;
     }
     atomic_write(&target.path, next.as_bytes())
 }
 
 fn read_mcp(target: &McpTarget, launch: &McpLaunch) -> Result<Option<bool>> {
-    let text = fs::read_to_string(&target.path)?;
+    let text = read_text(&target.path)?;
     read_mcp_text(target, &text, launch)
 }
 

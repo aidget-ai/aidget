@@ -37,6 +37,24 @@ fn reading_unused_config_fields_does_not_rewrite_or_back_up_the_widget() {
 }
 
 #[test]
+fn board_and_config_json_with_utf8_bom_are_loaded() {
+    let (dir, store) = store();
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+    for path in [
+        store.widget_dir("note").unwrap().join(CONFIG_FILE),
+        store.board_path(),
+    ] {
+        let mut bytes = b"\xEF\xBB\xBF".to_vec();
+        bytes.extend_from_slice(&fs::read(&path).unwrap());
+        fs::write(&path, bytes).unwrap();
+    }
+
+    assert_eq!(store.load_meta("note").unwrap().id, "note");
+    assert!(store.load_board().unwrap().widgets.contains_key("note"));
+    assert!(dir.path().join("board.json").is_file());
+}
+
+#[test]
 fn drag_mode_updates_preserve_position_and_survive_partial_edits() {
     use aidget::widgets::model::WidgetDragMode;
     let (_dir, store) = store();

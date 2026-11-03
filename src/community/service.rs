@@ -9,7 +9,10 @@ use super::{
     snapshot,
 };
 use crate::{
-    common::error::{Error, Result},
+    common::{
+        error::{Error, Result},
+        utils::parse_json,
+    },
     settings::{self, GithubToken},
     widgets::{
         model::WidgetMeta,
@@ -80,15 +83,13 @@ impl Community {
         })
     }
     fn json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
-        Ok(serde_json::from_slice(
-            &self.http.get(url, MAX_JSON).map_err(|e| {
-                if e.missing {
-                    Error::NotFound(e.message)
-                } else {
-                    e.into_error()
-                }
-            })?,
-        )?)
+        Ok(parse_json(&self.http.get(url, MAX_JSON).map_err(|e| {
+            if e.missing {
+                Error::NotFound(e.message)
+            } else {
+                e.into_error()
+            }
+        })?)?)
     }
     fn branch(&self, branch: &str) -> Result<String> {
         let value: Branch =
@@ -97,7 +98,7 @@ impl Community {
         Ok(value.commit.sha)
     }
     fn github_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
-        Ok(serde_json::from_slice(
+        Ok(parse_json(
             &self
                 .http
                 .get_github(
@@ -124,7 +125,7 @@ impl Community {
             &format!("{}/{}/{version}", self.endpoints.npm, encoded_package(name)),
             MAX_JSON,
         )?;
-        serde_json::from_slice(&bytes).map_err(|e| FetchError {
+        parse_json(&bytes).map_err(|e| FetchError {
             unavailable: false,
             missing: false,
             message: format!("invalid npm metadata: {e}"),

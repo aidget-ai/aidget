@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::common::error::{Error, Result};
-use crate::common::utils::atomic_write;
+use crate::common::utils::{atomic_write, parse_json};
 pub use crate::settings::SETTINGS_FILE;
 use crate::settings::{self, Settings};
 use crate::widgets::model::{
@@ -168,8 +168,7 @@ impl Store {
         if !path.exists() {
             return Ok(Board::default());
         }
-        let bytes = fs::read(path)?;
-        Ok(serde_json::from_slice(&bytes)?)
+        Ok(parse_json(&fs::read(path)?)?)
     }
 
     pub fn save_board(&self, board: &Board) -> Result<()> {
@@ -207,8 +206,7 @@ impl Store {
         if !path.is_file() {
             return Err(Error::NotFound(id.to_string()));
         }
-        let bytes = fs::read(path)?;
-        let meta: WidgetMeta = serde_json::from_slice(&bytes)?;
+        let meta: WidgetMeta = parse_json(&fs::read(path)?)?;
         if meta.id != id {
             return Err(Error::InvalidParams(format!(
                 "config.json id `{}` does not match directory `{id}`",
@@ -225,7 +223,7 @@ impl Store {
         let path = self.widget_dir(id)?.join(PACKAGE_FILE);
         match fs::read(path) {
             Ok(bytes) => {
-                let package: super::package::PackageManifest = serde_json::from_slice(&bytes)?;
+                let package: super::package::PackageManifest = parse_json(&bytes)?;
                 package.validate()?;
                 Ok(Some(package))
             }
@@ -294,7 +292,7 @@ impl Store {
             let result = fs::read(entry.path().join(CONFIG_FILE))
                 .map_err(Error::from)
                 .and_then(|bytes| {
-                    let meta: WidgetMeta = serde_json::from_slice(&bytes)?;
+                    let meta: WidgetMeta = parse_json(&bytes)?;
                     meta.config.validate()
                 });
             if let Err(error) = result {
@@ -328,7 +326,7 @@ impl Store {
                 continue;
             }
             // Invalid entries are reported separately by trash_errors.
-            let Ok(meta) = serde_json::from_slice::<WidgetMeta>(&fs::read(config)?) else {
+            let Ok(meta) = parse_json::<WidgetMeta>(&fs::read(config)?) else {
                 continue;
             };
             if meta.config.validate().is_err() {
@@ -379,7 +377,7 @@ impl Store {
         }
         let id = fs::read(path.join(CONFIG_FILE))
             .ok()
-            .and_then(|bytes| serde_json::from_slice::<WidgetMeta>(&bytes).ok())
+            .and_then(|bytes| parse_json::<WidgetMeta>(&bytes).ok())
             .map(|meta| meta.id.clone());
         fs::remove_dir_all(path)?;
         if let Some(id) = id {
@@ -395,7 +393,7 @@ impl Store {
         if !source.is_dir() {
             return Err(Error::NotFound(trash_name.to_string()));
         }
-        let meta: WidgetMeta = serde_json::from_slice(&fs::read(source.join(CONFIG_FILE))?)?;
+        let meta: WidgetMeta = parse_json(&fs::read(source.join(CONFIG_FILE))?)?;
         validate_id(&meta.id)?;
 
         let existing = self.widget_ids()?;
@@ -711,10 +709,10 @@ impl Store {
 }
 
 fn deletion_record(dir: &Path) -> Result<Option<DeletionRecord>> {
-    let Some(bytes) = read_optional(&dir.join(DELETION_FILE))? else {
+    let Some(bytes) = read_optional_bytes(&dir.join(DELETION_FILE))? else {
         return Ok(None);
     };
-    Ok(Some(serde_json::from_str(&bytes)?))
+    Ok(Some(parse_json(&bytes)?))
 }
 
 fn entry_created_at(entry: &fs::DirEntry) -> Result<(std::time::SystemTime, u64)> {

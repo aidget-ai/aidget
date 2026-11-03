@@ -51,6 +51,27 @@ fn bounded_reads_preserve_exact_limits_and_report_missing_or_oversized_files() {
 }
 
 #[test]
+fn json_parsing_removes_utf8_and_utf16_boms() {
+    use aidget::common::utils::parse_json;
+
+    let mut utf8 = b"\xEF\xBB\xBF".to_vec();
+    utf8.extend_from_slice(br#"{"message":"ok"}"#);
+    let value: serde_json::Value = parse_json(&utf8).unwrap();
+    assert_eq!(value["message"], "ok");
+
+    let text = r#"{"message":"ok"}"#;
+    let mut utf16 = vec![0xFF, 0xFE];
+    utf16.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+    let value: serde_json::Value = parse_json(&utf16).unwrap();
+    assert_eq!(value["message"], "ok");
+}
+
+#[test]
+fn json_parsing_rejects_invalid_text_instead_of_replacing_it() {
+    assert!(aidget::common::utils::parse_json::<serde_json::Value>(&[0xFF]).is_err());
+}
+
+#[test]
 fn path_mutex_serializes_independent_clients_of_the_same_path() {
     use aidget::common::utils::path_mutex;
     let dir = TempDir::new().unwrap();

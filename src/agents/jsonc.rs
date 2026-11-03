@@ -72,7 +72,11 @@ pub fn remove_path(text: &str, path: &[&str]) -> Result<String> {
 fn parse(text: &str) -> Result<Node> {
     let mut parser = Parser {
         text: text.as_bytes(),
-        at: 0,
+        at: if text.starts_with('\u{feff}') {
+            '\u{feff}'.len_utf8()
+        } else {
+            0
+        },
     };
     parser.trivia();
     let node = parser.value()?;

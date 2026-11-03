@@ -3,7 +3,7 @@ use super::model::{FileDigest, RegistryEntry};
 use crate::{
     common::{
         error::{Error, Result},
-        utils::atomic_write,
+        utils::{atomic_write, parse_json},
     },
     widgets::package::{validate_path, PackageManifest, WidgetConfig},
 };
@@ -97,9 +97,8 @@ pub(super) fn validate_contents(
     files: &BTreeMap<String, FileDigest>,
     expected: Option<&RegistryEntry>,
 ) -> Result<(WidgetConfig, PackageManifest)> {
-    let config: WidgetConfig = serde_json::from_slice(&fs::read(directory.join("config.json"))?)?;
-    let package: PackageManifest =
-        serde_json::from_slice(&fs::read(directory.join("package.json"))?)?;
+    let config: WidgetConfig = parse_json(&fs::read(directory.join("config.json"))?)?;
+    let package: PackageManifest = parse_json(&fs::read(directory.join("package.json"))?)?;
     config.validate()?;
     package.validate()?;
     if !directory.join("index.html").is_file() {
@@ -110,8 +109,7 @@ pub(super) fn validate_contents(
             return Err(Error::InvalidParams(format!("missing media: {file}")));
         }
     }
-    let raw: serde_json::Value =
-        serde_json::from_slice(&fs::read(directory.join("package.json"))?)?;
+    let raw: serde_json::Value = parse_json(&fs::read(directory.join("package.json"))?)?;
     for key in ["dependencies", "optionalDependencies", "peerDependencies"] {
         if raw
             .get(key)

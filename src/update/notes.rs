@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::common::error::{Error, Result};
-use crate::common::utils::{atomic_write, read_bounded};
+use crate::common::utils::{atomic_write, parse_json, read_bounded};
 use crate::update::github::Release;
 use crate::update::version;
 
@@ -69,9 +69,7 @@ pub(crate) fn load(path: &Path) -> Result<NotesCache> {
         }
         Err(error) => return Err(error.into()),
     };
-    serde_json::from_slice::<NotesCache>(&bytes)
-        .map_err(Error::from)?
-        .validate()
+    parse_json::<NotesCache>(&bytes)?.validate()
 }
 
 /// Atomically persist the retained note bundles.

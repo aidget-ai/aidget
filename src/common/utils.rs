@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -6,6 +7,8 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex, Weak},
 };
+
+use serde::de::DeserializeOwned;
 
 use crate::common::error::{Error, Result};
 
@@ -59,6 +62,31 @@ pub fn read_bounded(path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
         ));
     }
     Ok(bytes)
+}
+
+/// Decode UTF-8 or BOM-marked UTF-16 text while removing the BOM.
+///
+/// BOM detection follows the WHATWG Encoding Standard through `encoding_rs`.
+/// Invalid byte sequences are rejected instead of being replaced.
+pub fn decode_text(bytes: &[u8]) -> Result<Cow<'_, str>> {
+    let (text, encoding, had_errors) = encoding_rs::UTF_8.decode(bytes);
+    if had_errors {
+        return Err(Error::InvalidParams(format!(
+            "text is not valid {}",
+            encoding.name()
+        )));
+    }
+    Ok(text)
+}
+
+/// Read UTF-8 or BOM-marked UTF-16 text from disk.
+pub fn read_text(path: &Path) -> Result<String> {
+    Ok(decode_text(&fs::read(path)?)?.into_owned())
+}
+
+/// Parse JSON from UTF-8 or BOM-marked UTF-16 bytes.
+pub fn parse_json<T: DeserializeOwned>(bytes: &[u8]) -> Result<T> {
+    Ok(serde_json::from_str(&decode_text(bytes)?)?)
 }
 
 /// Share a process-local mutex for operations on the same path, releasing unused entries.

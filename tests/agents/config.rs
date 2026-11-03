@@ -37,6 +37,32 @@ fn json_mcp_entry_round_trips_without_touching_neighbors() {
     assert!(fs::read_to_string(&path).unwrap().contains("\"other\""));
 }
 
+#[test]
+fn json_mcp_config_with_utf8_bom_is_recognized_and_edited() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("config.json");
+    let mut bytes = b"\xEF\xBB\xBF".to_vec();
+    bytes.extend_from_slice(
+        br#"{
+  "mcpServers": {
+    "aidget": {"type": "stdio", "command": "/a", "args": ["mcp"]},
+    "other": {"command": "x"}
+  }
+}"#,
+    );
+    fs::write(&path, bytes).unwrap();
+    let target = McpTarget {
+        path: path.clone(),
+        format: McpFormat::Claude,
+    };
+
+    assert!(mcp_state(&target, &launch("/a")).unwrap().installed);
+    set_mcp(&target, &launch("/a"), false, temp.path(), "codex").unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert!(value["mcpServers"].get("aidget").is_none());
+    assert_eq!(value["mcpServers"]["other"]["command"], "x");
+}
+
 #[cfg(windows)]
 #[test]
 fn legacy_verbatim_mcp_entries_are_recognized_and_removable() {

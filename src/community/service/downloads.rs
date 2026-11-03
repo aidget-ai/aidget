@@ -3,7 +3,7 @@ use super::{encoded_package, Community};
 use crate::{
     common::{
         error::{Error, Result},
-        utils::{atomic_write, sha256_hex},
+        utils::{atomic_write, parse_json, sha256_hex},
     },
     community::model::DownloadCount,
     widgets::{package::validate_package_name, store::Store},
@@ -60,7 +60,7 @@ impl Community {
         for (index, name) in names.iter().enumerate() {
             let path = cache_dir.join(format!("{}.json", sha256_hex(name.as_bytes())));
             let cached = match fs::read(&path) {
-                Ok(bytes) => Some(serde_json::from_slice::<CountCache>(&bytes)?),
+                Ok(bytes) => Some(parse_json::<CountCache>(&bytes)?),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
                 Err(e) => return Err(e.into()),
             };

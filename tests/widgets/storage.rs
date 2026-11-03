@@ -2,6 +2,7 @@ use aidget::common::error::Error;
 use aidget::widgets::model::{WidgetPermission, MAX_PAYLOAD};
 use aidget::widgets::storage;
 use aidget::widgets::store::{Store, WidgetEdit};
+use std::fs;
 use tempfile::TempDir;
 
 fn root() -> TempDir {
@@ -76,6 +77,24 @@ fn values_persist_across_store_instances_and_can_be_removed() {
 
     storage::clear(&reopened, "note").unwrap();
     assert_eq!(storage::get(&reopened, "note", "other").unwrap(), None);
+}
+
+#[test]
+fn storage_reads_json_with_utf8_bom() {
+    let dir = root();
+    let store = Store::new(dir.path());
+    store.ensure_layout().unwrap();
+    widget(&store, true, &[WidgetPermission::Storage]);
+    storage::set(&store, "note", "todos", "one").unwrap();
+    let path = store.state_dir().join("storage/note.json");
+    let mut bytes = b"\xEF\xBB\xBF".to_vec();
+    bytes.extend_from_slice(&fs::read(&path).unwrap());
+    fs::write(path, bytes).unwrap();
+
+    assert_eq!(
+        storage::get(&store, "note", "todos").unwrap(),
+        Some("one".to_string())
+    );
 }
 
 #[test]

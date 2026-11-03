@@ -3,7 +3,7 @@ use super::{Community, MAX_JSON};
 use crate::{
     common::{
         error::{Error, Result},
-        utils::{atomic_write, path_mutex, read_bounded, sha256_hex},
+        utils::{atomic_write, parse_json, path_mutex, read_bounded, sha256_hex},
     },
     community::{
         model::*,
@@ -126,7 +126,7 @@ impl Community {
                 "cached registry exceeds size limit".into(),
             ));
         }
-        let registry: Registry = serde_json::from_slice(&bytes)?;
+        let registry: Registry = parse_json(&bytes)?;
         validate(&registry)?;
         {
             let _lock = cache_lock(store)?;
@@ -159,9 +159,7 @@ impl Community {
         let directory = self.registry_dir(store);
         let pointer = directory.join("latest.json");
         match read_bounded(&pointer, 1024) {
-            Ok(bytes) if serde_json::from_slice::<Latest>(&bytes)?.requested_at > requested_at => {
-                return Ok(())
-            }
+            Ok(bytes) if parse_json::<Latest>(&bytes)?.requested_at > requested_at => return Ok(()),
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.into()),
@@ -193,7 +191,7 @@ impl Community {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
                 Err(e) => return Err(e.into()),
             };
-            latest = serde_json::from_slice::<Latest>(&bytes)?;
+            latest = parse_json::<Latest>(&bytes)?;
             validate_commit(&latest.commit)?;
             let bytes = read_bounded(&dir.join(format!("{}.json", latest.commit)), MAX_JSON)?;
             if bytes.len() > MAX_JSON {
@@ -201,7 +199,7 @@ impl Community {
                     "cached registry exceeds size limit".into(),
                 ));
             }
-            registry = serde_json::from_slice::<Registry>(&bytes)?;
+            registry = parse_json::<Registry>(&bytes)?;
             validate(&registry)?;
         }
         Ok(Some(CachedCommunitySnapshot {
@@ -213,7 +211,7 @@ impl Community {
 
 fn prune(directory: &Path, current: &str) -> Result<()> {
     let latest = match read_bounded(&directory.join("latest.json"), 1024) {
-        Ok(bytes) => Some(serde_json::from_slice::<Latest>(&bytes)?.commit),
+        Ok(bytes) => Some(parse_json::<Latest>(&bytes)?.commit),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(e.into()),
     };

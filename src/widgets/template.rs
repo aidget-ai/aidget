@@ -6,7 +6,7 @@ use super::{
 };
 use crate::common::{
     error::{Error, Result},
-    utils::atomic_write,
+    utils::{atomic_write, parse_json},
 };
 use include_dir::{include_dir, Dir};
 use std::{fs, path::Path};
@@ -22,8 +22,8 @@ fn metadata(id: &str) -> Result<(WidgetConfig, PackageManifest)> {
         dir.get_file(Path::new(id).join(name))
             .ok_or_else(|| Error::NotFound(format!("{id}/{name}")))
     };
-    let config: WidgetConfig = serde_json::from_slice(read("config.json")?.contents())?;
-    let package: PackageManifest = serde_json::from_slice(read("package.json")?.contents())?;
+    let config: WidgetConfig = parse_json(read("config.json")?.contents())?;
+    let package: PackageManifest = parse_json(read("package.json")?.contents())?;
     config.validate()?;
     package.validate()?;
     Ok((config, package))

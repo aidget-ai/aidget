@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::common::error::{Error, Result};
-use crate::common::utils::atomic_write;
+use crate::common::utils::{atomic_write, parse_json};
 use crate::widgets::model::{validate_id, WidgetPermission, MAX_PAYLOAD};
 use crate::widgets::store::Store;
 
@@ -77,7 +77,7 @@ pub fn clear(store: &Store, id: &str) -> Result<()> {
 fn load(store: &Store, id: &str) -> Result<BTreeMap<String, String>> {
     let path = storage_path(store, id)?;
     match fs::read(path) {
-        Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+        Ok(bytes) => Ok(parse_json(&bytes)?),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
         Err(error) => Err(error.into()),
     }

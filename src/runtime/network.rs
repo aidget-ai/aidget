@@ -19,7 +19,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::common::error::Error;
+use crate::common::{error::Error, utils::parse_json};
 use crate::widgets::{
     model::{WidgetMeta, WidgetPermission, MAX_PAYLOAD},
     store::Store,
@@ -245,7 +245,7 @@ impl NetworkClient {
                 method.as_str()
             )));
         }
-        serde_json::from_slice(&bytes).map_err(|error| {
+        parse_json(&bytes).map_err(|error| {
             NetworkFailure::invalid_response(format!("{} {url}: {error}", method.as_str()))
         })
     }

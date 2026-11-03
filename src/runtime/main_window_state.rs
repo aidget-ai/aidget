@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::common::error::Result;
-use crate::common::utils::atomic_write;
+use crate::common::utils::{atomic_write, parse_json};
 use crate::widgets::model::validate_id;
 
 const WIDGET_STATE_FILE: &str = "widgets.json";
@@ -29,7 +29,7 @@ fn load_state(root: &Path) -> Result<BTreeMap<String, WidgetStateRecord>> {
     if !path.exists() {
         return Ok(BTreeMap::new());
     }
-    let state: BTreeMap<String, WidgetStateRecord> = serde_json::from_slice(&fs::read(path)?)?;
+    let state: BTreeMap<String, WidgetStateRecord> = parse_json(&fs::read(path)?)?;
     for id in state.keys() {
         validate_id(id)?;
     }

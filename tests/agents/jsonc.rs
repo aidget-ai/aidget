@@ -11,6 +11,15 @@ fn reads_jsonc_and_ignores_comments() {
 }
 
 #[test]
+fn reads_jsonc_with_utf8_bom() {
+    let text = "\u{feff}{\"mcpServers\":{\"aidget\":{\"command\":\"/a\"}}}";
+    assert_eq!(
+        read_path(text, &["mcpServers", "aidget", "command"]).unwrap(),
+        Some(json!("/a"))
+    );
+}
+
+#[test]
 fn sets_and_removes_an_entry_without_touching_other_keys() {
     let text = "{\n  // keep me\n  \"theme\": \"dark\",\n  \"mcpServers\": {\n    \"other\": {\"command\": \"x\"}\n  }\n}\n";
     let set = set_path(text, &["mcpServers", "aidget"], json!({"command":"/a"})).unwrap();
