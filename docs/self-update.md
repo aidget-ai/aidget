@@ -52,10 +52,10 @@ host only.
 arguments are read. A widget window loads third-party content and must not be able
 to install an update.
 
-**Assets match from the architecture token to the end of the name.** Aidget's names
-embed the version, so `_aarch64.app.zip` is what identifies the file; matching a
-token anywhere in the name was rejected because a version such as `1.0.x64` would
-look like an x64 build.
+**Assets match the complete public filename.** The updater constructs
+`aidget-<platform>-<arch>.<ext>` and requires exact equality. Product, platform,
+architecture and package type must all match; a similarly named file or a backup
+cannot be selected.
 
 **Build identity is decided by the tag.** `build.rs` emits `AIDGET_BUILD_STAMP`:
 
@@ -142,22 +142,23 @@ button works with the setting off, which is what makes turning it off useful.
 
 ## Platform scope
 
-Release assets are `aidget_<version>_<arch><suffix>`, the version without `v`
-(`scripts/release/assets.mjs` validates the exact list and rejects unknown
-extensions).
+Release assets use `aidget-<platform>-<arch>.<ext>` without a version in the
+filename. `scripts/release/assets.mjs` validates the complete set.
 
-| Platform           | Asset                         | Installation                                    |
-| ------------------ | ----------------------------- | ----------------------------------------------- |
-| macOS arm64 / x64  | `..._aarch64.app.zip`, `_x64` | Unpack beside the bundle, rename it in, restart |
-| Windows x64        | `..._x64-setup.exe`           | Run the NSIS installer, exit                    |
-| Linux x64 AppImage | `..._amd64.AppImage`          | Replace the file in place, restart              |
-| Linux x64 deb      | `..._amd64.deb`               | `pkexec dpkg -i`, restart                       |
-| Linux x64 rpm      | `..._amd64.rpm`               | `pkexec rpm -U`, restart                        |
+| Platform            | Update asset                  | Installation                                    |
+| ------------------- | ----------------------------- | ----------------------------------------------- |
+| macOS Apple Silicon | `aidget-darwin-arm64.zip`     | Unpack beside the bundle, rename it in, restart |
+| macOS Intel         | `aidget-darwin-amd64.zip`     | Unpack beside the bundle, rename it in, restart |
+| Windows x64         | `aidget-windows-amd64.exe`    | Run the NSIS installer, exit                    |
+| Linux x64 AppImage  | `aidget-linux-amd64.AppImage` | Replace the file in place, restart              |
+| Linux x64 DEB       | `aidget-linux-amd64.deb`      | `pkexec dpkg -i`, restart                       |
+| Linux x64 RPM       | `aidget-linux-amd64.rpm`      | `pkexec rpm -U`, restart                        |
 
-Architecture tokens: `aarch64`, `x64`, `amd64`. `.dmg` stays for first-time
-installs; the zipped `.app` exists for in-app updates. `SHA256SUMS` covers every
-update asset. A repository with a package manager this build cannot use reports
-that it cannot update itself in place rather than guessing.
+DMGs remain available for manual installation. macOS ZIPs retain the complete
+`.app` wrapper, and `SHA256SUMS` covers every update asset. A build without a
+supported package manager reports that it cannot update in place. Beta.1 users
+must manually install beta.2 or later once because the older updater expects the
+previous asset names.
 
 ## Code layout
 
@@ -221,7 +222,7 @@ Recorded so they are not rediscovered.
 - **Once the repository has tags, every later commit reads as a build from
   source.** An acceptance build has to be made at a tag.
 - **A download test has to name this machine's asset.** A mock release named
-  `..._aarch64.app.zip` on every platform makes the service correctly refuse to
+  `aidget-darwin-arm64.zip` on every platform makes the service correctly refuse to
   download a macOS asset on a machine that installs a `.deb`. The mock server fills
   `__ASSET__` from `target::current()`.
 - **A check must not discard a downloaded update.** Neither a failed feed nor a feed

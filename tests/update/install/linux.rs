@@ -45,14 +45,14 @@ fn a_failed_swap_puts_the_previous_appimage_back() {
 #[test]
 fn a_deb_is_installed_through_pkexec_dpkg() {
     let program = Path::new("/usr/bin/dpkg");
-    let staged = Path::new("/tmp/aidget_0.1.1_amd64.deb");
+    let staged = Path::new("/tmp/aidget-linux-amd64.deb");
 
     let command = package_command(PackageKind::Deb, program, staged).unwrap();
 
     assert_eq!(command.get_program(), "pkexec");
     assert_eq!(
         command.get_args().collect::<Vec<_>>(),
-        ["/usr/bin/dpkg", "-i", "/tmp/aidget_0.1.1_amd64.deb"]
+        ["/usr/bin/dpkg", "-i", "/tmp/aidget-linux-amd64.deb"]
     );
 }
 

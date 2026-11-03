@@ -39,9 +39,9 @@ fn macos_installs_a_zipped_app_for_its_own_architecture() {
     .unwrap();
 
     assert_eq!(arm.kind, PackageKind::MacApp);
-    assert_eq!(arm.arch, "aarch64");
+    assert_eq!(arm.arch, "arm64");
     assert_eq!(intel.kind, PackageKind::MacApp);
-    assert_eq!(intel.arch, "x64");
+    assert_eq!(intel.arch, "amd64");
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn windows_installs_the_installer() {
     let target = target_for("windows", "x86_64", Path::new(r"C:\aidget.exe"), None, NONE).unwrap();
 
     assert_eq!(target.kind, PackageKind::WindowsSetup);
-    assert_eq!(target.arch, "x64");
+    assert_eq!(target.arch, "amd64");
 }
 
 #[test]

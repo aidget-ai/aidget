@@ -36,7 +36,7 @@ pub fn prepare(release: &Release, target: Target, previous: Option<&Path>) -> Re
             Error::Other(format!(
                 "release {} has no {} asset",
                 release.tag_name,
-                target.kind.suffix()
+                target.asset_name()
             ))
         })?
         .clone();

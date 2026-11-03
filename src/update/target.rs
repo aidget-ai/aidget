@@ -17,6 +17,18 @@ pub struct Target {
     pub arch: &'static str,
 }
 
+impl Target {
+    /// The exact public filename for this platform, architecture and package kind.
+    pub fn asset_name(self) -> String {
+        let platform = match self.kind {
+            PackageKind::MacApp => "darwin",
+            PackageKind::WindowsSetup => "windows",
+            PackageKind::AppImage | PackageKind::Deb | PackageKind::Rpm => "linux",
+        };
+        format!("aidget-{platform}-{}{}", self.arch, self.kind.suffix())
+    }
+}
+
 /// Which distribution package managers this machine has.
 ///
 /// A Linux build outside an AppImage was installed by one of them, and only
@@ -67,7 +79,7 @@ pub fn target_for(
         }),
         "windows" => Some(Target {
             kind: PackageKind::WindowsSetup,
-            arch: "x64",
+            arch: "amd64",
         }),
         "linux" => linux_target(arch, exe, appimage, managers),
         _ => None,
@@ -88,11 +100,11 @@ pub fn appimage_path(exe: &Path, appimage: Option<&OsStr>) -> Option<PathBuf> {
         .then(|| exe.to_path_buf())
 }
 
-/// `aarch64` on Apple Silicon, `x64` on Intel.
+/// Public asset architecture tokens for Apple Silicon and Intel.
 fn apple_arch(arch: &str) -> Option<&'static str> {
     match arch {
-        "aarch64" => Some("aarch64"),
-        "x86_64" => Some("x64"),
+        "aarch64" => Some("arm64"),
+        "x86_64" => Some("amd64"),
         _ => None,
     }
 }

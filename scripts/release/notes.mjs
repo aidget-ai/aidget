@@ -1,13 +1,12 @@
-import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { promisify } from 'node:util';
 
+import { runGit } from '../utils/git.mjs';
+import { collectContributors, thanks } from './contributors.mjs';
+import { installationNotes } from './install-notes.mjs';
 import { parseTag } from './version.mjs';
 
 export const CHINESE_MARKER = '<!-- lang:zh -->';
-
-const execFileAsync = promisify(execFile);
 
 function required(value, name) {
   if (!value) {
@@ -18,14 +17,6 @@ function required(value, name) {
 
 function responseError(label, status, body) {
   return new Error(`${label} returned HTTP ${status}: ${body.slice(0, 500)}`);
-}
-
-async function runGit(args) {
-  const { stdout } = await execFileAsync('git', args, {
-    encoding: 'utf8',
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  return stdout;
 }
 
 // One DeepSeek call: send the prompt and require non-empty text in return.
@@ -52,11 +43,23 @@ async function deepSeekText(prompt, apiKey, fetchImpl, label) {
   return required(typeof text === 'string' ? text.trim() : '', `DeepSeek ${label}`);
 }
 
-/** Joins the English and Chinese notes around the marker clients split on. */
-export function composeNotes(english, chinese) {
+/** Append fixed localized footers and join the two language sections. */
+export function composeNotes(english, chinese, people = []) {
   const en = required(english.trim(), 'English release notes');
   const zh = required(chinese.trim(), 'Chinese release notes');
-  return `${en}\n\n${CHINESE_MARKER}\n\n${zh}\n`;
+  return (
+    [
+      en,
+      installationNotes('en'),
+      thanks(people, 'en'),
+      CHINESE_MARKER,
+      zh,
+      installationNotes('zh'),
+      thanks(people, 'zh'),
+    ]
+      .filter(Boolean)
+      .join('\n\n') + '\n'
+  );
 }
 
 /** Generate English notes since the last published stable tag, or from all history. */
@@ -80,7 +83,7 @@ export async function generateEnglishChangelog({
     (await git(['log', range, '--pretty=format:%s', '--no-merges'])).trim(),
     'release commit list',
   );
-  const prompt = `Based on the following git commit messages, generate a concise and user-friendly changelog in markdown format. Group changes by category (e.g., Features, Bug Fixes, Improvements). Only include meaningful changes, skip trivial commits. Use clear, non-technical language where possible. Output ONLY the changelog content without any preamble.
+  const prompt = `Based on the following git commit messages, generate a concise and user-friendly changelog in markdown format. Group changes by category (e.g., Features, Bug Fixes, Improvements). Only include meaningful changes, skip trivial commits. Use clear, non-technical language where possible. Output ONLY the changelog content without any preamble. Do not add installation instructions or contributor acknowledgments; these are appended separately.
 
 Commit messages:
 ${commits}`;
@@ -97,14 +100,27 @@ ${english}`;
   return deepSeekText(prompt, apiKey, fetchImpl, 'translation');
 }
 
-/** Runs the changelog and translation calls in order and composes their result. */
+/** Generate and translate the changelog, then append fixed installation notes and credits. */
 export async function generateBilingualNotes({
   tag,
   previousTag = '',
   apiKey,
   fetchImpl = fetch,
   runGit: git = runGit,
+  repository = 'aidget-ai/aidget',
+  collectContributors: contributors = collectContributors,
 }) {
+  required(apiKey, 'DEEPSEEK_API_KEY');
+  parseTag(tag);
+  if (previousTag) {
+    parseTag(previousTag);
+  }
+  // Resolve credits first so a GitHub failure does not spend the model API budget.
+  const people = await contributors({
+    range: previousTag ? `${previousTag}..${tag}` : tag,
+    repository,
+    runGit: git,
+  });
   const english = await generateEnglishChangelog({
     tag,
     previousTag,
@@ -113,7 +129,7 @@ export async function generateBilingualNotes({
     runGit: git,
   });
   const chinese = await translateToChinese(english, apiKey, fetchImpl);
-  return composeNotes(english, chinese);
+  return composeNotes(english, chinese, people);
 }
 
 async function main(argv) {
@@ -128,6 +144,7 @@ async function main(argv) {
     tag,
     previousTag: process.env.PREVIOUS_RELEASE_TAG,
     apiKey: process.env.DEEPSEEK_API_KEY,
+    repository: process.env.GITHUB_REPOSITORY,
   });
   await writeFile(out, notes);
   console.log(`wrote ${out}`);

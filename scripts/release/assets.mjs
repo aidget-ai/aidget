@@ -5,38 +5,47 @@ import { pathToFileURL } from 'node:url';
 
 import { parseTag } from './version.mjs';
 
-export function assetName(source, version) {
+/** The complete set uploaded with SHA256SUMS for every release. */
+export const RELEASE_ASSETS = [
+  'aidget-darwin-arm64.dmg',
+  'aidget-darwin-amd64.dmg',
+  'aidget-darwin-arm64.zip',
+  'aidget-darwin-amd64.zip',
+  'aidget-windows-amd64.exe',
+  'aidget-linux-amd64.AppImage',
+  'aidget-linux-amd64.deb',
+  'aidget-linux-amd64.rpm',
+];
+
+/** Normalize build output names to the public platform/architecture contract. */
+export function assetName(source) {
   const name = basename(source);
+  if (RELEASE_ASSETS.includes(name)) {
+    return name;
+  }
+  if (!name.startsWith('aidget_') && !name.startsWith('aidget-')) {
+    throw new Error(`unsupported release asset ${name}`);
+  }
 
   if (name.endsWith('.dmg')) {
-    if (/aarch64|arm64/i.test(name)) {
-      return `aidget_${version}_aarch64.dmg`;
+    if (/_(aarch64|arm64)\.dmg$/.test(name)) {
+      return 'aidget-darwin-arm64.dmg';
     }
-    if (/x64|x86_64|amd64/i.test(name)) {
-      return `aidget_${version}_x64.dmg`;
-    }
-  }
-  if (name.endsWith('.app.zip')) {
-    // The updater swaps this archive in, so it must keep the `.app` wrapper:
-    // pack it with `ditto -c -k --keepParent`.
-    if (/aarch64|arm64/i.test(name)) {
-      return `aidget_${version}_aarch64.app.zip`;
-    }
-    if (/x64|x86_64|amd64/i.test(name)) {
-      return `aidget_${version}_x64.app.zip`;
+    if (/_(x64|x86_64|amd64)\.dmg$/.test(name)) {
+      return 'aidget-darwin-amd64.dmg';
     }
   }
-  if (name.endsWith('.exe')) {
-    return `aidget_${version}_x64-setup.exe`;
+  if (/_(x64|amd64)-setup\.exe$/.test(name)) {
+    return 'aidget-windows-amd64.exe';
   }
-  if (name.endsWith('.AppImage')) {
-    return `aidget_${version}_amd64.AppImage`;
+  if (name.endsWith('_amd64.AppImage')) {
+    return 'aidget-linux-amd64.AppImage';
   }
-  if (name.endsWith('.deb')) {
-    return `aidget_${version}_amd64.deb`;
+  if (name.endsWith('_amd64.deb')) {
+    return 'aidget-linux-amd64.deb';
   }
-  if (name.endsWith('.rpm')) {
-    return `aidget_${version}_amd64.rpm`;
+  if (name.endsWith('.x86_64.rpm')) {
+    return 'aidget-linux-amd64.rpm';
   }
 
   throw new Error(`unsupported release asset ${name}`);
@@ -55,28 +64,20 @@ async function filesUnder(root) {
   return out;
 }
 
-export async function collectAssets({ input, output, version }) {
+/** Collect every platform package and write SHA-256 entries for their final names. */
+export async function collectAssets({ input, output }) {
   await mkdir(output, { recursive: true });
   const copied = new Map();
 
   for (const source of await filesUnder(input)) {
-    const name = assetName(source, version);
+    const name = assetName(source);
     if (copied.has(name)) {
       throw new Error(`two source files map to ${name}`);
     }
     copied.set(name, source);
   }
 
-  const expected = [
-    `aidget_${version}_aarch64.dmg`,
-    `aidget_${version}_x64.dmg`,
-    `aidget_${version}_aarch64.app.zip`,
-    `aidget_${version}_x64.app.zip`,
-    `aidget_${version}_x64-setup.exe`,
-    `aidget_${version}_amd64.AppImage`,
-    `aidget_${version}_amd64.deb`,
-    `aidget_${version}_amd64.rpm`,
-  ];
+  const expected = RELEASE_ASSETS;
   for (const name of expected) {
     if (!copied.has(name)) {
       throw new Error(`missing release asset ${name}`);
@@ -103,14 +104,14 @@ async function main(argv) {
   for (let i = 0; i < argv.length; i += 2) {
     values.set(argv[i], argv[i + 1]);
   }
-  const version = parseTag(values.get('--version'));
+  parseTag(values.get('--version'));
   const input = values.get('--input');
   const output = values.get('--output');
   if (!input || !output) {
     throw new Error('usage: assets.mjs --version vX.Y.Z --input DIR --output DIR');
   }
 
-  const names = await collectAssets({ input, output, version });
+  const names = await collectAssets({ input, output });
   console.log(`collected ${names.length} assets and SHA256SUMS`);
 }
 

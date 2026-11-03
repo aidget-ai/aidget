@@ -15,10 +15,18 @@ function deepSeekReply(content) {
 }
 
 describe('release notes', () => {
-  test('composeNotes keeps English before the Chinese marker', () => {
-    expect(composeNotes("## What's Changed\n\n- Fixed it.", '## 变更内容\n\n- 修复。')).toBe(
-      `## What's Changed\n\n- Fixed it.\n\n${CHINESE_MARKER}\n\n## 变更内容\n\n- 修复。\n`,
-    );
+  test('composeNotes keeps localized instructions and thanks after each changelog', () => {
+    const people = [{ name: 'Alice', github: 'alice' }];
+    const [en, zh] = composeNotes('English changes', '中文更新', people).split(CHINESE_MARKER);
+    expect(en.indexOf('English changes')).toBeLessThan(en.indexOf('### Installation'));
+    expect(en.indexOf('### Installation')).toBeLessThan(en.indexOf('### Acknowledgments'));
+    expect(zh.indexOf('中文更新')).toBeLessThan(zh.indexOf('### 安装说明'));
+    expect(zh.indexOf('### 安装说明')).toBeLessThan(zh.indexOf('### 致谢'));
+    expect(en.trim()).toMatch(/code\.$/);
+    expect(zh.trim()).toMatch(/代码。$/);
+    for (const part of [en, zh]) {
+      expect(part).toContain('[Alice](https://github.com/alice)');
+    }
     expect(() => composeNotes('', '中文')).toThrow();
   });
 
@@ -57,7 +65,7 @@ describe('release notes', () => {
       {
         role: 'user',
         content:
-          'Based on the following git commit messages, generate a concise and user-friendly changelog in markdown format. Group changes by category (e.g., Features, Bug Fixes, Improvements). Only include meaningful changes, skip trivial commits. Use clear, non-technical language where possible. Output ONLY the changelog content without any preamble.\n\nCommit messages:\nfeat: add release notes\nfix: keep the title',
+          'Based on the following git commit messages, generate a concise and user-friendly changelog in markdown format. Group changes by category (e.g., Features, Bug Fixes, Improvements). Only include meaningful changes, skip trivial commits. Use clear, non-technical language where possible. Output ONLY the changelog content without any preamble. Do not add installation instructions or contributor acknowledgments; these are appended separately.\n\nCommit messages:\nfeat: add release notes\nfix: keep the title',
       },
     ]);
   });
@@ -153,6 +161,10 @@ describe('release notes', () => {
       tag: 'v0.2.0',
       previousTag: 'v0.1.0',
       apiKey: 'key',
+      collectContributors: async ({ range }) => {
+        expect(range).toBe('v0.1.0..v0.2.0');
+        return [];
+      },
       runGit: async (args) => {
         expect(args).toEqual(['log', 'v0.1.0..v0.2.0', '--pretty=format:%s', '--no-merges']);
         return 'feat: add it';
@@ -169,6 +181,30 @@ describe('release notes', () => {
     expect(requests).toHaveLength(2);
     expect(requests[0]).toMatch(/^Based on the following git commit messages/);
     expect(requests[1]).toMatch(/^Translate the following release notes/);
-    expect(notes).toBe(`### Features\n\n- Add it\n\n${CHINESE_MARKER}\n\n### 功能\n\n- 新增\n`);
+    expect(notes).toContain(`### Features\n\n- Add it`);
+    expect(notes).toContain(CHINESE_MARKER);
+    expect(notes).toContain(`### 功能\n\n- 新增`);
+    expect(notes).toContain('### Installation');
+    expect(notes).toContain('### 安装说明');
+    expect(requests[1]).not.toContain('xattr');
+  });
+
+  test('a contributor lookup failure stops before any paid model request', async () => {
+    let requests = 0;
+    await expect(
+      generateBilingualNotes({
+        tag: 'v0.2.0',
+        apiKey: 'key',
+        runGit: async () => 'fix: update',
+        collectContributors: async () => {
+          throw new Error('GitHub HTTP 403');
+        },
+        fetchImpl: async () => {
+          requests++;
+          return deepSeekReply('notes');
+        },
+      }),
+    ).rejects.toThrow('GitHub HTTP 403');
+    expect(requests).toBe(0);
   });
 });

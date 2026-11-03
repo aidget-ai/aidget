@@ -75,12 +75,12 @@ jobs:
           - name: macos-arm64
             os: macos-latest
             target: aarch64-apple-darwin
-            arch: aarch64
+            arch: arm64
             bundles: app,dmg
           - name: macos-x64
             os: macos-15-intel
             target: x86_64-apple-darwin
-            arch: x64
+            arch: amd64
             bundles: app,dmg
           - name: windows-x64
             os: windows-2022
@@ -150,15 +150,14 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         env:
-          VERSION: ${{ needs.metadata.outputs.version }}
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           test -n "$ARCH"
           APP="target/${{ matrix.target }}/release/bundle/macos/aidget.app"
           mkdir -p appzip
-          ditto -c -k --keepParent "$APP" "appzip/aidget_${VERSION}_${ARCH}.app.zip"
-          test -f "appzip/aidget_${VERSION}_${ARCH}.app.zip"
+          ditto -c -k --keepParent "$APP" "appzip/aidget-darwin-${ARCH}.zip"
+          test -f "appzip/aidget-darwin-${ARCH}.zip"
 
       - name: Upload macOS bundle
         if: runner.os == 'macOS'
@@ -168,7 +167,7 @@ jobs:
           if-no-files-found: error
           path: |
             target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            appzip/*.app.zip
+            appzip/*.zip
 
       - name: Upload Windows bundle
         if: runner.os == 'Windows'
@@ -194,6 +193,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -220,6 +221,7 @@ jobs:
 
       - name: Generate bilingual release notes
         env:
+          GH_TOKEN: ${{ github.token }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
           PREVIOUS_RELEASE_TAG: ${{ needs.metadata.outputs.previous_tag }}

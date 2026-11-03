@@ -46,14 +46,18 @@ impl Feed {
                     release.lock().unwrap().clone()
                 } else {
                     downloads.fetch_add(1, Ordering::SeqCst);
+                    let version = request
+                        .split_whitespace()
+                        .nth(1)
+                        .and_then(|path| path.strip_prefix("/asset/"))
+                        .expect("versioned asset URL");
                     (
                         *asset_status.lock().unwrap(),
                         if *bad_asset.lock().unwrap() {
-                            "bad"
+                            "bad".to_string()
                         } else {
-                            "verified"
-                        }
-                        .into(),
+                            format!("verified {version}")
+                        },
                     )
                 };
                 write!(
@@ -70,11 +74,12 @@ impl Feed {
 
     fn set(&self, version: &str, notes: &str) {
         let target = aidget::update::target::current().unwrap();
-        let name = format!("aidget_v{version}_{}{}", target.arch, target.kind.suffix());
-        let digest = crate::update::sha256(b"verified");
+        let name = target.asset_name();
+        let bytes = format!("verified {version}");
+        let digest = crate::update::sha256(bytes.as_bytes());
         *self.release.lock().unwrap() = (200, serde_json::json!({
             "tag_name": format!("v{version}"), "html_url": "", "body": notes,
-            "assets": [{"name":name,"browser_download_url":format!("{}/asset",self.base),"size":8,"digest":format!("sha256:{digest}")}]
+            "assets": [{"name":name,"browser_download_url":format!("{}/asset/{version}",self.base),"size":bytes.len(),"digest":format!("sha256:{digest}")}]
         }).to_string());
     }
 
@@ -111,11 +116,10 @@ fn magpie_held_download_keeps_version_notes_asset_and_install_identity() {
     // The service's download target must still agree, not just its display.
     let again = run(service.download(None));
     assert_eq!(again.latest.as_deref(), Some("2.0.0"));
-    assert!(service
-        .staged()
-        .unwrap()
-        .to_string_lossy()
-        .contains("v2.0.0"));
+    assert_eq!(
+        std::fs::read(service.staged().unwrap()).unwrap(),
+        b"verified 2.0.0"
+    );
     crate::update::cleanup(service.staged().unwrap());
 }
 
@@ -150,11 +154,11 @@ fn replacing_download_revokes_old_eligibility_and_failed_replacement_retries_new
     let retry = run(service.download(None));
     assert_eq!(retry.state, UpdateState::Ready);
     assert_eq!(retry.latest.as_deref(), Some("3.0.0"));
-    assert!(service
-        .staged()
-        .unwrap()
-        .to_string_lossy()
-        .contains("v3.0.0"));
+    assert_ne!(service.staged().unwrap(), old);
+    assert_eq!(
+        std::fs::read(service.staged().unwrap()).unwrap(),
+        b"verified 3.0.0"
+    );
     crate::update::cleanup(service.staged().unwrap());
 }
 

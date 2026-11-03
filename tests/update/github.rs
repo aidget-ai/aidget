@@ -47,8 +47,8 @@ fn reads_the_fields_the_payload_carries() {
             "html_url": "https://github.com/aidget-ai/aidget/releases/tag/v0.1.1",
             "assets": [
                 {
-                    "name": "aidget_v0.1.1_aarch64.dmg",
-                    "browser_download_url": "https://github.com/aidget-ai/aidget/releases/download/v0.1.1/aidget_v0.1.1_aarch64.dmg",
+                    "name": "aidget-darwin-arm64.dmg",
+                    "browser_download_url": "https://github.com/aidget-ai/aidget/releases/download/v0.1.1/aidget-darwin-arm64.dmg",
                     "size": 26512345,
                     "digest": "sha256:abc123"
                 }
@@ -72,7 +72,7 @@ fn a_null_digest_and_a_missing_body_are_accepted() {
             "html_url": "https://example.invalid/release",
             "assets": [
                 {
-                    "name": "aidget_v0.1.1_aarch64.dmg",
+                    "name": "aidget-darwin-arm64.dmg",
                     "browser_download_url": "https://example.invalid/a.dmg",
                     "size": 1,
                     "digest": null
@@ -89,78 +89,72 @@ fn a_null_digest_and_a_missing_body_are_accepted() {
 #[test]
 fn selects_the_asset_for_the_running_architecture() {
     let release = release(&[
-        "aidget_v0.1.1_aarch64.dmg",
-        "aidget_v0.1.1_x64.dmg",
-        "aidget_v0.1.1_aarch64.app.zip",
-        "aidget_v0.1.1_x64.app.zip",
+        "aidget-darwin-arm64.dmg",
+        "aidget-darwin-amd64.dmg",
+        "aidget-darwin-arm64.zip",
+        "aidget-darwin-amd64.zip",
     ]);
 
     let arm = release
-        .asset_for(target(PackageKind::MacApp, "aarch64"))
+        .asset_for(target(PackageKind::MacApp, "arm64"))
         .unwrap();
     let intel = release
-        .asset_for(target(PackageKind::MacApp, "x64"))
+        .asset_for(target(PackageKind::MacApp, "amd64"))
         .unwrap();
 
-    assert_eq!(arm.name, "aidget_v0.1.1_aarch64.app.zip");
-    assert_eq!(intel.name, "aidget_v0.1.1_x64.app.zip");
+    assert_eq!(arm.name, "aidget-darwin-arm64.zip");
+    assert_eq!(intel.name, "aidget-darwin-amd64.zip");
 }
 
 #[test]
 fn never_hands_out_a_dmg_as_an_app_zip() {
-    let release = release(&["aidget_v0.1.1_aarch64.dmg"]);
+    let release = release(&["aidget-darwin-arm64.dmg"]);
 
     assert!(release
-        .asset_for(target(PackageKind::MacApp, "aarch64"))
+        .asset_for(target(PackageKind::MacApp, "arm64"))
         .is_none());
 }
 
 #[test]
 fn the_name_must_end_with_the_token_and_suffix_exactly() {
-    let release = release(&["aidget_v0.1.1_aarch64.app.zip.bak"]);
+    let release = release(&["aidget-darwin-arm64.zip.bak"]);
 
     assert!(release
-        .asset_for(target(PackageKind::MacApp, "aarch64"))
+        .asset_for(target(PackageKind::MacApp, "arm64"))
         .is_none());
 }
 
 #[test]
-fn an_architecture_token_inside_the_version_does_not_select_it() {
-    let release = release(&["aidget_v0.1.1-x64_aarch64.app.zip"]);
-
-    let found = release
-        .asset_for(target(PackageKind::MacApp, "aarch64"))
-        .unwrap();
-
-    assert_eq!(found.name, "aidget_v0.1.1-x64_aarch64.app.zip");
+fn a_different_product_with_the_same_suffix_is_not_selected() {
+    let release = release(&["other-aidget-darwin-arm64.zip", "aidget-linux-arm64.zip"]);
     assert!(release
-        .asset_for(target(PackageKind::MacApp, "x64"))
+        .asset_for(target(PackageKind::MacApp, "arm64"))
         .is_none());
 }
 
 #[test]
 fn selects_the_windows_installer() {
-    let release = release(&["aidget_v0.1.1_x64-setup.exe"]);
+    let release = release(&["aidget-windows-amd64.exe"]);
 
     let asset = release
-        .asset_for(target(PackageKind::WindowsSetup, "x64"))
+        .asset_for(target(PackageKind::WindowsSetup, "amd64"))
         .unwrap();
 
-    assert_eq!(asset.name, "aidget_v0.1.1_x64-setup.exe");
+    assert_eq!(asset.name, "aidget-windows-amd64.exe");
 }
 
 #[test]
 fn selects_the_linux_packages_by_suffix() {
     let release = release(&[
-        "aidget_v0.1.1_amd64.AppImage",
-        "aidget_v0.1.1_amd64.deb",
-        "aidget_v0.1.1_amd64.rpm",
+        "aidget-linux-amd64.AppImage",
+        "aidget-linux-amd64.deb",
+        "aidget-linux-amd64.rpm",
     ]);
 
     for (kind, expected) in [
-        (PackageKind::AppImage, "aidget_v0.1.1_amd64.AppImage"),
-        (PackageKind::Deb, "aidget_v0.1.1_amd64.deb"),
-        (PackageKind::Rpm, "aidget_v0.1.1_amd64.rpm"),
+        (PackageKind::AppImage, "aidget-linux-amd64.AppImage"),
+        (PackageKind::Deb, "aidget-linux-amd64.deb"),
+        (PackageKind::Rpm, "aidget-linux-amd64.rpm"),
     ] {
         assert_eq!(
             release.asset_for(target(kind, "amd64")).unwrap().name,
@@ -171,8 +165,8 @@ fn selects_the_linux_packages_by_suffix() {
 
 #[test]
 fn a_release_without_the_wanted_asset_selects_nothing() {
-    assert!(release(&["aidget_v0.1.1_x64.deb"])
-        .asset_for(target(PackageKind::MacApp, "aarch64"))
+    assert!(release(&["aidget-linux-amd64.deb"])
+        .asset_for(target(PackageKind::MacApp, "arm64"))
         .is_none());
 }
 
@@ -222,7 +216,7 @@ fn a_published_release_is_read_from_the_feed() {
     let base = super::serve_once(
         200,
         r#"{"tag_name": "v0.2.0", "html_url": "", "assets": [
-            {"name": "aidget_0.2.0_aarch64.app.zip", "browser_download_url": "https://example.invalid/a", "size": 1}
+            {"name": "aidget-darwin-arm64.zip", "browser_download_url": "https://example.invalid/a", "size": 1}
         ]}"#,
     );
 

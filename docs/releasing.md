@@ -70,21 +70,33 @@ the same checks, packaging, bilingual notes and asset uploads as a stable releas
 
 Every successful release contains:
 
-- `aidget_<version>_aarch64.dmg`
-- `aidget_<version>_x64.dmg`
-- `aidget_<version>_aarch64.app.zip`
-- `aidget_<version>_x64.app.zip`
-- `aidget_<version>_x64-setup.exe`
-- `aidget_<version>_amd64.AppImage`
-- `aidget_<version>_amd64.deb`
-- `aidget_<version>_amd64.rpm`
+- `aidget-darwin-arm64.dmg`
+- `aidget-darwin-amd64.dmg`
+- `aidget-darwin-arm64.zip`
+- `aidget-darwin-amd64.zip`
+- `aidget-windows-amd64.exe`
+- `aidget-linux-amd64.AppImage`
+- `aidget-linux-amd64.deb`
+- `aidget-linux-amd64.rpm`
 - `SHA256SUMS`
 
 DeepSeek generates the English notes from commit subjects since the latest
 published stable release. When there is no stable release, it uses the full
 history, including the root commit. Failed tags do not set the changelog boundary.
 A second DeepSeek call adds a Simplified Chinese translation below
-`<!-- lang:zh -->`.
+`<!-- lang:zh -->`. Fixed unsigned installation instructions and contributor
+thanks are appended to each language after generation and translation. Contributors
+come from the same commit range: authors, coauthors, explicit reporter credits and
+referenced issue/PR authors. Maintainer `micooz`, bots and coding agents are
+excluded; only public names and known GitHub profile links are shown. GitHub lookup
+failures abort publication rather than silently dropping names. The notes step
+uses `GH_TOKEN` with read access to issues and pull requests.
+
+Assets use `aidget-<platform>-<arch>.<ext>`: `darwin/windows/linux`, `arm64/amd64`.
+The macOS ZIP retains its `.app` directory. Names no longer include versions;
+`SHA256SUMS` covers the exact public filenames. Beta.1 and older clients require
+one manual installation of beta.2 or later to recognize these new names. Published
+releases and their original assets are left unchanged.
 
 ## Failure and retry rules
 
@@ -105,13 +117,13 @@ The current macOS and Windows artifacts are unsigned. macOS users may see
 Gatekeeper warnings, and Windows users may see SmartScreen warnings.
 
 The app checks the latest stable GitHub Release and verifies update downloads
-against `SHA256SUMS`. macOS uses the `.app.zip` assets for application replacement.
+against `SHA256SUMS`. macOS uses the `.zip` assets for application replacement.
 Beta releases do not appear in the stable update check.
 
 RPM beta packages use the core version as RPM `Version` and
 `0.beta.N.1` as RPM `Release`, which sorts before the stable release's `1`.
-The packaged executable and the public asset filename retain the full beta
-version.
+The packaged executable retains the full beta version. Public asset filenames
+do not include the version.
 
 The first live release is also the first end-to-end test of GitHub-hosted macOS,
 Windows and Linux packaging. Until it runs, treat those packaging paths as

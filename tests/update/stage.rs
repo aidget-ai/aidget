@@ -25,13 +25,13 @@ fn target(kind: PackageKind, arch: &'static str) -> Target {
 
 #[test]
 fn the_download_lands_under_the_asset_name_in_a_directory_of_its_own() {
-    let release = release(&["aidget_0.2.0_aarch64.app.zip", "SHA256SUMS"]);
+    let release = release(&["aidget-darwin-arm64.zip", "SHA256SUMS"]);
 
-    let prepared = prepare(&release, target(PackageKind::MacApp, "aarch64"), None).unwrap();
+    let prepared = prepare(&release, target(PackageKind::MacApp, "arm64"), None).unwrap();
 
     assert_eq!(
         prepared.path.file_name().unwrap(),
-        "aidget_0.2.0_aarch64.app.zip"
+        "aidget-darwin-arm64.zip"
     );
     let dir = prepared.path.parent().unwrap();
     assert!(dir.exists(), "the directory is ready for the download");
@@ -45,14 +45,14 @@ fn the_download_lands_under_the_asset_name_in_a_directory_of_its_own() {
 
 #[test]
 fn a_previous_download_is_dropped_before_the_next_one_starts() {
-    let release = release(&["aidget_0.2.0_aarch64.app.zip"]);
-    let first = prepare(&release, target(PackageKind::MacApp, "aarch64"), None).unwrap();
+    let release = release(&["aidget-darwin-arm64.zip"]);
+    let first = prepare(&release, target(PackageKind::MacApp, "arm64"), None).unwrap();
     let first_dir = first.path.parent().unwrap().to_path_buf();
     std::fs::write(&first.path, b"stale").unwrap();
 
     let second = prepare(
         &release,
-        target(PackageKind::MacApp, "aarch64"),
+        target(PackageKind::MacApp, "arm64"),
         Some(&first.path),
     )
     .unwrap();
@@ -65,12 +65,14 @@ fn a_previous_download_is_dropped_before_the_next_one_starts() {
 
 #[test]
 fn a_release_without_this_platforms_asset_is_refused() {
-    let release = release(&["aidget_0.2.0_x64-setup.exe"]);
+    let release = release(&["aidget-windows-amd64.exe"]);
 
-    let error = prepare(&release, target(PackageKind::MacApp, "aarch64"), None).unwrap_err();
+    let error = prepare(&release, target(PackageKind::MacApp, "arm64"), None).unwrap_err();
 
     assert!(
-        error.to_string().contains("has no .app.zip asset"),
+        error
+            .to_string()
+            .contains("has no aidget-darwin-arm64.zip asset"),
         "{error}"
     );
 }

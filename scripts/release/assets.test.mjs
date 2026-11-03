@@ -20,12 +20,26 @@ async function tempRoot(prefix) {
 
 describe('release assets', () => {
   test('assetName normalizes Tauri default bundle names', () => {
-    expect(assetName('aidget_0.2.0_aarch64.dmg', '0.2.0')).toBe('aidget_0.2.0_aarch64.dmg');
-    expect(assetName('aidget_0.2.0_x64.dmg', '0.2.0')).toBe('aidget_0.2.0_x64.dmg');
-    expect(assetName('aidget_0.2.0_aarch64.app.zip', '0.2.0')).toBe('aidget_0.2.0_aarch64.app.zip');
-    expect(assetName('aidget_0.2.0_x64.app.zip', '0.2.0')).toBe('aidget_0.2.0_x64.app.zip');
-    expect(assetName('aidget-0.2.0-1.x86_64.rpm', '0.2.0')).toBe('aidget_0.2.0_amd64.rpm');
-    expect(() => assetName('notes.txt', '0.2.0')).toThrow();
+    for (const [source, expected] of [
+      ['aidget_0.2.0_aarch64.dmg', 'aidget-darwin-arm64.dmg'],
+      ['aidget_0.2.0_x64.dmg', 'aidget-darwin-amd64.dmg'],
+      ['aidget-darwin-arm64.zip', 'aidget-darwin-arm64.zip'],
+      ['aidget-darwin-amd64.zip', 'aidget-darwin-amd64.zip'],
+      ['aidget_0.2.0_x64-setup.exe', 'aidget-windows-amd64.exe'],
+      ['aidget_0.2.0_amd64.AppImage', 'aidget-linux-amd64.AppImage'],
+      ['aidget_0.2.0_amd64.deb', 'aidget-linux-amd64.deb'],
+      ['aidget-0.2.0-1.x86_64.rpm', 'aidget-linux-amd64.rpm'],
+    ]) {
+      expect(assetName(source)).toBe(expected);
+    }
+    for (const bad of [
+      'notes.txt',
+      'other_0.2.0_x64.dmg',
+      'aidget_0.2.0_arm64-setup.exe',
+      'aidget-darwin-arm64.zip.bak',
+    ]) {
+      expect(() => assetName(bad)).toThrow();
+    }
   });
 
   test.each(['0.2.0', '0.1.1-beta.0'])(
@@ -44,8 +58,8 @@ describe('release assets', () => {
       const sources = [
         ['dmg/aidget_0.2.0_aarch64.dmg', 'arm'],
         ['dmg/aidget_0.2.0_x64.dmg', 'intel'],
-        ['appzip/aidget_0.2.0_aarch64.app.zip', 'arm-app'],
-        ['appzip/aidget_0.2.0_x64.app.zip', 'intel-app'],
+        ['appzip/aidget-darwin-arm64.zip', 'arm-app'],
+        ['appzip/aidget-darwin-amd64.zip', 'intel-app'],
         ['nsis/aidget_0.2.0_x64-setup.exe', 'windows'],
         ['appimage/aidget_0.2.0_amd64.AppImage', 'appimage'],
         ['deb/aidget_0.2.0_amd64.deb', 'deb'],
@@ -55,14 +69,25 @@ describe('release assets', () => {
         await writeFile(join(input, path.replaceAll('0.2.0', version)), body);
       }
 
-      const names = await collectAssets({ input, output, version });
+      const names = await collectAssets({ input, output });
       expect(names).toHaveLength(8);
-      expect(await readFile(join(output, `aidget_${version}_amd64.rpm`), 'utf8')).toBe('rpm');
+      expect(await readFile(join(output, 'aidget-linux-amd64.rpm'), 'utf8')).toBe('rpm');
       expect(await readFile(join(output, 'SHA256SUMS'), 'utf8')).toContain(
-        `aidget_${version}_x64-setup.exe`,
+        'aidget-windows-amd64.exe',
       );
     },
   );
+
+  test('collectAssets rejects duplicate packages', async () => {
+    const root = await tempRoot('aidget-assets-duplicate-');
+    const input = join(root, 'input');
+    await mkdir(input, { recursive: true });
+    await writeFile(join(input, 'aidget_0.2.0_aarch64.dmg'), 'one');
+    await writeFile(join(input, 'aidget_0.3.0_aarch64.dmg'), 'two');
+    await expect(collectAssets({ input, output: join(root, 'output') })).rejects.toThrow(
+      'two source files map to aidget-darwin-arm64.dmg',
+    );
+  });
 
   test('collectAssets fails when a required platform is missing', async () => {
     const root = await tempRoot('aidget-assets-missing-');
@@ -70,8 +95,8 @@ describe('release assets', () => {
     await mkdir(input, { recursive: true });
     await writeFile(join(input, 'aidget_0.2.0_aarch64.dmg'), 'arm');
 
-    await expect(
-      collectAssets({ input, output: join(root, 'output'), version: '0.2.0' }),
-    ).rejects.toThrow(/missing release asset/);
+    await expect(collectAssets({ input, output: join(root, 'output') })).rejects.toThrow(
+      /missing release asset/,
+    );
   });
 });

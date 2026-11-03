@@ -185,7 +185,7 @@ pub fn sha256(bytes: &[u8]) -> String {
 /// asset that does not belong to the machine.
 pub fn release_asset_name() -> String {
     let target = aidget::update::target::current().expect("this platform has an install shape");
-    format!("aidget_{VERSION}_{}{}", target.arch, target.kind.suffix())
+    target.asset_name()
 }
 
 /// The version the mock releases claim.

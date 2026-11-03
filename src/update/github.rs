@@ -58,11 +58,11 @@ pub enum PackageKind {
 }
 
 impl PackageKind {
-    /// The part of the asset name from the architecture token to the end.
+    /// The public filename extension for this distribution format.
     pub fn suffix(self) -> &'static str {
         match self {
-            PackageKind::MacApp => ".app.zip",
-            PackageKind::WindowsSetup => "-setup.exe",
+            PackageKind::MacApp => ".zip",
+            PackageKind::WindowsSetup => ".exe",
             PackageKind::AppImage => ".AppImage",
             PackageKind::Deb => ".deb",
             PackageKind::Rpm => ".rpm",
@@ -224,15 +224,9 @@ impl Release {
 
     /// The asset this machine would install, if the release has one.
     ///
-    /// Names follow `scripts/release/assets.mjs`: `aidget_<version>_<arch><suffix>`.
-    /// Matching is exact from the architecture token to the end, the way Magpie
-    /// looks up a full asset name. Only the version in the middle is left
-    /// unread, because the workflow writes it as `v<version>` while a tag may or
-    /// may not carry the `v`.
+    /// Match the complete public filename, including the product and platform.
     pub fn asset_for(&self, target: Target) -> Option<&Asset> {
-        let wanted = format!("_{}{}", target.arch, target.kind.suffix());
-        self.assets
-            .iter()
-            .find(|asset| asset.name.ends_with(&wanted))
+        let wanted = target.asset_name();
+        self.assets.iter().find(|asset| asset.name == wanted)
     }
 }
