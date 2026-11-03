@@ -297,11 +297,16 @@
               <div class="settings-list">
                 <div class="settings-row github-token-row">
                   <div class="setting-copy">
-                    <label
-                      class="setting-label"
-                      for="github-token-input"
-                      data-message="githubToken"
-                    ></label>
+                    <div class="github-token-heading">
+                      <label
+                        class="setting-label"
+                        for="github-token-input"
+                        data-message="githubToken"
+                      ></label>
+                      <button class="github-token-link" type="button" data-github-token-link>
+                        <i data-lucide="external-link" aria-hidden="true"></i>
+                      </button>
+                    </div>
                     <span class="setting-note" data-message="githubTokenDescription"></span>
                   </div>
                   <div class="github-token-control" data-github-token-control>
@@ -353,19 +358,19 @@
                 <span class="setting-value" data-version>—</span>
                 <span class="visually-hidden" data-update-status role="status">—</span>
                 <button class="text-button" type="button" data-update-action>
-                  <i
-                    class="update-action-icon"
-                    data-lucide="arrow-up"
-                    data-update-icon
-                    aria-hidden="true"
-                    hidden
-                  ></i>
                   <span data-update-label data-message="checkNow"></span>
                 </button>
               </div>
             </div>
-            <div class="settings-row update-notes-row" data-update-notes-row hidden>
-              <p class="update-notes" data-update-notes></p>
+            <div class="settings-row update-notes-row" data-update-notes-row>
+              <span class="setting-label" data-message="updateNotes"></span>
+              <button
+                class="secondary-button"
+                type="button"
+                data-update-notes-open
+                data-message="open"
+                disabled
+              ></button>
             </div>
             <div class="settings-row">
               <span class="setting-label" data-message="autoDownload"></span>

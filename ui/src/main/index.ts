@@ -8,6 +8,7 @@ import {
   ArrowUp,
   createElement,
   createIcons,
+  ExternalLink,
   Info,
   LayoutGrid,
   Minus,
@@ -108,6 +109,7 @@ const githubButton = document.querySelector<HTMLButtonElement>('[data-github]')!
 const autoStart = document.querySelector<HTMLButtonElement>('[data-autostart]')!;
 const language = document.querySelector<HTMLSelectElement>('[data-language]')!;
 const githubTokenControl = document.querySelector<HTMLElement>('[data-github-token-control]')!;
+const githubTokenLink = document.querySelector<HTMLButtonElement>('[data-github-token-link]')!;
 const githubTokenForm = document.querySelector<HTMLFormElement>('[data-github-token-form]')!;
 const githubTokenInput = document.querySelector<HTMLInputElement>('[data-github-token-input]')!;
 const githubTokenSave = document.querySelector<HTMLButtonElement>('[data-github-token-save]')!;
@@ -141,6 +143,11 @@ const updatePage = createUpdatePage(
     await persistPreferences(previous);
   },
   (message) => showFault(message),
+  (url) => {
+    void openUrl(url).catch((error: unknown) =>
+      showFault(`${t('openLinkFailed')}: ${String(error)}`),
+    );
+  },
 );
 const integrationStatuses = document.querySelectorAll<HTMLElement>('.integration-status');
 const views = new Map<string, WidgetView>();
@@ -234,6 +241,8 @@ function applyLocaleStatic() {
   filterOptions.setAttribute('aria-label', t('widgetFilters'));
   autoStart.setAttribute('aria-label', t('launchAtLogin'));
   githubTokenInput.placeholder = t('githubTokenPlaceholder');
+  githubTokenLink.setAttribute('aria-label', t('githubTokenCreate'));
+  githubTokenLink.title = t('githubTokenCreate');
   document.querySelectorAll<HTMLButtonElement>('[data-window-action]').forEach((button) => {
     button.setAttribute('aria-label', t(button.dataset.windowAction as MessageKey));
   });
@@ -1201,6 +1210,12 @@ document.addEventListener('visibilitychange', () => syncPreviewRefresh(true));
 language.addEventListener('change', () => {
   void setLanguage(language.value as Locale);
 });
+githubTokenLink.addEventListener('click', () => {
+  fault.hidden = true;
+  void openUrl('https://github.com/settings/tokens').catch((error: unknown) => {
+    showFault(`${t('openLinkFailed')}: ${String(error)}`);
+  });
+});
 githubTokenForm.addEventListener('submit', (event) => {
   event.preventDefault();
   void saveGithubToken();
@@ -1241,7 +1256,18 @@ document.querySelectorAll<HTMLButtonElement>('[data-window-action]').forEach((bu
 autoStart.setAttribute('aria-checked', 'false');
 
 createIcons({
-  icons: { ArrowUp, Info, LayoutGrid, Minus, ServerCog, Settings, Square, UsersRound, X },
+  icons: {
+    ArrowUp,
+    ExternalLink,
+    Info,
+    LayoutGrid,
+    Minus,
+    ServerCog,
+    Settings,
+    Square,
+    UsersRound,
+    X,
+  },
 });
 applyTheme(theme);
 renderPreferences();

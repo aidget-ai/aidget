@@ -1,8 +1,8 @@
-//! The GitHub release the update check reads.
+//! The GitHub releases the update check reads.
 //!
-//! `GET /repos/{owner}/{repo}/releases/latest` returns the newest published
-//! release; drafts and pre-releases are excluded by GitHub itself, so the
-//! client needs no channel logic.
+//! The releases endpoint includes drafts and pre-releases for callers with
+//! access, so this module filters both before the update state machine sees a
+//! release.
 
 use std::io::Read;
 use std::time::Duration;
@@ -18,6 +18,8 @@ pub const REPOSITORY: &str = "aidget-ai/aidget";
 
 /// Where the release feed lives. Tests point [`latest`] elsewhere instead.
 pub const API_BASE: &str = "https://api.github.com";
+const PAGE_SIZE: usize = 100;
+const MAX_PAGES: usize = 20;
 
 /// What a download would do on this machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,15 +46,81 @@ impl PackageKind {
     }
 }
 
-/// Read the newest published release of `repository` from `base`.
+/// Read the newest stable release of `repository` from `base`.
 ///
-/// `None` means the repository has published nothing: GitHub answers 404 on
-/// `releases/latest` for a project before its first release, which is a state,
-/// not a failure. GitHub's endpoint already excludes drafts and pre-releases.
+/// Returns `None` when the feed contains no stable releases. Drafts and
+/// pre-releases are filtered by [`stable_releases`].
 /// `token` is the user's, when configured: an unauthenticated caller shares 60
 /// requests an hour per address, a token raises that to 5000.
 pub fn latest(base: &str, repository: &str, token: Option<&str>) -> Result<Option<Release>> {
-    let url = format!("{base}/repos/{repository}/releases/latest");
+    Ok(stable_releases(base, repository, token, None)?
+        .into_iter()
+        .next())
+}
+
+/// Read stable releases newest-first, including enough older entries to reach
+/// `current` when it is provided.
+///
+/// Drafts and pre-releases are excluded; invalid SemVer tags fail the check.
+/// Pagination stops after a page containing a stable release at or below
+/// `current`, or at the end of the feed. Exhausting the page limit is an error.
+pub fn stable_releases(
+    base: &str,
+    repository: &str,
+    token: Option<&str>,
+    current: Option<&str>,
+) -> Result<Vec<Release>> {
+    let current_version = current.map(parse_version).transpose()?;
+    let mut releases = Vec::new();
+    for page in 1..=MAX_PAGES {
+        let page_releases = releases_page(base, repository, token, page)?;
+        let page_len = page_releases.len();
+        for release in page_releases {
+            if release.draft || release.prerelease {
+                continue;
+            }
+            if !parse_version(&release.tag_name)?.pre.is_empty() {
+                continue;
+            }
+            releases.push(release);
+        }
+        releases.sort_by(|left, right| {
+            parse_version(&right.tag_name)
+                .unwrap()
+                .cmp_precedence(&parse_version(&left.tag_name).unwrap())
+        });
+        if page_len < PAGE_SIZE
+            || current_version.as_ref().is_some_and(|current| {
+                releases.iter().any(|release| {
+                    parse_version(&release.tag_name)
+                        .unwrap()
+                        .cmp_precedence(&current)
+                        != std::cmp::Ordering::Greater
+                })
+            })
+        {
+            return Ok(releases);
+        }
+    }
+    Err(Error::Other(format!(
+        "update feed: more than {} release pages",
+        MAX_PAGES
+    )))
+}
+
+fn parse_version(tag: &str) -> Result<semver::Version> {
+    let text = tag.trim();
+    semver::Version::parse(text.strip_prefix('v').unwrap_or(text))
+        .map_err(|error| Error::Other(format!("update feed: invalid release tag {tag:?}: {error}")))
+}
+
+fn releases_page(
+    base: &str,
+    repository: &str,
+    token: Option<&str>,
+    page: usize,
+) -> Result<Vec<Release>> {
+    let url = format!("{base}/repos/{repository}/releases?per_page={PAGE_SIZE}&page={page}");
     fetch::ensure_secure(&url)?;
     let client = fetch::client()?;
     let mut response = fetch::github_api_get(&client, &url, token)?
@@ -64,7 +132,7 @@ pub fn latest(base: &str, repository: &str, token: Option<&str>) -> Result<Optio
     let body = read_body(&mut response)?;
 
     if status == 404 && nothing_published(&body) {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     if !(200..300).contains(&status) {
         return Err(Error::Other(format!(
@@ -72,9 +140,9 @@ pub fn latest(base: &str, repository: &str, token: Option<&str>) -> Result<Optio
             describe_failure(status, &headers, &body)
         )));
     }
-    let release = serde_json::from_str::<Release>(&body)
+    let releases = serde_json::from_str::<Vec<Release>>(&body)
         .map_err(|error| Error::Other(format!("update feed: {error}")))?;
-    Ok(Some(release))
+    Ok(releases)
 }
 
 /// Whether a 404 body is GitHub saying the repository has no release.
@@ -121,9 +189,8 @@ fn read_body(response: &mut reqwest::blocking::Response) -> Result<String> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-/// Largest feed answer we are willing to read: release notes are large, but not
-/// this large.
-const FEED_LIMIT: u64 = 1024 * 1024;
+/// Page size limit allows for multiple bilingual release bodies.
+const FEED_LIMIT: u64 = 8 * 1024 * 1024;
 
 /// What to tell the user about a failed answer.
 ///
@@ -172,6 +239,10 @@ pub fn describe_failure(status: u16, headers: &reqwest::header::HeaderMap, body:
 #[derive(Debug, Clone, Deserialize)]
 pub struct Release {
     pub tag_name: String,
+    #[serde(default)]
+    pub draft: bool,
+    #[serde(default)]
+    pub prerelease: bool,
     #[serde(default)]
     pub body: String,
     pub html_url: String,

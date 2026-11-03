@@ -3,8 +3,9 @@
 Design and acceptance criteria for Aidget's one-click self-update (Issue #2).
 
 A few seconds after launch, and whenever **Check for updates** is pressed, the
-running version is compared with the latest GitHub release. When it is newer the
-release notes are shown, and one click downloads, verifies and installs it.
+running version is compared with the latest stable GitHub release. One click
+downloads, verifies and installs it. The About page retains release notes for the
+current-to-latest range and opens them in a modal dialog.
 **Download updates automatically** decides whether the download starts on its own.
 There is no poller, scheduler or recurring timer: `CONTRIBUTING.md` requires a
 design discussion before adding one, and the approved proposal asks for a launch
@@ -19,13 +20,14 @@ compile-time product setting that can redirect the updater to another repository
 ## Decisions
 
 **Read GitHub Releases directly.** No feed adapter, `latest.json` or own server:
-`releases/latest` already excludes drafts and pre-releases, and its assets carry
-name, URL, size and `digest`. An intermediate model would only earn its keep with a
-second feed, and there is none.
+the paginated releases endpoint supplies the stable release range, and each asset
+carries name, URL, size and `digest`. Drafts and pre-releases are excluded;
+invalid SemVer tags fail the check explicitly.
 
 **Reuse the client the repository already has.** `reqwest` (blocking, `rustls`),
-`sha2` and `semver` come with the community pages, so the updater adds no
-dependency; every call is blocking and runs inside `spawn_blocking`.
+`sha2` and `semver` come with the community pages, so the Rust updater adds no
+dependency. The window uses `marked` and `dompurify` only for retained notes.
+Every GitHub call is blocking and runs inside `spawn_blocking`.
 `community::http::Http` is not reused directly because it answers only "missing or
 unavailable" and hides the status and the headers, while the updater needs both — a
 404 means nothing is published, and `x-ratelimit-*` says how long to wait.
@@ -87,9 +89,21 @@ install does not hide a verified file that can still be retried.
 
 **"Up to date", "nothing published" and "this build cannot replace itself" are
 three states, and none is an error.** A build from a working tree reports
-`Source`; a repository with no release (404 on `releases/latest`) reports
+`Source`; a repository with no release (404 on the releases endpoint) reports
 `NoRelease`. Any other 404 keeps its status, so a renamed repository does not read
 as "nothing to do".
+
+**Release notes are retained.** `state/update/releases.json` atomically stores the
+last installed-to-latest range and the newest five stable releases. When an update
+is installed, its retained range remains available; without a matching range, the
+newest five stable releases are shown. The cache is versioned and size-bounded.
+A malformed cache fails service initialization; an unwritable cache fails the check.
+
+The dialog selects the requested language from the bilingual release body,
+excluding installation and thanks footers. It merges categories across releases
+and labels every top-level change with its source version. Markdown is sanitized
+before insertion; only HTTPS links are retained and they open through the platform
+link handler.
 
 The About page's version row keeps reporting the crate version, as
 `docs/development.md` promises for the CLI, doctor, the MCP server, the main window
@@ -133,9 +147,14 @@ The About version row and the global page header share one stateful action.
 Checking produces a three-second status on About. Once an update exists, the
 action reads `Update`; clicking it calls `update_apply`, which fetches the latest
 release again. A matching staged version installs directly, while a newer version
-is downloaded and verified before installation. A failed recheck never installs
-an older staged archive. The global copy is hidden on About because the version
-row already provides the same action.
+is downloaded and verified before installation. That recheck says
+**Checking…**; **Downloading…** appears only after the backend enters its actual
+`downloading` state. A failed recheck never installs an older staged archive. The
+global copy is hidden on About because the version row already provides the same
+action.
+
+The About page's **Release notes** row enables **Open** when notes are available.
+The dialog shows the target version and retained range in the interface language.
 
 ## Platform scope
 
@@ -163,7 +182,8 @@ src/update/
 ├── mod.rs            module tree
 ├── service.rs        state machine, guards, install hand-off
 ├── snapshot.rs       UpdateState and UpdateSnapshot, the window's contract
-├── github.rs         releases/latest, asset selection, failure wording
+├── notes.rs          stable-notes selection and retained range cache
+├── github.rs         paginated releases, asset selection, failure wording
 ├── fetch.rs          the GitHub client: deadlines, HTTPS-only redirects, token
 ├── version.rs        semver questions, build stamp, tag normalisation
 ├── download.rs       streaming download with its SHA-256, asset text reads

@@ -121,7 +121,9 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
         .setup(move |app| {
             // Registered here rather than on the builder: the service has to be
             // told where to report before anything can publish a snapshot.
-            let update_service = aidget::update::UpdateService::new();
+            let update_service = aidget::update::UpdateService::new(
+                store_for_ui.state_dir().join("update/releases.json"),
+            )?;
             aidget::runtime::update::announce(app.handle(), &update_service);
             app.manage(update_service);
             app.manage(aidget::runtime::update::DeferredQuit::default());

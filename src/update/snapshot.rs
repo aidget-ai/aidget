@@ -5,7 +5,7 @@
 
 use serde::Serialize;
 
-use crate::update::github::Release;
+use crate::update::notes::UpdateNotes;
 
 /// Where the update flow currently stands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -64,11 +64,10 @@ pub struct UpdateSnapshot {
     pub done: Option<u64>,
     /// The asset's size in bytes, when the release says.
     pub total: Option<u64>,
-    /// What the release says about itself, shown beside the update.
+    /// Stable release notes retained for the About dialog.
     ///
-    /// Boxed: a `String` here pushed the struct past the size Rust warns about
-    /// for an `Err` variant, and these are only ever read.
-    pub notes: Option<Box<str>>,
+    /// Boxed to keep the frequently cloned snapshot small.
+    pub notes: Option<Box<UpdateNotes>>,
     /// Whether a verified download is waiting on disk.
     ///
     /// `state` says what is happening; this says what is available. Without it
@@ -76,10 +75,4 @@ pub struct UpdateSnapshot {
     /// check, a failed download or a failed install each hid work that was still
     /// possible.
     pub staged: bool,
-}
-
-/// A release's notes, or `None` when it has none worth showing.
-pub(crate) fn notes_of(release: &Release) -> Option<Box<str>> {
-    let notes = release.body.trim();
-    (!notes.is_empty()).then(|| notes.into())
 }

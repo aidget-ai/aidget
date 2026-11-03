@@ -11,10 +11,9 @@ test('both languages provide package choices and security prompt instructions', 
     expect(text).toContain('> ⚠️');
     expect(text).toContain('xattr -dr com.apple.quarantine /Applications/aidget.app');
     expect(text).not.toContain('Linux');
+    expect(text).not.toContain('Assets');
   }
   expect(installationNotes('en')).toBe(`### Installation
-
-> Expand **Assets** below to download an installer.
 
 - **macOS**: Use \`aidget-darwin-arm64.dmg\` for Apple Silicon or \`aidget-darwin-amd64.dmg\` for Intel.
 - **Windows**: Usually, use \`aidget-windows-amd64.exe\`.
@@ -25,8 +24,6 @@ test('both languages provide package choices and security prompt instructions', 
   \`xattr -dr com.apple.quarantine /Applications/aidget.app\`
 - **Windows**: In the security prompt, choose **More info → Run anyway**.`);
   expect(installationNotes('zh')).toBe(`### 安装说明
-
-> 展开下方 Assets 下载安装包。
 
 - **macOS 系统**：Apple Silicon 芯片使用 \`aidget-darwin-arm64.dmg\`，Intel 芯片使用 \`aidget-darwin-amd64.dmg\`
 - **Windows 系统**：通常使用 \`aidget-windows-amd64.exe\`

@@ -13,6 +13,8 @@ fn asset(name: &str) -> Asset {
 fn release(names: &[&str]) -> Release {
     Release {
         tag_name: "v0.1.1".to_string(),
+        draft: false,
+        prerelease: false,
         body: "notes".to_string(),
         html_url: "https://example.invalid/release".to_string(),
         assets: names.iter().map(|name| asset(name)).collect(),
@@ -210,6 +212,39 @@ fn a_published_release_is_read_from_the_feed() {
         .expect("a published release");
 
     assert_eq!(release.tag_name, "v0.2.0");
+}
+
+#[test]
+fn release_lists_page_until_the_running_version_is_reached() {
+    let page_one = (101..=200)
+        .rev()
+        .map(|minor| {
+            serde_json::json!({
+                "tag_name": format!("v0.{minor}.0"),
+                "html_url": "",
+                "assets": []
+            })
+        })
+        .collect::<Vec<_>>();
+    let page_two = vec![serde_json::json!({
+        "tag_name": "v0.1.0",
+        "html_url": "",
+        "assets": []
+    })];
+    let base = super::serve_routes(vec![
+        (
+            "/releases?per_page=100&page=2",
+            serde_json::to_vec(&page_two).unwrap(),
+        ),
+        ("/releases/latest", serde_json::to_vec(&page_one).unwrap()),
+    ]);
+
+    let releases =
+        aidget::update::github::stable_releases(&base, "owner/repo", None, Some("0.1.0")).unwrap();
+
+    assert_eq!(releases.len(), 101);
+    assert_eq!(releases.first().unwrap().tag_name, "v0.200.0");
+    assert_eq!(releases.last().unwrap().tag_name, "v0.1.0");
 }
 
 #[test]

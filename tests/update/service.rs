@@ -127,6 +127,26 @@ fn a_build_from_a_working_tree_says_it_cannot_update_itself() {
 }
 
 #[test]
+fn a_source_build_can_still_show_stable_release_notes() {
+    let base = super::serve_once(
+        200,
+        &release_list(&[
+            ("v2.0.0", "two", false, false),
+            ("v3.0.0", "preview", true, false),
+        ]),
+    );
+    let service = UpdateService::for_build(&base, "owner/repo", "0.1.0-3-g5de53c8-dirty");
+
+    let snapshot = block_on(service.check(None));
+
+    assert_eq!(snapshot.state, UpdateState::Source);
+    assert_eq!(snapshot.latest, None);
+    let notes = snapshot.notes.expect("stable notes");
+    assert_eq!((notes.from.as_str(), notes.to.as_str()), ("2.0.0", "2.0.0"));
+    assert_eq!(notes.releases[0].body, "two");
+}
+
+#[test]
 fn a_release_build_at_the_feed_version_is_latest() {
     let base = super::serve_once(
         200,
@@ -225,13 +245,7 @@ fn a_failed_check_keeps_a_downloaded_update_installable() {
     block_on(service.check(None));
     assert_eq!(block_on(service.download()).state, UpdateState::Ready);
 
-    eprintln!("DEBUG staged after download: {:?}", service.staged());
     let rechecked = block_on(service.check(None));
-    eprintln!(
-        "DEBUG rechecked: {:?}, staged: {:?}",
-        rechecked,
-        service.staged()
-    );
 
     assert_eq!(rechecked.state, UpdateState::Ready, "{rechecked:?}");
     assert!(rechecked.error.unwrap().contains("rate limit"));
@@ -308,7 +322,11 @@ fn a_release_brings_its_notes_and_keeps_them_while_downloading() {
     let ready = block_on(service.download());
 
     assert_eq!(
-        found.notes.as_deref(),
+        found
+            .notes
+            .as_deref()
+            .and_then(|notes| notes.releases.first())
+            .map(|release| release.body.as_str()),
         Some("Fixes the updater.\n\n- one\n- two")
     );
     assert_eq!(ready.notes, found.notes);
@@ -327,6 +345,119 @@ fn a_release_without_notes_says_nothing() {
     let service = UpdateService::for_build(&base, "owner/repo", "0.1.0");
 
     assert_eq!(block_on(service.check(None)).notes, None);
+}
+
+#[test]
+fn release_notes_use_stable_semver_versions_in_the_update_range() {
+    let base = super::serve_once(
+        200,
+        &release_list(&[
+            ("v4.0.0-beta.1", "preview", false, false),
+            ("v2.0.0", "stable two", false, false),
+            ("v5.0.0", "draft", false, true),
+            ("v3.0.0", "stable three", false, false),
+        ]),
+    );
+    let service = UpdateService::for_build(&base, "owner/repo", "1.0.0");
+
+    let snapshot = block_on(service.check(None));
+    let notes = snapshot.notes.expect("the stable releases have notes");
+
+    assert_eq!(snapshot.latest.as_deref(), Some("3.0.0"));
+    assert_eq!(notes.from, "1.0.0");
+    assert_eq!(notes.to, "3.0.0");
+    assert_eq!(
+        notes
+            .releases
+            .iter()
+            .map(|release| (release.version.as_str(), release.body.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("3.0.0", "stable three"), ("2.0.0", "stable two")]
+    );
+}
+
+#[test]
+fn an_installed_target_reuses_the_retained_range() {
+    let directory = tempfile::tempdir().unwrap();
+    let cache = directory.path().join("update/releases.json");
+    let body = release_list(&[
+        ("v3.0.0", "three", false, false),
+        ("v2.0.0", "two", false, false),
+        ("v1.0.0", "one", false, false),
+    ]);
+
+    let first_base = super::serve_once(200, &body);
+    let first =
+        UpdateService::for_build_with_cache(&first_base, "owner/repo", "1.0.0", &cache).unwrap();
+    let found = block_on(first.check(None));
+    assert_eq!(
+        found.notes.as_deref(),
+        Some(&aidget::update::UpdateNotes {
+            from: "1.0.0".into(),
+            to: "3.0.0".into(),
+            releases: vec![
+                aidget::update::ReleaseNote {
+                    version: "3.0.0".into(),
+                    body: "three".into(),
+                },
+                aidget::update::ReleaseNote {
+                    version: "2.0.0".into(),
+                    body: "two".into(),
+                },
+            ],
+        })
+    );
+    drop(first);
+
+    let second_base = super::serve_once(200, &body);
+    let second =
+        UpdateService::for_build_with_cache(&second_base, "owner/repo", "3.0.0", &cache).unwrap();
+    let latest = block_on(second.check(None));
+    assert_eq!(latest.state, UpdateState::Latest);
+    assert_eq!(latest.notes.as_deref(), found.notes.as_deref());
+}
+
+#[test]
+fn no_retained_range_falls_back_to_the_five_newest_stable_releases() {
+    let body = release_list(&[
+        ("v8.0.0", "eight", false, false),
+        ("v7.0.0", "seven", false, false),
+        ("v6.0.0", "six", false, false),
+        ("v5.0.0", "five", false, false),
+        ("v4.0.0", "four", false, false),
+        ("v3.0.0", "three", false, false),
+    ]);
+    let base = super::serve_once(200, &body);
+    let service = UpdateService::for_build(&base, "owner/repo", "8.0.0");
+
+    let snapshot = block_on(service.check(None));
+    let notes = snapshot.notes.expect("recent stable notes");
+
+    assert_eq!(notes.from, "4.0.0");
+    assert_eq!(notes.to, "8.0.0");
+    assert_eq!(notes.releases.len(), 5);
+}
+
+#[test]
+fn corrupt_or_unwritable_note_caches_are_not_silently_ignored() {
+    let directory = tempfile::tempdir().unwrap();
+    let corrupt = directory.path().join("corrupt.json");
+    std::fs::write(&corrupt, b"{not json").unwrap();
+    let error = UpdateService::for_build_with_cache("unused", "owner/repo", "1.0.0", &corrupt)
+        .err()
+        .expect("the corrupt cache must fail");
+    assert!(matches!(error, aidget::common::error::Error::Json(_)));
+
+    let cache = directory.path().join("blocked/releases.json");
+    let body = release_list(&[("v2.0.0", "two", false, false)]);
+    let base = super::serve_once(200, &body);
+    let service =
+        UpdateService::for_build_with_cache(&base, "owner/repo", "1.0.0", &cache).unwrap();
+    std::fs::write(directory.path().join("blocked"), b"not a directory").unwrap();
+
+    let failed = block_on(service.check(None));
+    assert_eq!(failed.state, UpdateState::Error);
+    assert!(failed.error.is_some());
 }
 
 #[test]
@@ -583,4 +714,23 @@ fn cleanup(service: &UpdateService) {
     if let Some(staged) = service.staged() {
         super::cleanup(staged);
     }
+}
+
+fn release_list(releases: &[(&str, &str, bool, bool)]) -> String {
+    serde_json::to_string(
+        &releases
+            .iter()
+            .map(|(tag, body, prerelease, draft)| {
+                serde_json::json!({
+                    "tag_name": tag,
+                    "body": body,
+                    "draft": draft,
+                    "prerelease": prerelease,
+                    "html_url": "",
+                    "assets": [],
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .unwrap()
 }

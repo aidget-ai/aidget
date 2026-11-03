@@ -3,8 +3,6 @@ export function installationNotes(language) {
   if (language === 'en') {
     return `### Installation
 
-> Expand **Assets** below to download an installer.
-
 - **macOS**: Use \`aidget-darwin-arm64.dmg\` for Apple Silicon or \`aidget-darwin-amd64.dmg\` for Intel.
 - **Windows**: Usually, use \`aidget-windows-amd64.exe\`.
 
@@ -16,8 +14,6 @@ export function installationNotes(language) {
   }
   if (language === 'zh') {
     return `### 安装说明
-
-> 展开下方 Assets 下载安装包。
 
 - **macOS 系统**：Apple Silicon 芯片使用 \`aidget-darwin-arm64.dmg\`，Intel 芯片使用 \`aidget-darwin-amd64.dmg\`
 - **Windows 系统**：通常使用 \`aidget-windows-amd64.exe\`

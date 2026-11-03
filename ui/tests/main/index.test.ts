@@ -237,6 +237,14 @@ describe('main window navigation', () => {
     expect(fault.textContent).not.toContain('widget not found');
   });
 
+  it('opens the GitHub token settings from the token label', async () => {
+    await loadMain(state('general'));
+    const button = document.querySelector<HTMLButtonElement>('[data-github-token-link]');
+    expect(button?.getAttribute('aria-label')).toBe('Create a classic GitHub token');
+    button!.click();
+    expect(mocks.openUrl).toHaveBeenCalledWith('https://github.com/settings/tokens');
+  });
+
   it('saves a GitHub token once and only renders its prefix and suffix', async () => {
     const initial = state('general');
     let saved: string | null | undefined;

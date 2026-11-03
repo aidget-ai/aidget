@@ -5,6 +5,8 @@ use aidget::update::target::Target;
 fn release(names: &[&str]) -> Release {
     Release {
         tag_name: "v0.2.0".to_string(),
+        draft: false,
+        prerelease: false,
         body: String::new(),
         html_url: "https://example.invalid/release".to_string(),
         assets: names

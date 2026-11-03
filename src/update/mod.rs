@@ -7,6 +7,7 @@ pub mod download;
 pub mod fetch;
 pub mod github;
 pub mod install;
+pub mod notes;
 pub mod service;
 pub mod snapshot;
 pub mod stage;
@@ -14,6 +15,7 @@ pub mod target;
 pub mod verify;
 pub mod version;
 
+pub use notes::{ReleaseNote, UpdateNotes};
 pub use service::UpdateService;
 pub use snapshot::{UpdateSnapshot, UpdateState};
 pub use version::current_version;

@@ -2,6 +2,7 @@
 
 import { readFileSync } from 'node:fs';
 
+import { ArrowUp, createIcons } from 'lucide';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { createUpdatePage, type UpdateSnapshot } from '../../src/main/update';
@@ -40,17 +41,23 @@ function snapshot(state: UpdateSnapshot['state'], extra: Partial<UpdateSnapshot>
 }
 
 /// Mount the real page markup and create the row against it.
-function mount() {
+function mount(locale: 'en' | 'zh-CN' = 'en') {
   const start = mainHtml.indexOf('<body>') + '<body>'.length;
   const end = mainHtml.lastIndexOf('</body>');
   document.body.innerHTML = mainHtml.slice(start, end).replace(/<script[\s\S]*?<\/script>/g, '');
+  for (const button of document.querySelectorAll<HTMLElement>(
+    '[data-update-action], [data-update-header]',
+  )) {
+    createIcons({ icons: { ArrowUp }, root: button });
+  }
   const about = document.querySelector<HTMLElement>('[data-view="about"]')!;
   const header = document.querySelector<HTMLButtonElement>('[data-update-header]')!;
   const page = createUpdatePage(
     about,
     header,
-    () => 'en',
+    () => locale,
     async () => {},
+    () => {},
     () => {},
   );
   page.setAboutActive(true);
@@ -61,21 +68,56 @@ beforeEach(() => {
   mocks.invoke.mockReset().mockResolvedValue(snapshot('idle'));
   mocks.listen.mockClear();
   mocks.handlers.clear();
+  vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function (
+    this: HTMLDialogElement,
+  ) {
+    this.open = true;
+  });
+  vi.spyOn(HTMLDialogElement.prototype, 'close').mockImplementation(function (
+    this: HTMLDialogElement,
+  ) {
+    this.open = false;
+  });
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('update actions', () => {
+  it('does not label a version recheck as downloading', async () => {
+    const page = mount();
+    await page.refresh();
+    const action = document.querySelector<HTMLButtonElement>('[data-update-action]')!;
+    const label = action.querySelector<HTMLElement>('[data-update-label]')!;
+
+    mocks.handlers.get('aidget://update')!({
+      payload: snapshot('checking', { latest: '0.1.3' }),
+    });
+
+    expect(label.textContent).toBe('Checking…');
+    expect(action.dataset.updateMode).toBe('progress');
+  });
+
+  it('keeps the release-notes entry available from the About page', async () => {
+    const page = mount();
+    await page.refresh();
+
+    const row = document.querySelector<HTMLElement>('[data-update-notes-row]')!;
+    const open = document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!;
+    expect(row.hidden).toBe(false);
+    expect(open.textContent).toBe('Open');
+    expect(open.disabled).toBe(true);
+  });
+
   it('shows update progress in the version action and disables repeats', async () => {
     const page = mount();
     await page.refresh();
     const action = document.querySelector<HTMLButtonElement>('[data-update-action]')!;
     const label = action.querySelector<HTMLElement>('[data-update-label]')!;
-    const icon = action.querySelector<HTMLElement>('[data-update-icon]')!;
     expect(label.textContent).toBe('Check for updates');
-    expect(icon.hidden).toBe(true);
+    expect(action.querySelector('.update-action-icon')).toBeNull();
 
     // The launch check settles on its own, five seconds after launch: nothing the
     // window did can reveal that, so the backend announces it.
@@ -84,7 +126,7 @@ describe('update actions', () => {
     });
 
     expect(label.textContent).toBe('Downloading… 50%');
-    expect(icon.hidden).toBe(false);
+    expect(action.querySelector('.update-action-icon')).toBeNull();
     expect(action.dataset.updateMode).toBe('progress');
     expect(action.disabled).toBe(true);
     expect(document.querySelector('[data-update-status]')!.textContent).toContain('0.1.3');
@@ -104,6 +146,7 @@ describe('update actions', () => {
     expect(header.hidden).toBe(false);
     expect(header.querySelector('[data-update-label]')!.textContent).toBe('Update');
     expect(header.dataset.updateMode).toBe('update');
+    expect(header.querySelector('.update-action-icon')!.hasAttribute('hidden')).toBe(false);
   });
 
   it('applies the found update instead of downloading and installing separately', async () => {
@@ -157,19 +200,82 @@ describe('update actions', () => {
     expect(mocks.invoke).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps the notes for the update and hides them when up to date', async () => {
+  it('opens localized release notes without rendering them inline', async () => {
     const page = mount();
     await page.refresh();
     const notesRow = document.querySelector<HTMLElement>('[data-update-notes-row]')!;
+    const open = document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!;
 
     mocks.handlers.get('aidget://update')!({
-      payload: snapshot('found', { latest: '0.1.3', notes: 'Fixes the updater.' }),
+      payload: snapshot('found', {
+        latest: '0.1.3',
+        notes: {
+          from: '0.1.0',
+          to: '0.1.3',
+          releases: [
+            {
+              version: '0.1.3',
+              body: '## Improvements\n\n- Fixes the updater.',
+            },
+          ],
+        },
+      }),
     });
     expect(notesRow.hidden).toBe(false);
-    expect(document.querySelector('[data-update-notes]')!.textContent).toBe('Fixes the updater.');
+    expect(open.disabled).toBe(false);
+    expect(document.querySelector('[data-update-notes]')).toBeNull();
 
-    mocks.handlers.get('aidget://update')!({ payload: snapshot('latest', { latest: '0.1.0' }) });
-    expect(notesRow.hidden).toBe(true);
+    open.click();
+    const dialog = document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!;
+    expect(dialog.open).toBe(true);
+    expect(dialog.querySelector('h2')?.textContent).toBe('v0.1.3 release notes');
+    expect(dialog.querySelector('[data-update-notes-range]')?.textContent).toBe('v0.1.0 → v0.1.3');
+    expect(dialog.textContent).toContain('Fixes the updater.');
+    expect(dialog.textContent).toContain('v0.1.3');
+  });
+
+  it('uses the configured language and closes the release-notes dialog', async () => {
+    const page = mount('zh-CN');
+    await page.refresh();
+    mocks.handlers.get('aidget://update')!({
+      payload: snapshot('found', {
+        latest: '0.2.0',
+        notes: {
+          from: '0.1.0',
+          to: '0.2.0',
+          releases: [
+            {
+              version: '0.2.0',
+              body: `# Changelog
+
+## Features
+
+- English change.
+
+<!-- lang:zh -->
+
+# Changelog
+
+## 新功能
+
+- 中文更新。
+
+### 安装说明`,
+            },
+          ],
+        },
+      }),
+    });
+
+    document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.click();
+    const dialog = document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!;
+    expect(dialog.querySelector('h2')?.textContent).toBe('v0.2.0 更新内容');
+    expect(dialog.querySelector('[data-update-notes-range]')?.textContent).toBe('v0.1.0 → v0.2.0');
+    expect(dialog.textContent).toContain('中文更新。');
+    expect(dialog.textContent).not.toContain('English change.');
+
+    dialog.querySelector<HTMLButtonElement>('.community-dialog-close')!.click();
+    expect(dialog.open).toBe(false);
   });
 });
 
@@ -178,7 +284,10 @@ it('renders the same staged contract verified by the backend policy caller', asy
   // Rust runtime::update compares its real held-v2 snapshot with this fixture.
   mocks.handlers.get('aidget://update')!({ payload: { ...stagedContract, state: 'ready' } });
   expect(document.querySelector('[data-update-status]')!.textContent).toContain('2.0.0');
-  expect(document.querySelector('[data-update-notes]')!.textContent).toBe('v2 notes');
+  document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.click();
+  expect(
+    document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!.textContent,
+  ).toContain('v2 notes');
   const action = document.querySelector<HTMLButtonElement>('[data-update-action]')!;
   expect(action.querySelector('[data-update-label]')!.textContent).toBe('Update');
   action.click();

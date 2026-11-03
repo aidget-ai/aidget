@@ -1,5 +1,5 @@
 use aidget::runtime::update::{check_and_maybe_download, exit_action, DeferredQuit, ExitAction};
-use aidget::update::{UpdateService, UpdateState};
+use aidget::update::{UpdateService, UpdateSnapshot, UpdateState};
 use std::io::{Read, Write};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -42,8 +42,15 @@ impl Feed {
                 let mut buffer = [0; 4096];
                 let count = stream.read(&mut buffer).unwrap();
                 let request = String::from_utf8_lossy(&buffer[..count]);
-                let (status, body) = if request.contains("/releases/latest ") {
-                    release.lock().unwrap().clone()
+                let (status, body) = if request.contains("/releases?") {
+                    let (status, body) = release.lock().unwrap().clone();
+                    let body = if status == 200 {
+                        let release = serde_json::from_str::<serde_json::Value>(&body).unwrap();
+                        serde_json::json!([release]).to_string()
+                    } else {
+                        body
+                    };
+                    (status, body)
                 } else {
                     downloads.fetch_add(1, Ordering::SeqCst);
                     let version = request
@@ -107,7 +114,7 @@ fn magpie_held_download_keeps_version_notes_asset_and_install_identity() {
     let held = run(check_and_maybe_download(service.clone(), None, false));
     assert_eq!(held.state, UpdateState::Ready);
     assert_eq!(held.latest.as_deref(), Some("2.0.0"));
-    assert_eq!(held.notes.as_deref(), Some("v2 notes"));
+    assert_eq!(note_body(&held), Some("v2 notes"));
     let contract: serde_json::Value =
         serde_json::from_str(include_str!("../../ui/tests/fixtures/update-staged.json")).unwrap();
     assert_eq!(serde_json::to_value(&held).unwrap(), contract);
@@ -139,7 +146,7 @@ fn replacing_download_revokes_old_eligibility_and_failed_replacement_retries_new
     assert!(!failed.staged);
     assert!(!old.exists());
     assert_eq!(failed.latest.as_deref(), Some("3.0.0"));
-    assert_eq!(failed.notes.as_deref(), Some("v3 notes"));
+    assert_eq!(note_body(&failed), Some("v3 notes"));
     let states = observed.lock().unwrap();
     assert!(states
         .iter()
@@ -171,23 +178,19 @@ fn same_version_notes_errors_empty_feed_and_channel_regression_stay_coherent() {
     let old = service.staged().unwrap();
     feed.set("2.0.0", "supplemented");
     assert_eq!(
-        run(check_and_maybe_download(service.clone(), None, false))
-            .notes
-            .as_deref(),
+        note_body(&run(check_and_maybe_download(service.clone(), None, false))),
         Some("supplemented")
     );
     feed.set("2.0.0", "changed");
     assert_eq!(
-        run(check_and_maybe_download(service.clone(), None, false))
-            .notes
-            .as_deref(),
-        Some("supplemented")
+        note_body(&run(check_and_maybe_download(service.clone(), None, false))),
+        Some("changed")
     );
     *feed.release.lock().unwrap() = (500, "{}".into());
     let failed = run(check_and_maybe_download(service.clone(), None, true));
     assert_eq!(failed.state, UpdateState::Ready);
     assert!(failed.error.is_some());
-    assert_eq!(failed.notes.as_deref(), Some("supplemented"));
+    assert_eq!(note_body(&failed), Some("changed"));
     *feed.release.lock().unwrap() = (404, r#"{"message":"Not Found"}"#.into());
     let empty = run(check_and_maybe_download(service.clone(), None, true));
     assert_eq!(empty.latest.as_deref(), Some("2.0.0"));
@@ -196,7 +199,7 @@ fn same_version_notes_errors_empty_feed_and_channel_regression_stay_coherent() {
     let regressed = run(check_and_maybe_download(service.clone(), None, false));
     assert_eq!(regressed.state, UpdateState::Found);
     assert_eq!(regressed.latest.as_deref(), Some("1.5.0"));
-    assert_eq!(regressed.notes.as_deref(), Some("older feed"));
+    assert_eq!(note_body(&regressed), Some("older feed"));
     assert!(!regressed.staged);
     assert!(!old.exists());
     let downloaded = run(service.download());
@@ -237,7 +240,7 @@ fn policy_on_download_rejects_overlapping_install_and_download_without_mutation(
     let ready = run(check_and_maybe_download(service.clone(), None, true));
     assert_eq!(ready.state, UpdateState::Ready);
     assert_eq!(ready.latest.as_deref(), Some("3.0.0"));
-    assert_eq!(ready.notes.as_deref(), Some("v3 notes"));
+    assert_eq!(note_body(&ready), Some("v3 notes"));
     service.announce(|_| {});
     assert_eq!(observed.load(Ordering::SeqCst), 1);
     assert_eq!(feed.downloads.load(Ordering::SeqCst), 2);
@@ -264,7 +267,7 @@ fn replacement_network_and_preparation_failure_never_fall_back_to_old_staging() 
         let failed = run(check_and_maybe_download(service.clone(), None, true));
         assert_eq!(failed.state, UpdateState::Error);
         assert_eq!(failed.latest.as_deref(), Some("3.0.0"));
-        assert_eq!(failed.notes.as_deref(), Some("v3 notes"));
+        assert_eq!(note_body(&failed), Some("v3 notes"));
         assert!(!failed.staged);
         assert!(!old.exists());
         assert!(service.staged().is_none());
@@ -294,4 +297,12 @@ fn deferred_quit_keeps_the_first_code_and_is_taken_once() {
     assert_eq!(quit.take(), Some(0));
     assert_eq!(quit.take(), None);
     assert!(!quit.skip_install_on_quit());
+}
+
+fn note_body(snapshot: &UpdateSnapshot) -> Option<&str> {
+    snapshot
+        .notes
+        .as_deref()
+        .and_then(|notes| notes.releases.first())
+        .map(|release| release.body.as_str())
 }

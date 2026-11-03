@@ -14,12 +14,12 @@ use std::net::TcpListener;
 
 /// A one-shot HTTP server that answers every request with `body`.
 ///
-/// Returns the base URL to hand to `UpdateService::pointing_at`, so a check can
+/// Returns the base URL to hand to `UpdateService::for_build`, so a check can
 /// run against a local feed instead of GitHub.
 pub fn serve_once(status: u16, body: &str) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
-    let body = body.to_string();
+    let body = String::from_utf8(release_page(body.as_bytes())).unwrap();
     std::thread::spawn(move || {
         let Ok((mut stream, _)) = listener.accept() else {
             return;
@@ -69,7 +69,7 @@ pub fn serve_once_capture_request(
 pub fn serve_slow(delay: std::time::Duration, body: &str) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
-    let body = body.to_string();
+    let body = String::from_utf8(release_page(body.as_bytes())).unwrap();
     std::thread::spawn(move || {
         let Ok((mut stream, _)) = listener.accept() else {
             return;
@@ -87,12 +87,22 @@ pub fn serve_slow(delay: std::time::Duration, body: &str) -> String {
     format!("http://{address}")
 }
 
-/// Replace every occurrence of `needle` in `haystack`.
 /// Fill the placeholders a mock body may carry: the server's own address, and the
 /// asset name this machine would install.
 fn fill(body: &[u8], address: std::net::SocketAddr) -> Vec<u8> {
     let body = replace_bytes(body, b"__BASE__", format!("http://{address}").as_bytes());
     replace_bytes(&body, b"__ASSET__", release_asset_name().as_bytes())
+}
+
+/// Convert a single mocked release object into GitHub's list-response shape.
+fn release_page(body: &[u8]) -> Vec<u8> {
+    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return body.to_vec();
+    };
+    if value.get("tag_name").is_some() {
+        value = serde_json::Value::Array(vec![value]);
+    }
+    serde_json::to_vec(&value).unwrap()
 }
 
 fn replace_bytes(haystack: &[u8], needle: &[u8], with: &[u8]) -> Vec<u8> {
@@ -124,13 +134,20 @@ pub fn serve_routes(routes: Vec<(&'static str, Vec<u8>)>) -> String {
             let path = request.split_whitespace().nth(1).unwrap_or("").to_string();
             let body = routes
                 .iter()
-                .find(|(needle, _)| path.contains(needle))
+                .find(|(needle, _)| {
+                    path.contains(needle.replace("/releases/latest", "/releases").as_str())
+                })
                 .map(|(_, body)| body.clone())
                 .unwrap_or_default();
             // A served document can point back at this server without knowing
             // its address when the test was written. Replaced on the raw bytes:
             // an asset body need not be UTF-8, and decoding it would corrupt it.
             let body = fill(&body, address);
+            let body = if path.contains("/releases") {
+                release_page(&body)
+            } else {
+                body
+            };
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()
@@ -161,9 +178,9 @@ pub fn serve_feed_then(status: u16, message: &str, body: &str, asset: Vec<u8>) -
             let read = stream.read(&mut request).unwrap_or(0);
             let request = String::from_utf8_lossy(&request[..read]).to_string();
             let path = request.split_whitespace().nth(1).unwrap_or("").to_string();
-            let (status, extra, payload) = if path.contains("/releases/latest") {
+            let (status, extra, payload) = if path.contains("/releases") {
                 if hits.fetch_add(1, Ordering::SeqCst) == 0 {
-                    let body = fill(body.as_bytes(), address);
+                    let body = release_page(&fill(body.as_bytes(), address));
                     (200, String::new(), body)
                 } else if status == 403 || status == 429 {
                     (
@@ -212,7 +229,7 @@ pub fn serve_release_sequence(releases: Vec<(&str, &[u8])>) -> String {
             let read = stream.read(&mut request).unwrap_or(0);
             let request = String::from_utf8_lossy(&request[..read]).to_string();
             let path = request.split_whitespace().nth(1).unwrap_or("");
-            let (tag, body) = if path.contains("/releases/latest") {
+            let (tag, body) = if path.contains("/releases") {
                 let index = feed_hits
                     .fetch_add(1, Ordering::SeqCst)
                     .min(releases.len() - 1);
@@ -234,6 +251,7 @@ pub fn serve_release_sequence(releases: Vec<(&str, &[u8])>) -> String {
                 .into_bytes()
             });
             let payload = fill(&payload, address);
+            let payload = release_page(&payload);
             let head = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                 payload.len()

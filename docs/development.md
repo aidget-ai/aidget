@@ -7,6 +7,12 @@
 - pnpm 12
 - The platform WebView and packaging dependencies described in the README
 
+`pnpm dev` keeps development data and its IPC socket under `.aidget/` by default.
+Override it with `AIDGET_HOME`. This lets development and installed copies run
+alongside each other with separate system-tray icons. On macOS, Cargo launches
+the executable from a minimal `aidget-dev.app` beside the compiled binary so the
+system can display its menu-bar icon.
+
 ## Pull requests
 
 Open a pull request only after a required Contribution Proposal has been

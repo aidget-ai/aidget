@@ -1072,8 +1072,8 @@ body[data-platform='windows'] .navigation {
   cursor: pointer;
   font: inherit;
 }
-.text-button[data-update-mode='update'],
-.text-button[data-update-mode='progress'] {
+.update-header-action[data-update-mode='update'],
+.update-header-action[data-update-mode='progress'] {
   display: inline-flex;
   min-height: 28px;
   align-items: center;
@@ -1087,8 +1087,8 @@ body[data-platform='windows'] .navigation {
   font-weight: 600;
   white-space: nowrap;
 }
-.text-button[data-update-mode='update']:not(:disabled):hover,
-.text-button[data-update-mode='progress']:not(:disabled):hover {
+.update-header-action[data-update-mode='update']:not(:disabled):hover,
+.update-header-action[data-update-mode='progress']:not(:disabled):hover {
   border-color: color-mix(in srgb, var(--accent) 52%, transparent);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--accent);
@@ -1110,19 +1110,86 @@ body[data-platform='windows'] .navigation {
   cursor: default;
   opacity: 0.55;
 }
-/* Release notes are markdown from GitHub: shown as written, wrapped, and capped
-   so a long changelog cannot push the rest of the page away. */
-.update-notes-row {
-  padding-top: 0;
+.text-button[data-update-mode='progress']:disabled {
+  cursor: progress;
+  opacity: 1;
 }
-.update-notes {
-  max-height: 8rem;
+.text-button[data-update-mode='check'] .update-action-icon {
+  display: none;
+}
+.community-dialog-header.update-notes-header {
+  display: grid;
+  gap: 4px;
+}
+.update-notes-range {
   margin: 0;
-  overflow: auto;
   color: var(--muted);
   font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
+  font-variant-numeric: tabular-nums;
+}
+.release-notes-content {
+  display: grid;
+  gap: 18px;
+}
+.release-notes-category {
+  display: grid;
+  gap: 8px;
+}
+.release-notes-category h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+.release-notes-category :is(ul, ol) {
+  margin: 0;
+  padding-inline-start: 20px;
+}
+.release-notes-category li + li {
+  margin-block-start: 7px;
+}
+.release-notes-category li,
+.release-notes-change {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.release-notes-category li > p,
+.release-notes-change > p {
+  display: inline;
+  margin: 0;
+}
+.release-notes-category :is(ul, ol) :is(ul, ol) {
+  margin-block-start: 5px;
+}
+.release-notes-category code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--hover-surface);
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.release-notes-category pre {
+  overflow: auto;
+}
+.release-notes-category pre code {
+  display: block;
+  padding: 10px;
+}
+.release-version {
+  display: inline-block;
+  margin-inline-start: 7px;
+  color: color-mix(in srgb, var(--muted) 82%, var(--text));
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.update-notes-dialog:modal {
+  overscroll-behavior: contain;
+}
+.update-notes-dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 .settings-segmented {
@@ -1157,6 +1224,28 @@ body[data-platform='windows'] .navigation {
 .github-token-row .setting-copy {
   min-width: 0;
   flex: 1;
+}
+.github-token-heading {
+  display: flex;
+  align-items: center;
+}
+.github-token-link {
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.github-token-link:hover {
+  color: var(--text);
+}
+.github-token-link svg {
+  width: 14px;
+  height: 14px;
 }
 .github-token-form,
 .github-token-configured {

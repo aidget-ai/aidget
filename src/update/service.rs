@@ -7,7 +7,8 @@ use std::sync::{
 use crate::common::error::{Error, Result};
 use crate::update::github::{self, Release};
 mod install;
-use crate::update::snapshot::{notes_of, UpdateSnapshot, UpdateState};
+use crate::update::notes::{self, NotesCache, UpdateNotes};
+use crate::update::snapshot::{UpdateSnapshot, UpdateState};
 use crate::update::stage::{self, Download};
 use crate::update::target::Target;
 use crate::update::{target, version};
@@ -26,6 +27,9 @@ pub struct UpdateService {
     repository: Arc<str>,
     /// What this build is; see [`build_stamp`].
     build: Arc<str>,
+    /// Where retained release notes live between runs.
+    notes_path: Arc<PathBuf>,
+    notes_cache: Arc<Mutex<NotesCache>>,
     /// The release the last check found, kept so a download needs no second
     /// lookup.
     release: Arc<Mutex<Option<Release>>>,
@@ -47,15 +51,15 @@ pub struct UpdateService {
     announce: Arc<Mutex<Option<Sink>>>,
 }
 
-impl Default for UpdateService {
-    fn default() -> Self {
-        UpdateService::new()
-    }
-}
-
 impl UpdateService {
-    pub fn new() -> Self {
-        UpdateService::for_build(github::API_BASE, github::REPOSITORY, version::build_stamp())
+    /// Build the production service with a persistent release-notes cache.
+    pub fn new(notes_path: impl Into<PathBuf>) -> Result<Self> {
+        Self::for_build_with_cache(
+            github::API_BASE,
+            github::REPOSITORY,
+            version::build_stamp(),
+            notes_path,
+        )
     }
 
     /// A service reading `base` for `repository`, claiming to run as `build`.
@@ -63,7 +67,24 @@ impl UpdateService {
     /// Unit tests use it to run against a local server and to choose whether the
     /// build counts as a release, instead of depending on the working tree.
     pub fn for_build(base: &str, repository: &str, build: &str) -> Self {
-        UpdateService {
+        let notes_path = std::env::temp_dir()
+            .join("aidget-update-tests")
+            .join(format!("{}.json", uuid::Uuid::new_v4()));
+        Self::for_build_with_cache(base, repository, build, notes_path)
+            .expect("a unique test cache path is readable")
+    }
+
+    /// Test seam for services that need the same notes cache across restarts.
+    pub fn for_build_with_cache(
+        base: &str,
+        repository: &str,
+        build: &str,
+        notes_path: impl Into<PathBuf>,
+    ) -> Result<Self> {
+        let notes_path = notes_path.into();
+        let notes_cache = notes::load(&notes_path)?;
+        let retained = notes::initial(&notes_cache).map(Box::new);
+        Ok(UpdateService {
             snapshot: Arc::new(Mutex::new(UpdateSnapshot {
                 state: UpdateState::Idle,
                 current: build.to_string(),
@@ -71,18 +92,20 @@ impl UpdateService {
                 error: None,
                 done: None,
                 total: None,
-                notes: None,
+                notes: retained,
                 staged: false,
             })),
             base: Arc::from(base),
             repository: Arc::from(repository),
             build: Arc::from(build),
+            notes_path: Arc::new(notes_path),
+            notes_cache: Arc::new(Mutex::new(notes_cache)),
             release: Arc::new(Mutex::new(None)),
             staged: Arc::new(Mutex::new(None)),
             installing: Arc::new(AtomicBool::new(false)),
             install_settled: Arc::new((Mutex::new(()), Condvar::new())),
             announce: Arc::new(Mutex::new(None)),
-        }
+        })
     }
 
     pub fn snapshot(&self) -> UpdateSnapshot {
@@ -156,15 +179,29 @@ impl UpdateService {
         }
 
         let (base, repository) = (self.base.clone(), self.repository.clone());
+        let current = self.build.to_string();
         let token = token.map(str::to_string);
         let fetched = tokio::task::spawn_blocking(move || {
-            github::latest(&base, &repository, token.as_deref())
+            github::stable_releases(&base, &repository, token.as_deref(), Some(&current))
         })
         .await;
 
         let settled = match fetched {
-            Ok(Ok(Some(release))) => self.settle(release, auto_download),
-            Ok(Ok(None)) => self.settle_nothing(),
+            Ok(Ok(releases)) if releases.is_empty() => self.settle_nothing(),
+            Ok(Ok(releases)) => {
+                let selected = {
+                    let mut cache = self.notes_cache.lock().unwrap();
+                    let current = version::is_released(&self.build).then_some(self.build.as_ref());
+                    notes::select(&mut cache, current, &releases).and_then(|selected| {
+                        notes::save(&self.notes_path, &cache)?;
+                        Ok(selected.map(Box::new))
+                    })
+                };
+                match selected {
+                    Ok(notes) => self.settle(releases[0].clone(), &releases, notes, auto_download),
+                    Err(error) => self.fail_check(&error),
+                }
+            }
             Ok(Err(error)) => self.fail_check(&error),
             Err(error) => self.fail_check(&Error::Other(format!("update check: {error}"))),
         };
@@ -365,9 +402,14 @@ impl UpdateService {
     }
 
     /// Decide what a fetched release means for this build.
-    fn settle(&self, release: Release, auto_download: bool) -> UpdateSnapshot {
+    fn settle(
+        &self,
+        release: Release,
+        releases: &[Release],
+        notes: Option<Box<UpdateNotes>>,
+        auto_download: bool,
+    ) -> UpdateSnapshot {
         let latest = version::normalised(&release.tag_name);
-        let notes = notes_of(&release);
         let current = self.build.to_string();
         if let Some(downloaded) = self.staged_version() {
             if version::is_newer(&downloaded, &latest) {
@@ -379,20 +421,20 @@ impl UpdateService {
                 }
                 *self.staged.lock().unwrap() = None;
             } else if latest == downloaded || !auto_download {
-                let mut kept = self.snapshot();
-                // Only missing notes from this exact version may supplement it.
-                if latest == downloaded && kept.notes.is_none() {
-                    if let Some(notes) = notes {
-                        if let Some(held) = self.release.lock().unwrap().as_mut() {
-                            held.body = notes.to_string();
-                        }
-                        kept.notes = Some(notes);
-                    }
-                }
+                let effective = if latest == downloaded {
+                    latest
+                } else {
+                    downloaded
+                };
                 return UpdateSnapshot {
                     state: UpdateState::Ready,
+                    latest: Some(effective.clone()),
                     error: None,
-                    ..kept
+                    notes: notes::range(&current, &effective, releases)
+                        .map(Box::new)
+                        .or_else(|| self.snapshot().notes)
+                        .or(notes),
+                    ..self.snapshot()
                 };
             } else {
                 // Replacement begins now: even preparation failure cannot offer
@@ -412,7 +454,7 @@ impl UpdateService {
                 state: UpdateState::Source,
                 latest: None,
                 error: None,
-                notes: None,
+                notes,
                 ..self.snapshot()
             };
         }

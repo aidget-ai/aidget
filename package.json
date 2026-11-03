@@ -9,7 +9,7 @@
   },
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "node scripts/dev.mjs",
     "build": "tauri build",
     "build:debug": "tauri build --debug --bundles app",
     "build:ui": "vp build --config ui/vite.config.ts",
@@ -21,7 +21,9 @@
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-autostart": "^2.7.0",
     "@tauri-apps/plugin-opener": "^2.7.2",
-    "lucide": "^1.61.0"
+    "dompurify": "^3.4.17",
+    "lucide": "^1.61.0",
+    "marked": "^18.1.2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.3",

@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 
 import { translate, type Locale, type MessageKey } from './locale';
 import { resolvedLocale } from './preferences';
+import { renderReleaseNotes } from './release-notes';
 
 /** What the backend reports about the update flow, in the order it settles. */
 export type UpdateState =
@@ -17,6 +18,19 @@ export type UpdateState =
   | 'installing'
   | 'error';
 
+/** One stable release included in the retained update-notes range. */
+export interface ReleaseNote {
+  version: string;
+  body: string;
+}
+
+/** Bilingual release bodies for the installed-to-target range. */
+export interface UpdateNotes {
+  from: string;
+  to: string;
+  releases: ReleaseNote[];
+}
+
 /** The payload `update_*` commands answer with. Mirrors `update::UpdateSnapshot`. */
 export interface UpdateSnapshot {
   state: UpdateState;
@@ -25,7 +39,7 @@ export interface UpdateSnapshot {
   error: string | null;
   done: number | null;
   total: number | null;
-  notes: string | null;
+  notes: UpdateNotes | null;
   staged: boolean;
 }
 
@@ -60,15 +74,21 @@ export function createUpdatePage(
   locale: () => Locale,
   onAutoDownload: (enabled: boolean) => Promise<void>,
   onFault: (message: string) => void,
+  openExternal: (url: string) => void,
 ) {
   const status = root.querySelector<HTMLElement>('[data-update-status]')!;
   const action = root.querySelector<HTMLButtonElement>('[data-update-action]')!;
   const actionLabel = action.querySelector<HTMLElement>('[data-update-label]')!;
   const headerLabel = headerAction.querySelector<HTMLElement>('[data-update-label]')!;
   const autoDownloadSwitch = root.querySelector<HTMLButtonElement>('[data-update-auto-download]')!;
-  const notesRow = root.querySelector<HTMLElement>('[data-update-notes-row]')!;
-  const notes = root.querySelector<HTMLElement>('[data-update-notes]')!;
+  const notesOpen = root.querySelector<HTMLButtonElement>('[data-update-notes-open]')!;
   const t = (key: MessageKey) => translate(resolvedLocale(locale()), key);
+  const notesDialog = document.createElement('dialog');
+  notesDialog.className = 'community-dialog update-notes-dialog';
+  notesDialog.dataset.updateNotesDialog = '';
+  notesDialog.tabIndex = -1;
+  notesDialog.setAttribute('aria-labelledby', 'update-notes-title');
+  root.append(notesDialog);
 
   let snapshot: UpdateSnapshot | undefined;
   let autoDownload = false;
@@ -114,9 +134,50 @@ export function createUpdatePage(
     button.dataset.updateMode = mode;
     button.disabled = busy;
     button.setAttribute('aria-busy', String(busy));
-    const icon = button.querySelector<HTMLElement>('[data-update-icon]');
+    const icon = button.querySelector<HTMLElement>('.update-action-icon');
     if (icon) {
-      icon.hidden = mode === 'check';
+      icon.toggleAttribute('hidden', mode === 'check');
+    }
+  }
+
+  function renderNotesDialog(current: UpdateNotes) {
+    const title = document.createElement('h2');
+    title.id = 'update-notes-title';
+    title.textContent = t('updateNotesTitle').replace('{version}', current.to.replace(/^v/, ''));
+    const range = document.createElement('p');
+    range.className = 'update-notes-range';
+    range.dataset.updateNotesRange = '';
+    range.textContent = versionRange(current.from, current.to);
+    const content = document.createElement('div');
+    content.className = 'community-dialog-content release-notes-content';
+    renderReleaseNotes(content, current, resolvedLocale(locale()), t('otherChanges'), openExternal);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'community-dialog-close';
+    close.textContent = t('close');
+    close.addEventListener('click', () => notesDialog.close());
+    const heading = document.createElement('div');
+    heading.className = 'community-dialog-header update-notes-header';
+    heading.append(title, range);
+    const footer = document.createElement('div');
+    footer.className = 'community-dialog-footer';
+    footer.append(close);
+    notesDialog.replaceChildren(heading, content, footer);
+  }
+
+  function showNotes() {
+    const current = snapshot?.notes;
+    if (!current) {
+      return;
+    }
+    try {
+      renderNotesDialog(current);
+      if (!notesDialog.open) {
+        notesDialog.showModal();
+      }
+      notesDialog.focus();
+    } catch (error: unknown) {
+      onFault(String(error));
     }
   }
 
@@ -129,7 +190,7 @@ export function createUpdatePage(
       status.textContent = t('updateIdle');
       renderAction(action, actionLabel, t('checkNow'), 'check', false);
       headerAction.hidden = true;
-      notesRow.hidden = true;
+      notesOpen.disabled = true;
       return;
     }
 
@@ -157,7 +218,7 @@ export function createUpdatePage(
             current.state === 'ready' ||
             (current.state === 'error' && current.latest !== null)
           ? t('updateAction')
-          : current.state === 'downloading' || (current.state === 'checking' && current.latest)
+          : current.state === 'downloading'
             ? [t('updateDownloading'), percent].filter(Boolean).join(' ')
             : current.state === 'installing'
               ? t('updateInstalling')
@@ -188,9 +249,15 @@ export function createUpdatePage(
       ? `${t(stateMessages[current.state])} ${detail}`
       : t(stateMessages[current.state]);
 
-    const announced = current.state === 'found' || current.state === 'ready';
-    notesRow.hidden = !announced;
-    notes.textContent = announced ? (current.notes ?? '') : '';
+    notesOpen.textContent = t('open');
+    notesOpen.disabled = !current.notes?.releases.length;
+    if (notesDialog.open && current.notes) {
+      try {
+        renderNotesDialog(current.notes);
+      } catch (error: unknown) {
+        onFault(String(error));
+      }
+    }
 
     const headerActionable =
       current.state === 'found' ||
@@ -253,6 +320,7 @@ export function createUpdatePage(
 
   action.addEventListener('click', runAction);
   headerAction.addEventListener('click', runAction);
+  notesOpen.addEventListener('click', showNotes);
   autoDownloadSwitch.addEventListener('click', () => {
     if (autoDownloadSwitch.disabled) {
       return;
@@ -291,4 +359,14 @@ export function createUpdatePage(
       }
     },
   };
+}
+
+function versionValue(version: string) {
+  return `v${version.replace(/^v/, '')}`;
+}
+
+function versionRange(from: string, to: string) {
+  const start = versionValue(from);
+  const end = versionValue(to);
+  return start === end ? start : `${start} → ${end}`;
 }
