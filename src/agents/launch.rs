@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::common::error::Result;
-use crate::runtime::process::cli_link;
+use crate::runtime::process::cli_path;
 
 /// An Agent launch command, including the data directory it must connect to.
 #[derive(Debug, Clone, PartialEq)]
@@ -11,42 +11,12 @@ pub struct McpLaunch {
 }
 
 impl McpLaunch {
-    /// Use this instance's stable CLI entry without resolving its binary target.
+    /// Bind MCP to this instance's absolute data directory.
     pub fn for_root(root: &Path) -> Result<Self> {
-        let launch = Self::build(root, true)?;
-        #[cfg(not(windows))]
-        return Ok(launch);
-        #[cfg(windows)]
-        {
-            let link = &launch.command;
-            let home = &launch.args[1];
-            // cmd expands percent expressions even inside quotes.
-            if home.contains(['%', '"', '\r', '\n']) {
-                return Err(crate::Error::InvalidParams(
-                    "the Windows Agent launcher directory cannot contain %, quotes or newlines"
-                        .into(),
-                ));
-            }
-            let system = std::env::var_os("SystemRoot")
-                .ok_or_else(|| crate::Error::Other("SystemRoot is not set".into()))?;
-            Ok(Self {
-                command: Path::new(&system)
-                    .join("System32")
-                    .join("cmd.exe")
-                    .to_string_lossy()
-                    .into_owned(),
-                args: vec![
-                    "/d".into(),
-                    "/v:off".into(),
-                    "/s".into(),
-                    "/c".into(),
-                    format!("\"\"{link}\" --home \"{home}\" mcp\""),
-                ],
-            })
-        }
+        Self::build(root, true)
     }
 
-    /// Show the stable CLI directly, omitting home only for the OS default directory.
+    /// Omit home from the displayed command only for the OS default directory.
     pub fn for_display(root: &Path, default_root: &Path) -> Result<Self> {
         let is_default = default_root.try_exists()?
             && dunce::canonicalize(root)? == dunce::canonicalize(default_root)?;
@@ -56,7 +26,7 @@ impl McpLaunch {
     fn build(root: &Path, include_home: bool) -> Result<Self> {
         let root = dunce::canonicalize(root)?;
         Ok(Self {
-            command: cli_link(&root).to_string_lossy().into_owned(),
+            command: cli_path(&root).to_string_lossy().into_owned(),
             args: if include_home {
                 vec![
                     "--home".into(),

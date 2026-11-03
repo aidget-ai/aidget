@@ -25,7 +25,7 @@ struct CopyMarker {
 pub fn skill_content(store: &Store) -> Result<String> {
     fs::create_dir_all(store.root())?;
     let home = dunce::canonicalize(store.root())?;
-    let cli = crate::runtime::process::cli_link(&home);
+    let cli = crate::runtime::process::cli_path(&home);
     let (header, _) = SKILL_CONTENT
         .split_once("## Choose a transport")
         .expect("embedded Skill has a transport section");

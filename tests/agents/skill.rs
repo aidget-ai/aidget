@@ -260,19 +260,26 @@ fn rendered_skill_binds_all_cli_examples_to_its_home() {
     assert!(content.starts_with("---\nname: aidget\n"));
     assert!(content.contains("otherwise use the bound CLI"));
     assert!(!content.contains("$HOME/.aidget"));
-    for line in content
+    let home = dunce::canonicalize(store.root()).unwrap();
+    #[cfg(not(windows))]
+    let command = format!(
+        "\"$AIDGET\" --home {}",
+        aidget::common::utils::shell_quote(&home.to_string_lossy())
+    );
+    #[cfg(windows)]
+    let command = {
+        let executable = home.join("aidget.exe");
+        assert!(content.contains(&format!("set \"AIDGET={}\"", executable.display())));
+        assert!(!content.contains("$AIDGET"));
+        format!("\"%AIDGET%\" --home \"{}\"", home.display())
+    };
+    let commands = content
         .lines()
-        .filter(|line| line.starts_with("\"$AIDGET\""))
-    {
-        assert!(
-            line.contains(&format!(
-                "--home {}",
-                aidget::common::utils::shell_quote(
-                    &fs::canonicalize(store.root()).unwrap().to_string_lossy()
-                )
-            )),
-            "{line}"
-        );
+        .filter(|line| line.starts_with("\"$AIDGET\"") || line.starts_with("\"%AIDGET%\""))
+        .collect::<Vec<_>>();
+    assert!(!commands.is_empty());
+    for line in commands {
+        assert!(line.starts_with(&command), "{line}");
     }
 }
 

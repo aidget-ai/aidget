@@ -119,10 +119,26 @@ fn atomic_write_with_mode(path: &Path, bytes: &[u8], mode: Option<u32>) -> Resul
 /// SHA-256 in the lowercase hexadecimal format used by widget registries.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::Digest;
-    sha2::Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex_string(&sha2::Sha256::digest(bytes))
+}
+
+/// Hash a file without loading the complete file into memory.
+pub fn file_sha256(path: &Path) -> Result<String> {
+    use sha2::Digest;
+    let mut file = fs::File::open(path)?;
+    let mut digest = sha2::Sha256::new();
+    let mut buffer = [0; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            return Ok(hex_string(&digest.finalize()));
+        }
+        digest.update(&buffer[..count]);
+    }
+}
+
+fn hex_string(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Show a native top-level window at the bottom of the z-order without moving,

@@ -1,5 +1,6 @@
 use aidget::agents::launch::McpLaunch;
-use aidget::runtime::process::cli_link;
+#[cfg(not(windows))]
+use aidget::runtime::process::cli_path;
 use tempfile::tempdir;
 
 #[test]
@@ -7,10 +8,7 @@ fn display_omits_default_home_while_the_installed_command_keeps_it() {
     let home = tempdir().unwrap();
     let actual = McpLaunch::for_root(home.path()).unwrap();
     let display = McpLaunch::for_display(home.path(), home.path()).unwrap();
-    assert_eq!(
-        display.command,
-        cli_link(&dunce::canonicalize(home.path()).unwrap()).to_string_lossy()
-    );
+    assert_eq!(actual.command, display.command);
     assert_ne!(actual.args, display.args);
     assert_eq!(display.args, ["mcp"]);
     assert!(actual.args.join(" ").contains("--home"));
@@ -24,7 +22,7 @@ fn display_keeps_custom_home_even_when_the_default_directory_is_absent() {
     let default = temp.path().join("absent-default");
     let display = McpLaunch::for_display(&home, &default).unwrap();
     let home = dunce::canonicalize(home).unwrap();
-    assert_eq!(display.command, cli_link(&home).to_string_lossy());
+    assert_eq!(display.command, McpLaunch::for_root(&home).unwrap().command);
     assert_eq!(display.args, ["--home", &home.to_string_lossy(), "mcp"]);
 }
 
@@ -41,30 +39,35 @@ fn default_home_detection_resolves_directory_aliases() {
 }
 
 #[test]
-fn launch_binds_an_absolute_home_without_resolving_the_stable_entry() {
+fn launch_binds_an_absolute_home() {
     let temp = tempdir().unwrap();
     let home = temp.path().join("development space '中文");
     std::fs::create_dir_all(&home).unwrap();
     let launch = McpLaunch::for_root(&home).unwrap();
     let home = dunce::canonicalize(home).unwrap();
+    assert_eq!(launch.args, ["--home", &home.to_string_lossy(), "mcp"]);
     #[cfg(not(windows))]
-    {
-        assert_eq!(launch.command, cli_link(&home).to_string_lossy());
-        assert_eq!(launch.args, ["--home", &home.to_string_lossy(), "mcp"]);
-    }
+    assert_eq!(launch.command, cli_path(&home).to_string_lossy());
     #[cfg(windows)]
     {
-        assert!(launch.command.ends_with("System32\\cmd.exe"));
-        assert_eq!(&launch.args[..4], ["/d", "/v:off", "/s", "/c"]);
-        assert_eq!(
-            launch.args[4],
-            format!(
-                "\"\"{}\" --home \"{}\" mcp\"",
-                cli_link(&home).display(),
-                home.display()
-            )
-        );
+        assert_eq!(launch.command, home.join("aidget.exe").to_string_lossy());
+        assert!(!launch.command.starts_with(r"\\?\"));
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_launch_passes_shell_characters_as_literal_home_arguments() {
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home %literal% ! & 中文");
+    std::fs::create_dir(&home).unwrap();
+    let launch = McpLaunch::for_root(&home).unwrap();
+    let home = dunce::canonicalize(home).unwrap();
+    assert_eq!(launch.args, ["--home", &home.to_string_lossy(), "mcp"]);
+    assert_eq!(
+        McpLaunch::for_display(&home, &temp.path().join("absent-default")).unwrap(),
+        launch
+    );
 }
 
 #[cfg(unix)]

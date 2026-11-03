@@ -102,8 +102,8 @@
 flowchart LR
     A["Agent"]
     A -->|"读取 Skill"| S["~/.aidget/skills"]
-    A -->|"调用 MCP"| M["~/.aidget/aidget mcp"]
-    A -->|"调用 CLI"| C["~/.aidget/aidget"]
+    A -->|"调用 MCP"| M["aidget mcp"]
+    A -->|"调用 CLI"| C["aidget"]
     M --> U["aidget ui"]
     U --> W["widgets"]
 ```
@@ -181,7 +181,7 @@ aidget community install @aidget-community/<id> --json
 
 ```text
 ~/.aidget
-├── aidget                    # CLI 入口（Windows 为 aidget.cmd）
+├── aidget[.exe]              # macOS/Linux 为符号链接，Windows 为可执行文件副本
 ├── board.json                # 卡片位置和尺寸
 ├── settings.toml             # 主程序配置
 ├── run/                      # 运行时 IPC 端点（macOS/Linux 使用 Unix socket）

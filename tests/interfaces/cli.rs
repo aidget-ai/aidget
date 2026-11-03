@@ -127,7 +127,7 @@ fn aliased_home_is_canonicalized_before_ipc_paths() {
 #[test]
 fn a_launcher_collision_is_reported_without_blocking_existing_cli_commands() {
     let home = tempfile::tempdir().unwrap();
-    let entry = aidget::runtime::process::cli_link(home.path());
+    let entry = aidget::runtime::process::cli_path(home.path());
     std::fs::write(&entry, "keep this file").unwrap();
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_aidget"))
         .args(["--home", home.path().to_str().unwrap(), "doctor", "--json"])

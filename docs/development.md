@@ -17,13 +17,15 @@ system can display its menu-bar icon.
 
 MCP and Skill use the fixed name `aidget` and can be installed independently.
 Install replaces that entry; uninstall removes it without restoring an older
-configuration. All skips unreadable configurations. Startup updates only the
-instance's CLI entry and Skill source, leaving Agent entries untouched.
+configuration. All skips unreadable configurations. Startup refreshes the Skill
+source and the instance's CLI entry, leaving Agent entries untouched.
 
 MCP, child GUIs and autostart use an absolute `--home`. The page omits the
-argument for the OS default directory. Windows runs the `.cmd` entry through
-`cmd.exe`. Skills use MCP only when it identifies their bound directory;
-copied Skills need reinstalling to refresh, while links read source changes.
+argument for the OS default directory. MCP and Skill CLI commands use the fixed
+entry under that directory: `aidget.exe` on Windows, `aidget` on macOS/Linux.
+Windows startup copies the running executable there; macOS/Linux publish a
+symlink. Skills use MCP only when it identifies their bound directory; copied
+Skills need reinstalling to refresh, while links read source changes.
 
 MCP writes preserve neighbors and back up the original file under
 `<root>/state/agent-backups/`. Skill installation replaces the whole Agent

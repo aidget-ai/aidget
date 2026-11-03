@@ -277,3 +277,21 @@ fn windows_quoting_preserves_quotes_and_trailing_backslashes() {
     assert_eq!(windows_quote("a\"b"), r#""a\"b""#);
     assert_eq!(windows_quote("中文"), "\"中文\"");
 }
+
+#[test]
+fn file_hashes_cover_empty_and_large_files_and_propagate_read_errors() {
+    use aidget::common::utils::file_sha256;
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("binary");
+    assert!(file_sha256(&file).is_err());
+    std::fs::write(&file, []).unwrap();
+    assert_eq!(
+        file_sha256(&file).unwrap(),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    std::fs::write(&file, vec![b'a'; 200_000]).unwrap();
+    assert_eq!(
+        file_sha256(&file).unwrap(),
+        "2287d207f24a941ff3b56c04c8a25ad56b63e3023207b3bb5b4ac0c9869d74be"
+    );
+}

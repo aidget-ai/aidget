@@ -54,29 +54,31 @@ describe('integration configuration', () => {
     ).toBe('"/Applications/Aidget Beta.app/Contents/MacOS/aidget" mcp --profile "local dev"');
   });
 
-  it('shows the Windows CLI entry instead of its installed cmd wrapper', () => {
+  it('shows the Windows executable with its custom home', () => {
     const home = String.raw`E:\Projects\aidget\.aidget`;
+    const executable = `${home}\\aidget.exe`;
     const configured = {
-      mcpCommand: String.raw`C:\Windows\System32\cmd.exe`,
-      mcpArgs: ['/d', '/v:off', '/s', '/c', `""${home}\\aidget.cmd" --home "${home}" mcp"`],
-      mcpDisplayCommand: `${home}\\aidget.cmd`,
+      mcpCommand: executable,
+      mcpArgs: ['--home', home, 'mcp'],
+      mcpDisplayCommand: executable,
       mcpDisplayArgs: ['--home', home, 'mcp'],
     };
-    expect(mcpCommandLine(configured)).toBe(`${home}\\aidget.cmd --home ${home} mcp`);
+    expect(mcpCommandLine(configured)).toBe(`${executable} --home ${home} mcp`);
   });
 
   it('quotes Windows paths with spaces without doubling backslashes', () => {
     const home = String.raw`E:\My Projects\aidget\.aidget`;
+    const executable = `${home}\\aidget.exe`;
     expect(
       mcpCommandLine({
-        mcpDisplayCommand: `${home}\\aidget.cmd`,
+        mcpDisplayCommand: executable,
         mcpDisplayArgs: ['--home', home, 'mcp'],
       }),
-    ).toBe(`"${home}\\aidget.cmd" --home "${home}" mcp`);
+    ).toBe(`"${executable}" --home "${home}" mcp`);
   });
 
   it('omits the default Windows home from the displayed command', () => {
-    const cli = String.raw`C:\Users\test\.aidget\aidget.cmd`;
+    const cli = String.raw`C:\Users\test\.aidget\aidget.exe`;
     expect(mcpCommandLine({ mcpDisplayCommand: cli, mcpDisplayArgs: ['mcp'] })).toBe(`${cli} mcp`);
   });
 

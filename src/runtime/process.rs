@@ -3,24 +3,16 @@ use std::process::{Command, Stdio};
 
 use crate::common::error::{Error, Result};
 
-/// Marker that identifies a shim this program wrote, so a foreign file of the
-/// same name is never overwritten.
-#[cfg(windows)]
-const SHIM_PREFIX: &str = "@echo off\r\n\"";
-
-/// Stable CLI path; Windows uses a `.cmd` shim.
-pub fn cli_link(root: &Path) -> PathBuf {
-    #[cfg(windows)]
-    {
-        root.join("aidget.cmd")
-    }
-    #[cfg(not(windows))]
-    {
-        root.join("aidget")
-    }
+/// Fixed CLI path in the selected data directory.
+pub fn cli_path(root: &Path) -> PathBuf {
+    root.join(if cfg!(windows) {
+        "aidget.exe"
+    } else {
+        "aidget"
+    })
 }
 
-/// Publish this binary at the instance's stable CLI path; foreign files are errors.
+/// Publish a Windows executable copy or Unix CLI link; foreign files are errors.
 pub fn publish_cli(root: &Path) -> Result<()> {
     let exe = dunce::canonicalize(std::env::current_exe()?)?;
     if exe.to_string_lossy().contains("/AppTranslocation/") {
@@ -29,62 +21,88 @@ pub fn publish_cli(root: &Path) -> Result<()> {
         ));
     }
     std::fs::create_dir_all(root)?;
-    let link = cli_link(root);
+    let _lock = crate::widgets::store::Store::new(root).write_lock()?;
+    let entry = cli_path(root);
+    // A published executable must never try to overwrite itself.
+    if entry.try_exists()? && dunce::canonicalize(&entry)? == exe {
+        return Ok(());
+    }
     #[cfg(windows)]
     {
-        let script = format!("{SHIM_PREFIX}{}\" %*\r\n", exe.display());
-        match std::fs::read_to_string(&link) {
-            Ok(text) if text == script => return Ok(()),
-            Ok(text) if !text.starts_with(SHIM_PREFIX) => {
+        use crate::common::utils::{atomic_write, file_sha256};
+        let marker = root.join("state").join("cli.sha256");
+        let source_hash = file_sha256(&exe)?;
+        if entry.try_exists()? {
+            let metadata = std::fs::symlink_metadata(&entry)?;
+            let entry_hash = file_sha256(&entry)?;
+            if metadata.is_file() && !metadata.file_type().is_symlink() {
+                // Identical copies may already be running; leave their file intact.
+                if entry_hash == source_hash {
+                    atomic_write(&marker, source_hash.as_bytes())?;
+                    return Ok(());
+                }
+                match std::fs::read_to_string(&marker) {
+                    Ok(recorded) if recorded == entry_hash => {}
+                    Ok(_) => {
+                        return Err(Error::Other(format!(
+                            "{} is not a managed aidget executable",
+                            entry.display()
+                        )))
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        return Err(Error::Other(format!(
+                            "{} is not a managed aidget executable",
+                            entry.display()
+                        )));
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+            } else {
                 return Err(Error::Other(format!(
-                    "{} is not an aidget launcher",
-                    link.display()
-                )))
+                    "{} is not a managed aidget executable",
+                    entry.display()
+                )));
             }
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
         }
-        crate::common::utils::atomic_write(&link, script.as_bytes())?;
+        let staged = root.join(format!(".aidget-cli-{}.exe", uuid::Uuid::new_v4()));
+        let copied = (|| -> Result<()> {
+            std::fs::copy(&exe, &staged)?;
+            if file_sha256(&staged)? != source_hash {
+                return Err(Error::Other(
+                    "aidget executable changed while publishing its CLI".into(),
+                ));
+            }
+            // Stage beside the destination so a failed replacement keeps the old copy.
+            std::fs::rename(&staged, &entry)?;
+            Ok(())
+        })();
+        if copied.is_err() {
+            let _ = std::fs::remove_file(&staged);
+        }
+        copied?;
+        atomic_write(&marker, source_hash.as_bytes())?;
     }
-    #[cfg(unix)]
+    #[cfg(not(windows))]
     {
-        if std::fs::canonicalize(&link).is_ok_and(|target| target == exe) {
-            return Ok(());
-        }
-        match std::fs::symlink_metadata(&link) {
+        match std::fs::symlink_metadata(&entry) {
             Ok(metadata) if !metadata.file_type().is_symlink() => {
                 return Err(Error::Other(format!(
                     "{} is not an aidget launcher",
-                    link.display()
+                    entry.display()
                 )))
             }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
-        let staged = link.with_file_name(format!(".aidget-cli-{}", uuid::Uuid::new_v4()));
+        let staged = entry.with_file_name(format!(".aidget-cli-{}", uuid::Uuid::new_v4()));
         std::os::unix::fs::symlink(exe, &staged)?;
-        if let Err(error) = std::fs::rename(&staged, &link) {
+        if let Err(error) = std::fs::rename(&staged, &entry) {
             let _ = std::fs::remove_file(staged);
             return Err(error.into());
         }
     }
     Ok(())
-}
-
-/// Read the binary targeted by a published CLI entry.
-pub fn published_target(link: &Path) -> Option<PathBuf> {
-    #[cfg(unix)]
-    {
-        std::fs::read_link(link).ok()
-    }
-    #[cfg(windows)]
-    {
-        let text = std::fs::read_to_string(link).ok()?;
-        let rest = text.strip_prefix(SHIM_PREFIX)?;
-        Some(PathBuf::from(rest.split('"').next()?))
-    }
 }
 
 /// Spawn `aidget ui` in its own session so it survives the calling

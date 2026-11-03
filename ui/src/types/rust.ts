@@ -7,7 +7,7 @@ replaceable: boolean, conflict?: string, };
 export type AgentIntegration = { id: string, name: string, icon: string, mcp?: AgentResourceState, skills?: AgentResourceState, };
 export type IntegrationState = { mcpCommand: string, mcpArgs: Array<string>,
 /**
- * Stable CLI shown on the page; installation uses mcp_command.
+ * CLI command shown on the page; installation uses mcp_command.
  */
 mcpDisplayCommand: string,
 /**

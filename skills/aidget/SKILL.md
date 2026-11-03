@@ -12,12 +12,20 @@ Linux. A resident GUI owns the windows; MCP or CLI edits reload them quickly.
 
 Use the `aidget_*` MCP tools when they are available.
 
-If MCP is unavailable, use the stable CLI entry:
+If MCP is unavailable, use the CLI. On macOS/Linux:
 
 ```bash
-AIDGET="$HOME/.aidget/aidget"   # Windows: "%USERPROFILE%\.aidget\aidget.cmd"
+AIDGET="$HOME/.aidget/aidget"
 "$AIDGET" doctor
 "$AIDGET" ui --background       # needed for screenshots and display discovery
+```
+
+On Windows, use the executable published in the data directory:
+
+```bat
+set "AIDGET=%USERPROFILE%\.aidget\aidget.exe"
+"%AIDGET%" doctor
+"%AIDGET%" ui --background
 ```
 
 Use `aidget_guide` over MCP or `"$AIDGET" guide` over the CLI before

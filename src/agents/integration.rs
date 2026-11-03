@@ -18,7 +18,7 @@ use ts_rs::TS;
 pub struct IntegrationState {
     pub mcp_command: String,
     pub mcp_args: Vec<String>,
-    /// Stable CLI shown on the page; installation uses mcp_command.
+    /// CLI command shown on the page; installation uses mcp_command.
     pub mcp_display_command: String,
     /// Omit the default home on the page; installation always uses mcp_args.
     pub mcp_display_args: Vec<String>,
