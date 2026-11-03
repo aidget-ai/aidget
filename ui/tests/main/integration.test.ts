@@ -9,6 +9,7 @@ import {
 
 const info: IntegrationInfo = {
   mcpCommand: '/Applications/aidget.app/Contents/MacOS/aidget',
+  mcpDisplayCommand: '/Applications/aidget.app/Contents/MacOS/aidget',
   mcpArgs: ['mcp'],
   mcpDisplayArgs: ['mcp'],
   skillDirectory: 'skills/aidget',
@@ -35,6 +36,7 @@ describe('integration configuration', () => {
   it('hides the default home only in the displayed command', () => {
     const configured = {
       mcpCommand: '/Users/test/.aidget/aidget',
+      mcpDisplayCommand: '/Users/test/.aidget/aidget',
       mcpArgs: ['--home', '/Users/test/.aidget', 'mcp'],
       mcpDisplayArgs: ['mcp'],
     };
@@ -46,10 +48,36 @@ describe('integration configuration', () => {
     expect(mcpCommandLine(info)).toBe('/Applications/aidget.app/Contents/MacOS/aidget mcp');
     expect(
       mcpCommandLine({
-        mcpCommand: '/Applications/Aidget Beta.app/Contents/MacOS/aidget',
+        mcpDisplayCommand: '/Applications/Aidget Beta.app/Contents/MacOS/aidget',
         mcpDisplayArgs: ['mcp', '--profile', 'local dev'],
       }),
     ).toBe('"/Applications/Aidget Beta.app/Contents/MacOS/aidget" mcp --profile "local dev"');
+  });
+
+  it('shows the Windows CLI entry instead of its installed cmd wrapper', () => {
+    const home = String.raw`E:\Projects\aidget\.aidget`;
+    const configured = {
+      mcpCommand: String.raw`C:\Windows\System32\cmd.exe`,
+      mcpArgs: ['/d', '/v:off', '/s', '/c', `""${home}\\aidget.cmd" --home "${home}" mcp"`],
+      mcpDisplayCommand: `${home}\\aidget.cmd`,
+      mcpDisplayArgs: ['--home', home, 'mcp'],
+    };
+    expect(mcpCommandLine(configured)).toBe(`${home}\\aidget.cmd --home ${home} mcp`);
+  });
+
+  it('quotes Windows paths with spaces without doubling backslashes', () => {
+    const home = String.raw`E:\My Projects\aidget\.aidget`;
+    expect(
+      mcpCommandLine({
+        mcpDisplayCommand: `${home}\\aidget.cmd`,
+        mcpDisplayArgs: ['--home', home, 'mcp'],
+      }),
+    ).toBe(`"${home}\\aidget.cmd" --home "${home}" mcp`);
+  });
+
+  it('omits the default Windows home from the displayed command', () => {
+    const cli = String.raw`C:\Users\test\.aidget\aidget.cmd`;
+    expect(mcpCommandLine({ mcpDisplayCommand: cli, mcpDisplayArgs: ['mcp'] })).toBe(`${cli} mcp`);
   });
 
   it('shows only Agents that can receive the current resource', () => {

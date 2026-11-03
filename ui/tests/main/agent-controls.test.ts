@@ -8,6 +8,7 @@ import { translate } from '../../src/main/locale';
 
 const info: IntegrationInfo = {
   mcpCommand: 'aidget',
+  mcpDisplayCommand: 'aidget',
   mcpArgs: ['mcp'],
   mcpDisplayArgs: ['mcp'],
   skillDirectory: '/tmp/skills',

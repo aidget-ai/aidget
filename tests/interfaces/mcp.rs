@@ -171,6 +171,7 @@ impl McpBridge {
         use std::time::Duration;
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+        let store = store.canonicalized().unwrap();
         let endpoint = Endpoint::new(store.socket_path());
         let listener = endpoint.bind().unwrap();
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);

@@ -14,9 +14,18 @@ type IntegrationInfo = IntegrationState;
 /**
  * Render the MCP display command with the default home omitted by the backend.
  */
-export function mcpCommandLine(info: Pick<IntegrationInfo, 'mcpCommand' | 'mcpDisplayArgs'>) {
-  return [info.mcpCommand, ...info.mcpDisplayArgs]
-    .map((part) => (/[\s"']/u.test(part) ? JSON.stringify(part) : part))
+export function mcpCommandLine(
+  info: Pick<IntegrationInfo, 'mcpDisplayCommand' | 'mcpDisplayArgs'>,
+) {
+  const windows = /^(?:[a-z]:\\|\\\\)/iu.test(info.mcpDisplayCommand);
+  return [info.mcpDisplayCommand, ...info.mcpDisplayArgs]
+    .map((part) => {
+      // JSON escaping doubles Windows separators, which cmd treats literally.
+      if (windows) {
+        return /[\s"'&|<>^()]/u.test(part) ? `"${part}"` : part;
+      }
+      return /[\s"']/u.test(part) ? JSON.stringify(part) : part;
+    })
     .join(' ');
 }
 

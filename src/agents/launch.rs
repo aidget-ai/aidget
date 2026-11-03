@@ -13,31 +13,13 @@ pub struct McpLaunch {
 impl McpLaunch {
     /// Use this instance's stable CLI entry without resolving its binary target.
     pub fn for_root(root: &Path) -> Result<Self> {
-        Self::build(root, true)
-    }
-
-    /// Omit the home argument for display only when it resolves to the OS default.
-    pub fn for_display(root: &Path, default_root: &Path) -> Result<Self> {
-        let is_default = default_root.try_exists()?
-            && dunce::canonicalize(root)? == dunce::canonicalize(default_root)?;
-        Self::build(root, !is_default)
-    }
-
-    fn build(root: &Path, include_home: bool) -> Result<Self> {
-        let root = dunce::canonicalize(root)?;
-        let link = cli_link(&root).to_string_lossy().into_owned();
-        let home = root.to_string_lossy().into_owned();
+        let launch = Self::build(root, true)?;
         #[cfg(not(windows))]
-        return Ok(Self {
-            command: link,
-            args: if include_home {
-                vec!["--home".into(), home, "mcp".into()]
-            } else {
-                vec!["mcp".into()]
-            },
-        });
+        return Ok(launch);
         #[cfg(windows)]
         {
+            let link = &launch.command;
+            let home = &launch.args[1];
             // cmd expands percent expressions even inside quotes.
             if home.contains(['%', '"', '\r', '\n']) {
                 return Err(crate::Error::InvalidParams(
@@ -58,13 +40,32 @@ impl McpLaunch {
                     "/v:off".into(),
                     "/s".into(),
                     "/c".into(),
-                    if include_home {
-                        format!("\"\"{link}\" --home \"{home}\" mcp\"")
-                    } else {
-                        format!("\"\"{link}\" mcp\"")
-                    },
+                    format!("\"\"{link}\" --home \"{home}\" mcp\""),
                 ],
             })
         }
+    }
+
+    /// Show the stable CLI directly, omitting home only for the OS default directory.
+    pub fn for_display(root: &Path, default_root: &Path) -> Result<Self> {
+        let is_default = default_root.try_exists()?
+            && dunce::canonicalize(root)? == dunce::canonicalize(default_root)?;
+        Self::build(root, !is_default)
+    }
+
+    fn build(root: &Path, include_home: bool) -> Result<Self> {
+        let root = dunce::canonicalize(root)?;
+        Ok(Self {
+            command: cli_link(&root).to_string_lossy().into_owned(),
+            args: if include_home {
+                vec![
+                    "--home".into(),
+                    root.to_string_lossy().into_owned(),
+                    "mcp".into(),
+                ]
+            } else {
+                vec!["mcp".into()]
+            },
+        })
     }
 }

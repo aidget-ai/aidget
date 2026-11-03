@@ -20,8 +20,13 @@ fn embedded_skill_is_materialized_under_the_store_root() {
     let directory = ensure_skill(&store).unwrap();
     assert_eq!(
         directory,
-        fs::canonicalize(temp.path()).unwrap().join("skills/aidget")
+        dunce::canonicalize(temp.path())
+            .unwrap()
+            .join("skills")
+            .join("aidget")
     );
+    #[cfg(windows)]
+    assert!(!directory.to_string_lossy().contains('/'));
     assert_eq!(
         fs::read_to_string(directory.join("SKILL.md")).unwrap(),
         skill_content(&store).unwrap()

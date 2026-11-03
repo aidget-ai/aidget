@@ -18,7 +18,9 @@ use ts_rs::TS;
 pub struct IntegrationState {
     pub mcp_command: String,
     pub mcp_args: Vec<String>,
-    /// Presentation arguments only; installation always uses mcp_args.
+    /// Stable CLI shown on the page; installation uses mcp_command.
+    pub mcp_display_command: String,
+    /// Omit the default home on the page; installation always uses mcp_args.
     pub mcp_display_args: Vec<String>,
     pub skill_directory: String,
     pub skill_content: String,
@@ -194,10 +196,12 @@ fn state_for(launch: &McpLaunch, skill_directory: &Path, root: &Path) -> Result<
             })
         })
         .collect::<Result<Vec<_>>>()?;
+    let display = McpLaunch::for_display(root, &default_root)?;
     Ok(IntegrationState {
         mcp_command: launch.command.clone(),
         mcp_args: launch.args.clone(),
-        mcp_display_args: McpLaunch::for_display(root, &default_root)?.args,
+        mcp_display_command: display.command,
+        mcp_display_args: display.args,
         skill_directory: skill_directory.to_string_lossy().into_owned(),
         skill_content: std::fs::read_to_string(skill_directory.join("SKILL.md"))?,
         data_directory: dunce::canonicalize(root)?.to_string_lossy().into_owned(),

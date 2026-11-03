@@ -7,18 +7,12 @@ fn display_omits_default_home_while_the_installed_command_keeps_it() {
     let home = tempdir().unwrap();
     let actual = McpLaunch::for_root(home.path()).unwrap();
     let display = McpLaunch::for_display(home.path(), home.path()).unwrap();
-    assert_eq!(actual.command, display.command);
-    assert_ne!(actual.args, display.args);
-    #[cfg(not(windows))]
-    assert_eq!(display.args, ["mcp"]);
-    #[cfg(windows)]
     assert_eq!(
-        display.args[4],
-        format!(
-            "\"\"{}\" mcp\"",
-            cli_link(&dunce::canonicalize(home.path()).unwrap()).display()
-        )
+        display.command,
+        cli_link(&dunce::canonicalize(home.path()).unwrap()).to_string_lossy()
     );
+    assert_ne!(actual.args, display.args);
+    assert_eq!(display.args, ["mcp"]);
     assert!(actual.args.join(" ").contains("--home"));
 }
 
@@ -28,10 +22,10 @@ fn display_keeps_custom_home_even_when_the_default_directory_is_absent() {
     let home = temp.path().join("development");
     std::fs::create_dir(&home).unwrap();
     let default = temp.path().join("absent-default");
-    assert_eq!(
-        McpLaunch::for_display(&home, &default).unwrap(),
-        McpLaunch::for_root(&home).unwrap(),
-    );
+    let display = McpLaunch::for_display(&home, &default).unwrap();
+    let home = dunce::canonicalize(home).unwrap();
+    assert_eq!(display.command, cli_link(&home).to_string_lossy());
+    assert_eq!(display.args, ["--home", &home.to_string_lossy(), "mcp"]);
 }
 
 #[cfg(unix)]

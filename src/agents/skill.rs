@@ -64,7 +64,9 @@ pub fn skill_content(store: &Store) -> Result<String> {
 /// Materialize the instance-bound Skill under its active data directory.
 pub fn ensure_skill(store: &Store) -> Result<PathBuf> {
     let content = skill_content(store)?;
-    let directory = dunce::canonicalize(store.root())?.join("skills/aidget");
+    let directory = dunce::canonicalize(store.root())?
+        .join("skills")
+        .join("aidget");
     let path = directory.join("SKILL.md");
     match fs::read_to_string(&path) {
         Ok(current) if current == content => {}

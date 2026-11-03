@@ -7,7 +7,11 @@ replaceable: boolean, conflict?: string, };
 export type AgentIntegration = { id: string, name: string, icon: string, mcp?: AgentResourceState, skills?: AgentResourceState, };
 export type IntegrationState = { mcpCommand: string, mcpArgs: Array<string>,
 /**
- * Presentation arguments only; installation always uses mcp_args.
+ * Stable CLI shown on the page; installation uses mcp_command.
+ */
+mcpDisplayCommand: string,
+/**
+ * Omit the default home on the page; installation always uses mcp_args.
  */
 mcpDisplayArgs: Array<string>, skillDirectory: string, skillContent: string, dataDirectory: string, agents: Array<AgentIntegration>, };
 export type IntegrationResource = "mcp" | "skills";

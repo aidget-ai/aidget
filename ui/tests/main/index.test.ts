@@ -75,6 +75,7 @@ function state(lastPage: MainState['lastPage']): MainState {
 function integrationState(installed: boolean): IntegrationInfo {
   return {
     mcpCommand: '/Applications/aidget.app/Contents/MacOS/aidget',
+    mcpDisplayCommand: '/Applications/aidget.app/Contents/MacOS/aidget',
     mcpArgs: ['mcp'],
     mcpDisplayArgs: ['mcp'],
     skillDirectory: '/Users/test/.aidget/skills/aidget',
@@ -410,6 +411,7 @@ describe('main window navigation', () => {
             mcpArgs: [],
             mcpDisplayArgs: [],
             mcpCommand: 'aidget mcp',
+            mcpDisplayCommand: 'aidget mcp',
             skillContent: '',
             dataDirectory: '/tmp/home',
             skillDirectory: '',

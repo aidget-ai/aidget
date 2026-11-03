@@ -14,6 +14,7 @@ fn integration_state_uses_camel_case_and_keeps_agent_capabilities() {
     let state = IntegrationState {
         mcp_command: "/aidget".to_string(),
         mcp_args: vec!["mcp".to_string()],
+        mcp_display_command: "/aidget".to_string(),
         mcp_display_args: vec!["mcp".to_string()],
         skill_directory: "/tmp/skills/aidget".to_string(),
         skill_content: "-".to_string(),
@@ -33,6 +34,7 @@ fn integration_state_uses_camel_case_and_keeps_agent_capabilities() {
     };
     let value = serde_json::to_value(state).unwrap();
     assert_eq!(value["mcpCommand"], "/aidget");
+    assert_eq!(value["mcpDisplayCommand"], "/aidget");
     assert_eq!(value["skillDirectory"], "/tmp/skills/aidget");
     assert_eq!(value["agents"][0]["id"], "codex");
     assert_eq!(value["agents"][0]["mcp"]["installed"], true);
