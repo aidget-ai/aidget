@@ -31,6 +31,52 @@ const info: IntegrationInfo = {
 };
 
 describe('Agent controls', () => {
+  it.each(['mcp', 'skills'] as const)(
+    'uses consistent Windows separators in %s tooltips and accessible descriptions',
+    (resource) => {
+      const path =
+        resource === 'mcp'
+          ? String.raw`C:\Users\Micooz\.pi/agent\mcp.json`
+          : String.raw`C:\Users\Micooz\.pi/agent\skills\aidget`;
+      const displayPath =
+        resource === 'mcp'
+          ? String.raw`C:\Users\Micooz\.pi\agent\mcp.json`
+          : String.raw`C:\Users\Micooz\.pi\agent\skills\aidget`;
+      for (const [installed, replaceable, action] of [
+        [false, false, '为 Pi 安装：'],
+        [false, true, '为 Pi 覆盖安装：'],
+        [true, false, '从 Pi 移除：'],
+      ] as const) {
+        const state = { path, installed, replaceable };
+        const root = document.createElement('div');
+        const onChange = vi.fn();
+        renderAgentStrip(
+          root,
+          {
+            ...info,
+            agents: [{ id: 'pi', name: 'Pi', icon: 'pi', [resource]: state }],
+          },
+          resource,
+          {
+            all: '全部',
+            empty: '无 Agent',
+            installFor: translate('zh', 'installFor'),
+            replaceFor: translate('zh', 'replaceFor'),
+            removeFrom: translate('zh', 'removeFrom'),
+          },
+          false,
+          onChange,
+        );
+        const button = root.querySelector<HTMLButtonElement>('[data-agent="pi"]')!;
+        expect(button.title).toBe(`${action}${displayPath}`);
+        expect(button.getAttribute('aria-description')).toBe(displayPath);
+        button.click();
+        expect(onChange).toHaveBeenCalledWith(['pi'], !installed);
+        expect(state.path).toBe(path);
+      }
+    },
+  );
+
   it('names the Agent in both removal tooltips and accessible labels', () => {
     const installedInfo: IntegrationInfo = {
       ...info,

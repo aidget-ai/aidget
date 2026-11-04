@@ -1,3 +1,4 @@
+import { formatPathForDisplay } from '../utils/path';
 import { agentIcon } from './agent-icons';
 import {
   allInstalled,
@@ -91,9 +92,10 @@ function agentButton(
     state.installed ? labels.removeFrom : state.replaceable ? labels.replaceFor : labels.installFor
   ).replace('{agent}', agent.name);
   button.setAttribute('aria-label', action);
-  const description = state.conflict ?? state.path;
+  const path = formatPathForDisplay(state.path);
+  const description = state.conflict ?? path;
   button.setAttribute('aria-description', description);
-  button.title = state.conflict ? `${agent.name}: ${state.conflict}` : `${action}${state.path}`;
+  button.title = state.conflict ? `${agent.name}: ${state.conflict}` : `${action}${path}`;
   button.disabled = busy || !!state.conflict;
 
   const icon = agentIcon(agent.icon);
