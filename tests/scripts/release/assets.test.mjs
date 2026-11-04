@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, test } from 'vite-plus/test';
 
-import { assetName, collectAssets } from './assets.mjs';
+import { assetName, collectAssets } from '../../../scripts/release/assets.mjs';
 
 const roots = [];
 

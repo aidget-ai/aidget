@@ -14,8 +14,56 @@ function action(job, uses) {
 }
 
 describe('release workflows', () => {
+  test('auto tagging waits for successful main push checks and uses the bot identity', async () => {
+    const automatic = await workflow('../../../.github/workflows/auto-tag.yml');
+    expect(automatic.on).toEqual({
+      workflow_run: { workflows: ['Check'], types: ['completed'], branches: ['main'] },
+    });
+    expect(automatic.concurrency).toEqual({ group: 'auto-tag', 'cancel-in-progress': false });
+    const job = automatic.jobs.tag;
+    expect(job.if).toContain("github.event.workflow_run.conclusion == 'success'");
+    expect(job.if).toContain("github.event.workflow_run.event == 'push'");
+    expect(job.if).toContain(
+      'github.event.workflow_run.head_repository.full_name == github.repository',
+    );
+    expect(action(job, 'actions/checkout@').with.ref).toBe(
+      '${{ github.event.workflow_run.head_sha }}',
+    );
+    expect(action(job, 'actions/checkout@').with.token).toBe(
+      '${{ steps.bot-token.outputs.token }}',
+    );
+    expect(action(job, 'actions/create-github-app-token@').with['permission-contents']).toBe(
+      'write',
+    );
+  });
+
+  test('obsolete tags cannot cancel newer releases or stage and publish a draft', async () => {
+    const release = await workflow('../../../.github/workflows/release.yml');
+    expect(release.concurrency['cancel-in-progress']).toBe(false);
+    expect(release.jobs.metadata.permissions.actions).toBe('write');
+    expect(release.jobs.metadata.outputs.current).toBe('${{ steps.current.outputs.current }}');
+    for (const name of ['verify', 'build', 'notes']) {
+      expect(release.jobs[name].if).toBe("needs.metadata.outputs.current == 'true'");
+    }
+    const cancel = release.jobs.metadata.steps.find(
+      (step) => step.name === 'Cancel older releases',
+    );
+    expect(cancel.if).toBe("steps.current.outputs.current == 'true'");
+    expect(cancel.run).toBe('node scripts/release/cancel.mjs');
+    const steps = release.jobs.publish.steps;
+    for (const [name, guard] of [
+      ['Stage release', 'before-stage'],
+      ['Publish release', 'before-publish'],
+    ]) {
+      const index = steps.findIndex((step) => step.name === name);
+      expect(steps[index - 1].id).toBe(guard);
+      expect(steps[index - 1].run).toBe('node scripts/release/tags.mjs current "$TAG"');
+      expect(steps[index].if).toBe(`steps.${guard}.outputs.current == 'true'`);
+    }
+  });
+
   test('verification, builds and notes run in parallel before publish', async () => {
-    const release = await workflow('../../.github/workflows/release.yml');
+    const release = await workflow('../../../.github/workflows/release.yml');
     expect(release.jobs.verify.needs).toBe('metadata');
     expect(release.jobs.build.needs).toBe('metadata');
     expect(release.jobs.notes.needs).toBe('metadata');
@@ -23,7 +71,7 @@ describe('release workflows', () => {
   });
 
   test('release notes use a separate artifact directory', async () => {
-    const release = await workflow('../../.github/workflows/release.yml');
+    const release = await workflow('../../../.github/workflows/release.yml');
     const buildUploads = release.jobs.build.steps.filter((step) =>
       step.uses?.startsWith('actions/upload-artifact@'),
     );
@@ -57,8 +105,8 @@ describe('release workflows', () => {
   });
 
   test('main warms release caches and tags only restore them', async () => {
-    const check = await workflow('../../.github/workflows/check.yml');
-    const release = await workflow('../../.github/workflows/release.yml');
+    const check = await workflow('../../../.github/workflows/check.yml');
+    const release = await workflow('../../../.github/workflows/release.yml');
     const warm = check.jobs['release-cache'];
     const verifyCache = action(check.jobs['cross-platform'], 'Swatinem/rust-cache@');
     const buildCache = action(release.jobs.build, 'Swatinem/rust-cache@');

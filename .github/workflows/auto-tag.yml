@@ -1,0 +1,55 @@
+name: Auto tag
+
+on:
+  workflow_run:
+    workflows: [Check]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: >-
+      github.repository == 'aidget-ai/aidget' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create tagging token
+        id: bot-token
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.AIDGET_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.AIDGET_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          token: ${{ steps.bot-token.outputs.token }}
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+
+      - name: Create and push next patch tag
+        env:
+          CHECKED_SHA: ${{ github.event.workflow_run.head_sha }}
+          BOT_APP_ID: ${{ vars.AIDGET_BOT_APP_ID }}
+        run: |
+          set -euo pipefail
+          git config user.name "aidget-bot[bot]"
+          git config user.email "${BOT_APP_ID}+aidget-bot[bot]@users.noreply.github.com"
+          node scripts/release/tags.mjs auto "$CHECKED_SHA"

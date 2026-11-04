@@ -14,7 +14,11 @@ concurrency:
 jobs:
   metadata:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     outputs:
+      current: ${{ steps.current.outputs.current }}
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
       prerelease: ${{ steps.release.outputs.prerelease }}
@@ -28,7 +32,14 @@ jobs:
         with:
           node-version: 24
 
+      - name: Check whether tag is current
+        id: current
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node scripts/release/tags.mjs current "$TAG"
+
       - name: Validate release tag
+        if: steps.current.outputs.current == 'true'
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -60,14 +71,23 @@ jobs:
           fi
           echo "previous_tag=$LATEST" >> "$GITHUB_OUTPUT"
 
+      - name: Cancel older releases
+        if: steps.current.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/release/cancel.mjs
+
   verify:
     needs: metadata
+    if: needs.metadata.outputs.current == 'true'
     uses: ./.github/workflows/check.yml
     with:
       tag: ${{ needs.metadata.outputs.tag }}
 
   notes:
     needs: metadata
+    if: needs.metadata.outputs.current == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -98,6 +118,7 @@ jobs:
 
   build:
     needs: metadata
+    if: needs.metadata.outputs.current == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -257,7 +278,14 @@ jobs:
             --input downloaded \
             --output release
 
+      - name: Check before staging
+        id: before-stage
+        env:
+          TAG: ${{ needs.metadata.outputs.tag }}
+        run: node scripts/release/tags.mjs current "$TAG"
+
       - name: Stage release
+        if: steps.before-stage.outputs.current == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.metadata.outputs.tag }}
@@ -276,7 +304,15 @@ jobs:
 
           test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 8
 
+      - name: Check before publishing
+        id: before-publish
+        if: steps.before-stage.outputs.current == 'true'
+        env:
+          TAG: ${{ needs.metadata.outputs.tag }}
+        run: node scripts/release/tags.mjs current "$TAG"
+
       - name: Publish release
+        if: steps.before-publish.outputs.current == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.metadata.outputs.tag }}

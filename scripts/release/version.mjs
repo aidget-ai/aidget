@@ -53,6 +53,11 @@ function replacePackageVersion(toml, version) {
   return lines.join('\n');
 }
 
+/** Whether a tag uses the supported stable or numbered beta release format. */
+export function isReleaseTag(tag) {
+  return typeof tag === 'string' && TAG_PATTERN.test(tag);
+}
+
 /** Parse a stable or numbered beta release tag into its manifest version. */
 export function parseTag(tag) {
   const match = String(tag).match(TAG_PATTERN);

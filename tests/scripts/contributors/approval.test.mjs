@@ -7,7 +7,7 @@ import {
   parseApprovalCommand,
   parseApprovedContributors,
   UNAPPROVED_PR_MESSAGE,
-} from './approval.mjs';
+} from '../../../scripts/contributors/approval.mjs';
 
 describe('contributor approval', () => {
   test('accepts lgtmi only as the command at the start of a comment', () => {

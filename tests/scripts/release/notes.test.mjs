@@ -6,7 +6,7 @@ import {
   generateBilingualNotes,
   generateEnglishChangelog,
   translateToChinese,
-} from './notes.mjs';
+} from '../../../scripts/release/notes.mjs';
 
 function deepSeekReply(content) {
   return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {

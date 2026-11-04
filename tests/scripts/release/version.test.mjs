@@ -12,7 +12,7 @@ import {
   readVersions,
   rpmBundleConfig,
   setVersion,
-} from './version.mjs';
+} from '../../../scripts/release/version.mjs';
 
 const roots = [];
 const CARGO = `[package]

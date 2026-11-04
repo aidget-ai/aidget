@@ -5,7 +5,7 @@ import { join, relative, sep } from 'node:path';
 
 import { test } from 'vite-plus/test';
 const registry = JSON.parse(
-  readFileSync(new URL('../../widgets/registry.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../../widgets/registry.json', import.meta.url), 'utf8'),
 );
 test('bundled packages match the reviewed community file snapshot', () => {
   const bundled = readdirSync('widgets', { withFileTypes: true }).filter((dir) =>
@@ -26,7 +26,11 @@ test('bundled packages match the reviewed community file snapshot', () => {
         paths.push(relative(root, join(file.parentPath, file.name)).split(sep).join('/'));
       }
     }
-    assert.deepEqual(paths.sort(), entry.files.map((file) => file.path).sort(), directory.name);
+    assert.deepEqual(
+      paths.sort((left, right) => left.localeCompare(right)),
+      entry.files.map((file) => file.path).sort((left, right) => left.localeCompare(right)),
+      directory.name,
+    );
     for (const file of entry.files) {
       const bytes = readFileSync(join(root, file.path));
       assert.equal(bytes.length, file.size, file.path);

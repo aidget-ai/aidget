@@ -15,7 +15,45 @@ annotated `vMAJOR.MINOR.PATCH` or `vMAJOR.MINOR.PATCH-beta.N` tag in
   publishes it once all assets and notes exist. Stable releases become Latest;
   beta releases are marked Pre-release and never become Latest.
 
-## Required repository secret
+## Automatic patch releases
+
+Every push to `main` that passes the complete Check workflow triggers Auto tag.
+It tags only the checked SHA when it is still the remote main HEAD. Older
+checked commits and commits already carrying a supported release tag, including
+a manual beta, are skipped. Changes only to `.github/APPROVED_CONTRIBUTORS`
+remain excluded from Check and do not trigger a release.
+
+Auto tag creates an annotated stable tag with a patch number above the highest
+existing release tag, then pushes it using the `aidget-bot` installation token.
+For example, `v0.1.3` produces `v0.1.4`; either `v0.1.4-beta.2` or an unpublished
+`v0.1.4` produces `v0.1.5`. Failed and cancelled tags reserve their numbers.
+The first release tag must be created manually. Minor, major and beta releases
+also use the manual procedure below.
+
+Automatic tag allocation is serialized. A conflicting push fails without
+overwriting a tag or choosing another number automatically. Re-running Check
+on an already tagged SHA does not allocate another version.
+
+## Release cancellation
+
+After validating a new tag, Release cancels active Release runs for lower
+versions, including manual beta releases. It never cancels equal or higher
+versions, so a delayed old run or an old rerun cannot cancel a newer release.
+Once a higher supported tag exists, lower tags skip the pipeline. The workflow
+refreshes tags again before creating a draft and before publishing it.
+
+Cancellation starts only after the new main commit has passed Check and its
+automatic tag has been pushed. A failed Check does not interrupt the preceding
+release. Manual tags trigger the same validation and cancellation process.
+Version numbers may have gaps. All tags and published releases remain intact.
+
+A cancelled build normally leaves only a tag, without a Release entry. If it
+reaches staging, it may leave an unpublished draft with partial uploads; drafts
+are visible only to repository collaborators with write access. A successful
+publication cannot be undone by cancellation; that complete release remains
+public, and a later stable release becomes Latest.
+
+## Required repository configuration
 
 Configure `DEEPSEEK_API_KEY` as a repository Actions secret. It is used only by
 the release notes job: first to generate an English changelog from the commit
@@ -24,7 +62,14 @@ Simplified Chinese.
 
 There are no signing or updater secrets in the current process.
 
-## Create a release
+Auto tag reuses the `AIDGET_BOT_CLIENT_ID` and `AIDGET_BOT_APP_ID` variables
+and `AIDGET_BOT_PRIVATE_KEY` secret from contributor approval. The App needs
+Contents write access. A tag pushed with the default `GITHUB_TOKEN` would not
+trigger Release. The Release metadata job uses its own `GITHUB_TOKEN` with
+Actions write access to cancel older runs; build and notes jobs do not receive
+that permission.
+
+## Create a manual release
 
 Start from current `main` and confirm the reviewed commit is part of it:
 
@@ -37,7 +82,8 @@ REVIEWED_SHA=<reviewed-main-commit>
 git merge-base --is-ancestor "$REVIEWED_SHA" origin/main
 ```
 
-Choose the next version and confirm it is newer than the latest published tag:
+Choose a version above every existing supported release tag, including failed
+and cancelled tags. Confirm it is also newer than the latest published tag:
 
 ```bash
 TAG=v0.2.0
@@ -136,6 +182,8 @@ builds cannot self-update to a release without a matching AppImage asset.
   Never move or delete the failed tag.
 - A draft release left by a partial publish is replaced on rerun. A published
   release is immutable and cannot be replaced by this workflow.
+- A superseded tag cannot be retried once a higher supported tag exists. Use a
+  new reviewed main commit and a higher version instead.
 - Never hand-upload or replace assets after a release is public.
 
 ## Signing and updates

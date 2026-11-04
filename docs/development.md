@@ -114,7 +114,10 @@ development version.
 ## CI
 
 The `check` workflow runs on `main` pushes, pull requests, and from the
-Release workflow:
+Release workflow. A successful main push Check triggers Auto tag, which creates
+the next stable patch tag on that checked commit if it is still main HEAD and
+does not already carry a release tag.
 
 The `release` workflow also performs real Tauri packaging on all four release
-targets.
+targets. A new validated release cancels lower-version releases still running;
+see [releasing.md](releasing.md) for version allocation and cancellation rules.
