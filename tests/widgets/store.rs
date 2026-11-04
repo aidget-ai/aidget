@@ -17,6 +17,246 @@ fn store() -> (TempDir, Store) {
 }
 
 #[test]
+fn enabled_update_preserves_frame_and_content_and_shares_revision() {
+    let (_dir, store) = store();
+    store
+        .create(
+            "note",
+            "Note",
+            WidgetEdit {
+                html: Some("<p data-aidget-region=\"body\">old</p>"),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
+    let board = fs::read(store.board_path()).unwrap();
+    let disabled = store
+        .update(
+            "note",
+            1,
+            WidgetEdit {
+                enabled: Some(false),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
+    assert!(!disabled.enabled);
+    assert_eq!(disabled.revision, 2);
+    assert!(!store.list().unwrap().widgets[0].enabled);
+    assert!(!store.load_document("note").unwrap().meta.enabled);
+    let ack = store.content_ack(&disabled).unwrap();
+    assert!(!ack.enabled);
+    assert!(ack.frame.is_none());
+    let path = store.widget_dir("note").unwrap().join(CONFIG_FILE);
+    let committed = fs::read(&path).unwrap();
+    let repeated = store
+        .update(
+            "note",
+            2,
+            WidgetEdit {
+                enabled: Some(false),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(repeated.revision, 2);
+    assert_eq!(repeated.updated_at, disabled.updated_at);
+    assert_eq!(fs::read(&path).unwrap(), committed);
+    let error = store
+        .update(
+            "note",
+            1,
+            WidgetEdit {
+                enabled: Some(false),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap_err();
+    match error {
+        Error::RevisionConflict { current } => {
+            assert_eq!(serde_json::to_value(current).unwrap()["enabled"], false);
+        }
+        other => panic!("expected revision conflict, got {other}"),
+    }
+    let patched = store.patch_region("note", 2, "body", "new").unwrap();
+    assert!(!patched.enabled);
+    let edited = store
+        .update(
+            "note",
+            3,
+            WidgetEdit {
+                title: Some("Edited"),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
+    assert!(!edited.enabled);
+    let enabled = store
+        .update(
+            "note",
+            4,
+            WidgetEdit {
+                enabled: Some(true),
+                html: Some("<p>replacement</p>"),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
+    assert!(enabled.enabled);
+    assert_eq!(enabled.revision, 5);
+    assert_eq!(fs::read(store.board_path()).unwrap(), board);
+    assert_eq!(
+        store.load_document("note").unwrap().html,
+        "<p>replacement</p>"
+    );
+}
+
+#[test]
+fn enabled_update_repairs_missing_frame_with_configured_size() {
+    let (_dir, store) = store();
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+    let path = store.widget_dir("note").unwrap().join(CONFIG_FILE);
+    let mut meta = store.load_meta("note").unwrap();
+    meta.size.width = 600.0;
+    meta.size.height = 400.0;
+    fs::write(path, serde_json::to_vec(&meta).unwrap()).unwrap();
+    let mut board = store.load_board().unwrap();
+    board.widgets.clear();
+    store.save_board(&board).unwrap();
+    let updated = store
+        .update(
+            "note",
+            1,
+            WidgetEdit {
+                enabled: Some(true),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(updated.revision, 1);
+    let repaired = store.load_board().unwrap();
+    assert_eq!(repaired.revision, board.revision + 1);
+    assert_eq!(repaired.widgets["note"].w, 600.0);
+    assert_eq!(repaired.widgets["note"].h, 400.0);
+}
+
+#[test]
+fn enabled_update_validation_and_metadata_io_failures_do_not_commit_state() {
+    let (_dir, store) = store();
+    store
+        .create(
+            "note",
+            "Note",
+            WidgetEdit {
+                html: Some("old"),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
+    let dir = store.widget_dir("note").unwrap();
+    let config = fs::read(dir.join(CONFIG_FILE)).unwrap();
+    let network = vec!["http://invalid.example".to_string()];
+    assert!(store
+        .update(
+            "note",
+            1,
+            WidgetEdit {
+                enabled: Some(false),
+                html: Some("new"),
+                network: Some(&network),
+                ..WidgetEdit::default()
+            }
+        )
+        .is_err());
+    assert_eq!(store.load_document("note").unwrap().html, "old");
+    let temp_path = dir.join(format!(".tmp-config.json-{}", std::process::id()));
+    fs::create_dir(&temp_path).unwrap();
+    assert!(store
+        .update(
+            "note",
+            1,
+            WidgetEdit {
+                enabled: Some(false),
+                html: Some("new"),
+                ..WidgetEdit::default()
+            }
+        )
+        .is_err());
+    assert_eq!(fs::read(dir.join(CONFIG_FILE)).unwrap(), config);
+    assert_eq!(store.load_document("note").unwrap().html, "new");
+    assert!(store.load_meta("note").unwrap().enabled);
+}
+
+#[test]
+fn enabled_update_serializes_concurrent_writers_and_restores_disabled_trash() {
+    use std::sync::{Arc, Barrier};
+    let (_dir, store) = store();
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+    let barrier = Arc::new(Barrier::new(3));
+    let threads: Vec<_> = [true, false]
+        .into_iter()
+        .map(|enabled| {
+            let store = store.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                store.update(
+                    "note",
+                    1,
+                    WidgetEdit {
+                        enabled: Some(enabled),
+                        title: Some("Changed"),
+                        ..WidgetEdit::default()
+                    },
+                )
+            })
+        })
+        .collect();
+    barrier.wait();
+    let results: Vec<_> = threads
+        .into_iter()
+        .map(|thread| thread.join().unwrap())
+        .collect();
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| matches!(result, Err(Error::RevisionConflict { .. })))
+            .count(),
+        1
+    );
+    let meta = store.load_meta("note").unwrap();
+    let disabled = store
+        .update(
+            "note",
+            meta.revision,
+            WidgetEdit {
+                enabled: Some(false),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
+    let board = store.load_board().unwrap();
+    store
+        .move_widget("note", board.revision, board.widgets["note"].clone())
+        .unwrap();
+    assert!(!store.load_meta("note").unwrap().enabled);
+    let trashed = store.delete("note").unwrap();
+    let restored = store
+        .restore(trashed.file_name().unwrap().to_str().unwrap())
+        .unwrap();
+    assert!(restored.enabled);
+    assert_eq!(restored.revision, disabled.revision + 1);
+    store.delete("note").unwrap();
+    assert!(
+        store
+            .create("note", "New", WidgetEdit::default())
+            .unwrap()
+            .enabled
+    );
+}
+
+#[test]
 fn reading_unused_config_fields_does_not_rewrite_or_back_up_the_widget() {
     let (dir, store) = store();
     store.create("note", "Note", WidgetEdit::default()).unwrap();

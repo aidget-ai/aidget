@@ -2,6 +2,93 @@ use aidget::interfaces::cli::{Cli, Command, WidgetCommand};
 use clap::Parser;
 
 #[test]
+fn enabled_update_requires_an_explicit_boolean() {
+    for value in ["true", "false"] {
+        assert!(Cli::try_parse_from([
+            "aidget",
+            "widget",
+            "update",
+            "note",
+            "--revision",
+            "1",
+            "--enabled",
+            value,
+        ])
+        .is_ok());
+    }
+    for tail in [vec!["--enabled"], vec!["--enabled", "yes"]] {
+        let mut args = vec!["aidget", "widget", "update", "note", "--revision", "1"];
+        args.extend(tail);
+        assert!(Cli::try_parse_from(args).is_err());
+    }
+}
+
+#[test]
+fn enabled_update_works_offline_and_is_visible_to_cli_reads() {
+    let temp = tempfile::tempdir().unwrap();
+    let call = |args: &[&str]| {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_aidget"))
+            .args(["--home", temp.path().to_str().unwrap(), "--json"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
+    };
+    assert_eq!(call(&["widget", "create", "note"])["enabled"], true);
+    let ack = call(&[
+        "widget",
+        "update",
+        "note",
+        "--revision",
+        "1",
+        "--enabled",
+        "false",
+    ]);
+    assert_eq!(ack["revision"], 2);
+    assert_eq!(ack["enabled"], false);
+    assert!(ack.get("frame").is_none());
+    assert_eq!(call(&["widget", "list"])["widgets"][0]["enabled"], false);
+    assert_eq!(call(&["widget", "show", "note"])["meta"]["enabled"], false);
+    assert_eq!(
+        call(&[
+            "widget",
+            "update",
+            "note",
+            "--revision",
+            "2",
+            "--enabled",
+            "false"
+        ])["revision"],
+        2
+    );
+    assert_eq!(
+        call(&[
+            "widget",
+            "update",
+            "note",
+            "--revision",
+            "2",
+            "--enabled",
+            "true"
+        ])["enabled"],
+        true
+    );
+    assert!(!temp.path().join("run/ui.sock").exists());
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_aidget"))
+        .args(["--home", temp.path().to_str().unwrap(), "widget", "list"])
+        .output()
+        .unwrap();
+    assert!(String::from_utf8(output.stdout)
+        .unwrap()
+        .contains("enabled=true"));
+}
+
+#[test]
 fn create_and_update_accept_drag_mode_and_reject_unknown_modes() {
     let created = Cli::try_parse_from([
         "aidget",

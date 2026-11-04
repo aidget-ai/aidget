@@ -77,7 +77,7 @@ fn main_window_lists_all_widgets_and_marks_enabled_state() {
     assert_eq!(state.widgets[0].height, 260.0);
     assert!(!state.widgets[0].token.is_empty());
     assert!(state.widgets[0].enabled);
-    assert!(!state.widgets[1].enabled);
+    assert!(state.widgets[1].enabled);
     assert_eq!(state.widgets[1].width, 360.0);
     // The documented contract: one version everywhere. Whether the build may update
     // itself is the update row's answer, not the version string's.
@@ -103,7 +103,7 @@ fn main_state_restores_last_page_from_settings() {
 }
 
 #[test]
-fn archiving_a_widget_keeps_its_board_position_for_restore() {
+fn disabling_a_widget_keeps_its_board_position_for_reenable() {
     let dir = TempDir::new().unwrap();
     let store = Store::new(dir.path());
     store.ensure_layout().unwrap();
@@ -120,15 +120,32 @@ fn archiving_a_widget_keeps_its_board_position_for_restore() {
         .unwrap();
     let original = store.load_board().unwrap().widgets["weather"].clone();
 
-    let ids = store.widget_ids().unwrap();
-    main_window_state::set_archived(store.root(), &ids, "weather", true).unwrap();
+    store
+        .update(
+            "weather",
+            1,
+            WidgetEdit {
+                enabled: Some(false),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
     assert_eq!(
         serde_json::to_value(&store.load_board().unwrap().widgets["weather"]).unwrap(),
         serde_json::to_value(&original).unwrap()
     );
     assert!(!main_widgets(&store).unwrap().widgets[0].enabled);
 
-    main_window_state::set_archived(store.root(), &ids, "weather", false).unwrap();
+    store
+        .update(
+            "weather",
+            2,
+            WidgetEdit {
+                enabled: Some(true),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
     assert_eq!(
         serde_json::to_value(&store.load_board().unwrap().widgets["weather"]).unwrap(),
         serde_json::to_value(&original).unwrap()
@@ -354,7 +371,15 @@ fn local_details_reads_installed_config_description_and_cached_preview() {
     )
     .unwrap();
     main_window_state::save_preview(store.root(), "note", b"png bytes").unwrap();
-    main_window_state::set_archived(store.root(), &store.widget_ids().unwrap(), "note", true)
+    store
+        .update(
+            "note",
+            1,
+            WidgetEdit {
+                enabled: Some(false),
+                ..WidgetEdit::default()
+            },
+        )
         .unwrap();
     let details = aidget::runtime::ui::local_widget_details(&store, "note").unwrap();
     assert_eq!(details.description.as_deref(), Some("My local widget"));

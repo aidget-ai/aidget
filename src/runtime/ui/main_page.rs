@@ -8,7 +8,7 @@ use crate::settings::{
     self, GithubToken, Language, MainPage, Theme, TrayClickAction, UiPreferences,
 };
 use crate::widgets::model::{validate_id, DeletedWidgetSummary, WidgetFrame};
-use crate::widgets::store::Store;
+use crate::widgets::store::{Store, WidgetEdit};
 
 use super::capture::{capture_widget, screenshot_mode, MAIN_PREVIEW_SCALE};
 use super::content::{content_token, signature};
@@ -40,7 +40,7 @@ pub struct LocalWidgetDetails {
     pub preview: Option<String>,
 }
 
-/// Read details from the installed widget, including archived widgets, without opening a WebView.
+/// Read installed widget details, including disabled widgets, without opening a WebView.
 pub fn local_widget_details(store: &Store, id: &str) -> Result<LocalWidgetDetails> {
     let config = store.load_meta(id)?.config;
     let description = store.load_package(id)?.map(|package| package.description);
@@ -84,13 +84,12 @@ pub struct MainState {
     pub auto_download: bool,
 }
 
-/// List every valid widget, including widgets that are currently archived.
+/// List every valid widget, including disabled widgets.
 pub fn main_widgets(store: &Store) -> Result<MainState> {
     let settings = settings::load(store.root())?;
     let preferences = settings.preferences();
     let github_token = settings.github_token.as_ref().map(GithubTokenSummary::from);
     let board = store.load_board()?;
-    let archived = main_window_state::archived_widgets(store.root(), &store.widget_ids()?)?;
     let mut widgets = Vec::new();
     for (index, id) in store.widget_ids()?.into_iter().enumerate() {
         let Ok(meta) = store.load_meta(&id) else {
@@ -110,7 +109,7 @@ pub fn main_widgets(store: &Store) -> Result<MainState> {
             token: content_token(&signature),
             width: frame.w,
             height: frame.h,
-            enabled: board.widgets.contains_key(&id) && !archived.contains(&id),
+            enabled: meta.enabled,
             created_at: store.widget_created_at_ms(&id)?,
         });
     }
@@ -187,20 +186,23 @@ pub fn set_github_token(
 }
 
 /// Enable or disable a desktop widget without changing its saved position.
-pub fn set_widget_enabled(app: &AppHandle, id: &str, enabled: bool) -> Result<()> {
+pub fn set_widget_enabled(
+    app: &AppHandle,
+    id: &str,
+    enabled: bool,
+    base_revision: u64,
+) -> Result<()> {
     validate_id(id)?;
     let state = app.state::<UiState>();
     let store = Store::new(state.root.lock().unwrap().clone());
-    store.load_meta(id)?;
-    if enabled {
-        main_window_state::set_archived(store.root(), &store.widget_ids()?, id, false)?;
-        let board = store.load_board()?;
-        if !board.widgets.contains_key(id) {
-            super::geometry::place_new_widget(app, &store, id)?;
-        }
-    } else {
-        main_window_state::set_archived(store.root(), &store.widget_ids()?, id, true)?;
-    }
+    store.update(
+        id,
+        base_revision,
+        WidgetEdit {
+            enabled: Some(enabled),
+            ..WidgetEdit::default()
+        },
+    )?;
     sync_widgets(app);
     Ok(())
 }
@@ -211,7 +213,7 @@ pub fn delete_widget(app: &AppHandle, id: &str) -> Result<()> {
     let state = app.state::<UiState>();
     let store = Store::new(state.root.lock().unwrap().clone());
     store.delete(id)?;
-    main_window_state::forget_widget(store.root(), &store.widget_ids()?, id)?;
+    main_window_state::forget_widget(store.root(), id)?;
     sync_widgets(app);
     Ok(())
 }
@@ -244,15 +246,14 @@ pub fn purge_deleted_widget(app: &AppHandle, trash_name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Return a PNG data URL, refreshing enabled widgets and reusing archived cache.
+/// Return a PNG data URL, refreshing enabled widgets and reusing disabled cache.
 pub async fn main_widget_preview(app: &AppHandle, id: &str) -> Result<Option<String>> {
     validate_id(id)?;
     let state = app.state::<UiState>();
     let store = Store::new(state.root.lock().unwrap().clone());
-    store.load_meta(id)?;
+    let meta = store.load_meta(id)?;
     let board = store.load_board()?;
-    let archived = main_window_state::archived_widgets(store.root(), &store.widget_ids()?)?;
-    let png = if board.widgets.contains_key(id) && !archived.contains(id) {
+    let png = if board.widgets.contains_key(id) && meta.enabled {
         let mode = screenshot_mode(true, MAIN_PREVIEW_SCALE);
         let png = capture_widget(app, id, mode).await?;
         main_window_state::save_preview(store.root(), id, &png)?;

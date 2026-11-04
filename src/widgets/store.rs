@@ -28,10 +28,11 @@ struct DeletionRecord {
     frame: Option<WidgetFrame>,
 }
 
-/// Fields a whole-file update may replace. Unset fields keep their current
-/// value, so callers can replace permissions without changing content.
+/// Optional fields for whole-file updates; omitted fields retain their values.
 #[derive(Default, Clone, Copy)]
 pub struct WidgetEdit<'a> {
+    /// Desktop window target state.
+    pub enabled: Option<bool>,
     pub html: Option<&'a str>,
     pub css: Option<&'a str>,
     pub title: Option<&'a str>,
@@ -261,6 +262,7 @@ impl Store {
                         id: meta.id.clone(),
                         title: meta.title.clone(),
                         revision: meta.revision,
+                        enabled: meta.enabled,
                         network: meta.network.clone(),
                         drag_mode: meta.drag_mode,
                         permissions: meta.permissions.clone(),
@@ -393,7 +395,7 @@ impl Store {
         if !source.is_dir() {
             return Err(Error::NotFound(trash_name.to_string()));
         }
-        let meta: WidgetMeta = parse_json(&fs::read(source.join(CONFIG_FILE))?)?;
+        let mut meta: WidgetMeta = parse_json(&fs::read(source.join(CONFIG_FILE))?)?;
         validate_id(&meta.id)?;
 
         let existing = self.widget_ids()?;
@@ -410,6 +412,15 @@ impl Store {
         }
 
         let record = deletion_record(&source)?;
+        if !meta.enabled {
+            meta.enabled = true;
+            meta.revision += 1;
+            meta.updated_at = chrono::Local::now().to_rfc3339();
+            atomic_write(
+                &source.join(CONFIG_FILE),
+                &serde_json::to_vec_pretty(&meta)?,
+            )?;
+        }
         let target = self.widget_dir(&meta.id)?;
         fs::rename(&source, &target)?;
         if let Some(preview) = read_optional_bytes(&target.join(DELETION_PREVIEW_FILE))? {
@@ -458,8 +469,8 @@ impl Store {
         self.ack_inner(meta, true)
     }
 
-    /// Ack for an edit that never touches `board.json`. The frame is omitted
-    /// so an agent cannot read a concurrent user drag as its own side effect.
+    /// Ack for content or enabled-state edits. Omit the frame so a concurrent
+    /// user drag cannot be mistaken for this edit's placement side effect.
     pub fn content_ack(&self, meta: &WidgetMeta) -> Result<WidgetAck> {
         self.ack_inner(meta, false)
     }
@@ -469,6 +480,7 @@ impl Store {
         Ok(WidgetAck {
             widget: meta.id.clone(),
             revision: meta.revision,
+            enabled: meta.enabled,
             title: meta.title.clone(),
             network: meta.network.clone(),
             drag_mode: meta.drag_mode,
@@ -481,8 +493,7 @@ impl Store {
         })
     }
 
-    /// `edit` carries the same fields an update can replace, so the two entry
-    /// points stay in sync as capabilities are added.
+    /// Create an enabled widget with initial content and configuration.
     pub fn create(&self, id: &str, title: &str, edit: WidgetEdit<'_>) -> Result<WidgetMeta> {
         let _lock = self.write_lock()?;
         validate_id(id)?;
@@ -533,6 +544,8 @@ impl Store {
         self.save_board(&board)
     }
 
+    /// Update supplied fields after revision CAS; an enabled-only repeat is a no-op.
+    /// Content files commit individually; enabled state and revision commit together.
     pub fn update(&self, id: &str, base_revision: u64, edit: WidgetEdit<'_>) -> Result<WidgetMeta> {
         let _lock = self.write_lock()?;
         let dir = self.widget_dir(id)?;
@@ -556,6 +569,30 @@ impl Store {
             meta.set_permissions(permissions);
         }
         meta.config.validate()?;
+        let content_edit = edit.html.is_some()
+            || edit.css.is_some()
+            || edit.title.is_some()
+            || edit.network.is_some()
+            || edit.drag_mode.is_some()
+            || edit.permissions.is_some()
+            || edit.agents.is_some();
+        if let Some(enabled) = edit.enabled {
+            if enabled {
+                let mut board = self.load_board()?;
+                if !board.widgets.contains_key(id) {
+                    let mut frame = WidgetFrame::default_for(board.widgets.len());
+                    frame.w = meta.size.width;
+                    frame.h = meta.size.height;
+                    board.widgets.insert(id.to_string(), frame);
+                    board.revision += 1;
+                    self.save_board(&board)?;
+                }
+            }
+            if meta.enabled == enabled && !content_edit {
+                return Ok(meta);
+            }
+            meta.enabled = enabled;
+        }
         if let Some(html) = edit.html {
             atomic_write(&dir.join(HTML_FILE), html.as_bytes())?;
         }

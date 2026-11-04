@@ -3,6 +3,27 @@ use aidget::interfaces::mcp::{mcp_error, SERVER_INSTRUCTIONS};
 use aidget::widgets::model::{Board, WidgetFrame, WidgetMeta};
 
 #[test]
+fn enabled_update_accepts_optional_boolean() {
+    use aidget::interfaces::mcp::UpdateArgs;
+    use serde_json::json;
+    for value in [true, false] {
+        let args: UpdateArgs = serde_json::from_value(json!({
+            "widget": "note", "baseRevision": 1, "enabled": value
+        }))
+        .unwrap();
+        assert_eq!(serde_json::to_value(args).unwrap()["enabled"], value);
+    }
+    assert!(serde_json::from_value::<UpdateArgs>(json!({
+        "widget": "note", "baseRevision": 1
+    }))
+    .is_ok());
+    assert!(serde_json::from_value::<UpdateArgs>(json!({
+        "widget": "note", "baseRevision": 1, "enabled": "false"
+    }))
+    .is_err());
+}
+
+#[test]
 fn drag_mode_is_part_of_create_and_partial_update_contracts() {
     use aidget::interfaces::mcp::{CreateArgs, UpdateArgs};
     use serde_json::json;

@@ -65,6 +65,9 @@ pub struct CreateArgs {
 pub struct UpdateArgs {
     pub widget: String,
     pub base_revision: u64,
+    /// Set the desktop window's target state; omitted preserves it.
+    #[serde(default)]
+    pub enabled: Option<bool>,
     #[serde(default)]
     pub html: Option<String>,
     #[serde(default)]
@@ -182,10 +185,10 @@ impl AidgetMcp {
             .map_err(|error| McpError::internal_error(error.to_string(), None))
     }
 
-    /// List every widget on the board with its revision and position.
+    /// List installed widgets with their revision, enabled state and saved frame.
     #[tool(
         name = "aidget_list",
-        description = "List widgets with id, title, revision, permissions, network and frame (display + x/y/w/h), plus boardRevision, broken directories and displays. Call this first: it is the only call needed to get revisions and display names. frame is a snapshot; drags bump boardRevision but not the widget revision.",
+        description = "List widgets with id, title, revision, enabled, permissions, network and frame (display + x/y/w/h), plus boardRevision, broken directories and displays. Call this first to get revisions and display names. enabled is the persisted window target state; frame is a snapshot. Drags bump boardRevision but not the widget revision.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     pub async fn list(&self) -> std::result::Result<Json<WidgetListing>, McpError> {
@@ -222,10 +225,10 @@ impl AidgetMcp {
         json_result(ack)
     }
 
-    /// Replace a widget's HTML, CSS, title or script flag with revision CAS.
+    /// Update widget content, configuration or enabled state with revision CAS.
     #[tool(
         name = "aidget_update",
-        description = "Whole-file update of html/css/title/dragMode/permissions/network/agents with baseRevision CAS. Omitted fields keep their current value; permissions [] removes every declared capability. Prefer aidget_patch for text-only changes. Never changes position: the ack has no frame, and a frame seen earlier is not evidence this call moved the widget.",
+        description = "Update html/css/title/dragMode/permissions/network/agents/enabled with widget baseRevision CAS. Omitted fields keep their value; permissions [] removes every capability. enabled false closes the desktop window while retaining its files and frame; true restores it, creating a default frame only if missing. Enabled changes share the widget revision with content. Repeating only the current enabled value is a no-op after CAS. Prefer aidget_patch for text-only changes. The ack omits frame and reports persisted enabled; window reconciliation is asynchronous. Multi-file content updates do not promise request-wide rollback.",
         annotations(destructive_hint = true, open_world_hint = false)
     )]
     pub async fn update(

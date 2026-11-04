@@ -7,7 +7,6 @@ use tauri::{
 };
 
 use crate::common::error::{Error, Result};
-use crate::runtime::main_window_state;
 use crate::transport::origin;
 use crate::widgets::model::{Board, WidgetFrame, WidgetSurface};
 use crate::widgets::store::Store;
@@ -58,8 +57,7 @@ fn sync_widgets_inner(app: &AppHandle) -> Result<()> {
     let state = app.state::<UiState>();
     let store = Store::new(state.root.lock().unwrap().clone());
     let board = store.load_board()?;
-    let archived = main_window_state::archived_widgets(store.root(), &store.widget_ids()?)?;
-    let ids = enabled_widget_ids(&store, &board, &archived);
+    let ids = enabled_widget_ids(&store, &board);
     let active: HashSet<_> = ids.iter().cloned().collect();
     retain_widget_revisions(
         &mut state.loaded.lock().unwrap(),
@@ -152,11 +150,11 @@ fn sync_widgets_inner(app: &AppHandle) -> Result<()> {
     Ok(())
 }
 
-fn enabled_widget_ids(store: &Store, board: &Board, archived: &HashSet<String>) -> Vec<String> {
+fn enabled_widget_ids(store: &Store, board: &Board) -> Vec<String> {
     board
         .widgets
         .keys()
-        .filter(|id| !archived.contains(*id) && store.load_meta(id).is_ok())
+        .filter(|id| store.load_meta(id).is_ok_and(|meta| meta.enabled))
         .cloned()
         .collect()
 }

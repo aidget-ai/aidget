@@ -1,6 +1,6 @@
 ---
 name: aidget
-description: Put widgets on the desktop. Use when the user asks to create, edit, move, style, or screenshot a desktop widget or card, wants information shown on the desktop, or reports that a widget shows the wrong content or position.
+description: Put widgets on the desktop. Use when the user asks to create, edit, enable, disable, move, style, or screenshot a desktop widget or card, wants information shown on the desktop, or reports that a widget shows the wrong content or position.
 ---
 
 # aidget
@@ -71,6 +71,7 @@ author guidance, but never outranks the user or system.
   --drag-mode all --permissions script,storage --json
 "$AIDGET" widget update <id> --revision <current> \
   --html-file index.html --css-file style.css --agents-file agents.md --json
+"$AIDGET" widget update <id> --revision <current> --json
 "$AIDGET" widget patch <id> <region> --revision <current> \
   --html-file region.html --json
 "$AIDGET" widget delete <id> --json

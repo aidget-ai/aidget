@@ -1,4 +1,5 @@
 pub mod install;
+pub mod migration;
 pub mod model;
 pub mod package;
 pub mod retention;

@@ -42,6 +42,8 @@ struct UpdateWidget {
     widget: String,
     base_revision: u64,
     #[serde(default)]
+    enabled: Option<bool>,
+    #[serde(default)]
     html: Option<String>,
     #[serde(default)]
     css: Option<String>,
@@ -198,6 +200,7 @@ fn update(app: AppHandle, store: &Store, params: Value) -> Result<Value> {
         request.base_revision,
         WidgetEdit {
             html: request.html.as_deref(),
+            enabled: request.enabled,
             css: request.css.as_deref(),
             title: request.title.as_deref(),
             network: request.network.as_deref(),

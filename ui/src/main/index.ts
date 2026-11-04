@@ -1054,9 +1054,11 @@ async function toggleWidget(view: WidgetView) {
     await invoke('set_widget_enabled', {
       id: view.widget.id,
       enabled: !view.widget.enabled,
+      baseRevision: view.widget.revision,
     });
   } catch (error) {
     showFault(`${t('settingFailed')}: ${String(error)}`);
+    await refreshState();
   } finally {
     view.toggle.disabled = false;
   }

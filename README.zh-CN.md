@@ -188,7 +188,7 @@ aidget community install @aidget-community/<id> --json
 ├── widgets/
 │   └── <id>/
 │       ├── package.json      # 可选 npm 包信息（用于发布到 NPM）
-│       ├── config.json       # 标题、平台/尺寸、权限、网络和 revision
+│       ├── config.json       # 小组件配置及状态
 │       ├── index.html        # 小组件结构
 │       ├── style.css         # 外观、尺寸和布局样式
 │       ├── agents.md         # 面向 Agent 的说明文档
@@ -204,7 +204,7 @@ aidget community install @aidget-community/<id> --json
 │   ├── screenshots/          # 小组件截图
 │   ├── storage/
 │   │   └── <id>.json         # 小组件持久化数据
-│   └── widgets.json          # 小组件归档状态
+│   └── migrations/           # 迁移完成标记
 ├── skills/
 │   └── aidget/
 │       └── SKILL.md          # 分发给 Agent 的 Skill

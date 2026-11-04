@@ -23,7 +23,7 @@ The default is the OS home directory's `.aidget` folder
 │   ├── previews/<id>.png
 │   ├── screenshots/
 │   ├── storage/<id>.json
-│   └── widgets.json
+│   └── migrations/          # completed host metadata migrations
 ├── skills/aidget/SKILL.md
 ├── trash/
 └── widgets/<id>/
@@ -35,9 +35,8 @@ The default is the OS home directory's `.aidget` folder
     └── assets/
 ```
 
-Some entries are created only when needed. Archived widgets stay in
-`widgets/<id>/` with their archive state in `state/widgets.json`; `trash/`
-holds deleted widgets retained for restoration.
+Some entries are created only when needed. `trash/` holds deleted widgets
+retained for restoration.
 
 Do not write these files directly. CLI and MCP writes maintain revisions and
 notify the resident UI. A direct file write can race the watcher.
@@ -48,6 +47,7 @@ notify the resident UI. A direct file write can race the watcher.
 - Aidget supports up to 50 widgets.
 - Widget position belongs to the user. Content writes never move a window.
 - Content writes use the widget revision as `baseRevision`.
+- Enabled-state changes share that revision, including changes from the main window.
 - `board move` uses the independent board revision.
 - A drag or resize bumps `boardRevision` without a tool call.
 - On a board conflict, `boardChangedByUser` means re-read the board rather than
@@ -76,10 +76,43 @@ notify the resident UI. A direct file write can race the watcher.
 - Every `network` entry must be an exact HTTPS origin such as
   `https://api.example.com`. Paths, queries, fragments, credentials, HTTP and
   wildcard hosts are invalid.
-- Installed copies additionally contain host-managed `revision` and
-  `updatedAt`; do not create those fields yourself.
+- Installed copies additionally contain host-managed `revision`, `updatedAt`
+  and `enabled`; do not put these fields in community packages.
 - Unused fields are ignored. Missing required fields and invalid current values
   are rejected; unused fields never grant permissions or supply missing values.
+
+## Enable and disable widgets
+
+Use `aidget_update` with optional `enabled: true|false`, or:
+
+```sh
+aidget widget update note --enabled false --revision 3 --json
+aidget widget update note --enabled true --revision 4 --json
+```
+
+Omitted `enabled` preserves the current state. Disabling closes the desktop
+window and retains files, frame and cached preview. Enabling reuses the frame,
+or creates a default frame with the configured size if missing. Patches and
+moves preserve enabled state.
+
+`list` and write acknowledgements include `enabled`; `get` returns `meta.enabled`.
+This is the persisted target state; native window reconciliation is asynchronous.
+Toggles preserve the frame and board revision unless a missing frame is created.
+Update acknowledgements always omit the frame.
+
+Setting only the current enabled value is a no-op after revision validation.
+An enabled-state change increments the widget revision once, even when combined
+with content changes.
+Stale requests fail even if the requested state matches; re-read before retrying.
+
+CLI updates work offline and take effect through the running GUI's watcher or
+at its next launch.
+MCP starts the GUI on demand. Enabled state and revision commit together; content
+files commit individually, so failed mixed updates may leave partial content changes.
+
+Stop older Aidget processes before upgrading a data directory. Startup backs up
+the old archive map to `state/migrations/enabled/widgets.json`; downgrading does
+not restore it.
 
 ## Regions
 

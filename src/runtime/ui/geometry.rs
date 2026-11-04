@@ -5,7 +5,6 @@ use tauri::{
 };
 
 use crate::common::error::Result;
-use crate::runtime::main_window_state;
 use crate::widgets::model::{DisplayInfo, WidgetFrame};
 use crate::widgets::store::Store;
 
@@ -256,7 +255,13 @@ pub fn place_new_widget(app: &AppHandle, store: &Store, id: &str) -> Result<()> 
     let meta = store.load_meta(id)?;
     let board = store.load_board()?;
     let initial = board.widgets.get(id).cloned();
-    let archived = main_window_state::archived_widgets(store.root(), &store.widget_ids()?)?;
+    let enabled: std::collections::HashSet<_> = store
+        .list()?
+        .widgets
+        .into_iter()
+        .filter(|widget| widget.enabled)
+        .map(|widget| widget.id)
+        .collect();
     let monitors = app.available_monitors()?;
     if monitors.is_empty() {
         return Err(crate::common::error::Error::Other(
@@ -301,7 +306,7 @@ pub fn place_new_widget(app: &AppHandle, store: &Store, id: &str) -> Result<()> 
         let occupied: Vec<_> = board
             .widgets
             .iter()
-            .filter(|(existing, _)| existing.as_str() != id && !archived.contains(*existing))
+            .filter(|(existing, _)| existing.as_str() != id && enabled.contains(*existing))
             .filter_map(|(_, frame)| frame_rect_on_display(frame, &displays, primary_index, index))
             .collect();
         areas.push(area);

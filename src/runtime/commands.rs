@@ -222,8 +222,9 @@ async fn set_widget_enabled(
     app: tauri::AppHandle,
     id: String,
     enabled: bool,
+    base_revision: u64,
 ) -> std::result::Result<(), String> {
-    ui::set_widget_enabled(&app, &id, enabled).map_err(|error| error.to_string())
+    ui::set_widget_enabled(&app, &id, enabled, base_revision).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

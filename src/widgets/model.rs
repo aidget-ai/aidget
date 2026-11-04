@@ -68,6 +68,8 @@ pub struct WidgetMeta {
     #[serde(flatten)]
     pub config: super::package::WidgetConfig,
     pub revision: u64,
+    /// Persisted desktop-window target state, independent of package configuration.
+    pub enabled: bool,
     pub updated_at: String,
 }
 impl std::ops::Deref for WidgetMeta {
@@ -87,6 +89,7 @@ impl WidgetMeta {
         Self {
             config: super::package::WidgetConfig::new(id, title),
             revision: 1,
+            enabled: true,
             updated_at: chrono::Local::now().to_rfc3339(),
         }
     }
@@ -197,6 +200,8 @@ pub struct WidgetSummary {
     pub id: String,
     pub title: String,
     pub revision: u64,
+    /// Whether the desktop window should be present.
+    pub enabled: bool,
     /// Configured region for initiating native window movement.
     pub drag_mode: WidgetDragMode,
     pub permissions: Vec<WidgetPermission>,
@@ -241,15 +246,16 @@ pub struct WidgetListing {
 pub struct WidgetAck {
     pub widget: String,
     pub revision: u64,
+    /// Persisted target state; native window reconciliation is asynchronous.
+    pub enabled: bool,
     pub title: String,
     /// Effective window drag policy after this write.
     pub drag_mode: WidgetDragMode,
     pub permissions: Vec<WidgetPermission>,
     pub network: Vec<String>,
     pub updated_at: String,
-    /// Present only when this call placed the window (`create`/`move`).
-    /// Content edits omit it: the user can drag widgets at any time, so a
-    /// frame observed around an edit is not a side effect of that edit.
+    /// Frame placed by `create`/`move`. Content and enabled-state edits omit it
+    /// so concurrent user drags are not attributed to those edits.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frame: Option<WidgetFrame>,
     /// Current board revision. User drags bump it too.

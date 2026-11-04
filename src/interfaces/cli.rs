@@ -124,6 +124,9 @@ pub struct CreateArgs {
 #[derive(Args)]
 pub struct UpdateArgs {
     pub widget: String,
+    /// Set the desktop window's target state; omitted keeps the current state.
+    #[arg(long, action = clap::ArgAction::Set)]
+    pub enabled: Option<bool>,
     #[arg(long)]
     pub html_file: Option<PathBuf>,
     #[arg(long)]
@@ -194,6 +197,7 @@ pub fn run(cli: Cli) -> Result<()> {
     let store = cli.store()?;
     store.ensure_layout()?;
     let store = store.canonicalized()?;
+    crate::widgets::migration::migrate_enabled(&store)?;
     if let Err(error) = crate::runtime::process::publish_cli(store.root()) {
         eprintln!("aidget: cannot publish the stable CLI entry: {error}");
     }
@@ -257,8 +261,8 @@ fn widget_command(store: &Store, command: WidgetCommand, json: bool) -> Result<(
                         .map(|f| format!("{:.0}x{:.0} @ {:.0},{:.0}", f.w, f.h, f.x, f.y))
                         .unwrap_or_else(|| "-".to_string());
                     println!(
-                        "{:<24} rev {:<4} {:<20} {}",
-                        widget.id, widget.revision, frame, widget.title
+                        "{:<24} rev {:<4} enabled={:<5} {:<20} {}",
+                        widget.id, widget.revision, widget.enabled, frame, widget.title
                     );
                 }
             }
@@ -271,9 +275,10 @@ fn widget_command(store: &Store, command: WidgetCommand, json: bool) -> Result<(
             } else {
                 println!("# {}", document.meta.title);
                 println!(
-                    "id={} revision={} scripts={} drag={} permissions={} frame={}",
+                    "id={} revision={} enabled={} scripts={} drag={} permissions={} frame={}",
                     document.meta.id,
                     document.meta.revision,
+                    document.meta.enabled,
                     document.meta.grants(WidgetPermission::Script),
                     serde_json::to_string(&document.meta.drag_mode)?,
                     serde_json::to_string(&document.meta.permissions)?,
@@ -341,6 +346,7 @@ fn widget_command(store: &Store, command: WidgetCommand, json: bool) -> Result<(
                 args.revision,
                 WidgetEdit {
                     html: html.as_deref(),
+                    enabled: args.enabled,
                     css: css.as_deref(),
                     title: args.title.as_deref(),
                     network: args.network.as_deref().map(parse_network_value).as_deref(),
@@ -352,7 +358,10 @@ fn widget_command(store: &Store, command: WidgetCommand, json: bool) -> Result<(
             if json {
                 print_json(&store.content_ack(&meta)?)?;
             } else {
-                println!("updated {} revision={}", meta.id, meta.revision);
+                println!(
+                    "updated {} revision={} enabled={}",
+                    meta.id, meta.revision, meta.enabled
+                );
             }
             Ok(())
         }

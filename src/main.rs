@@ -68,6 +68,7 @@ fn run(cli: Cli) -> Result<()> {
 fn run_ui(store: Store, show_main_window: bool, detach: bool) -> Result<()> {
     store.ensure_layout()?;
     let store = store.canonicalized()?;
+    aidget::widgets::migration::migrate_enabled(&store)?;
     if let Err(error) = aidget::runtime::process::publish_cli(store.root()) {
         eprintln!("aidget: cannot publish the stable CLI entry: {error}");
     }
@@ -217,6 +218,7 @@ fn reopen_running_app(client: &aidget::transport::client::Client) -> Result<()> 
 fn run_mcp(store: Store) -> Result<()> {
     store.ensure_layout()?;
     let store = store.canonicalized()?;
+    aidget::widgets::migration::migrate_enabled(&store)?;
     store.prune_retained()?;
     if let Err(error) = aidget::runtime::process::publish_cli(store.root()) {
         eprintln!("aidget: cannot publish the stable CLI entry: {error}");

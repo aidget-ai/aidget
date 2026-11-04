@@ -96,3 +96,11 @@ fn fitting_a_frame_keeps_cross_display_offsets() {
     assert_eq!(fitted.w, 900.0);
     assert_eq!(fitted.h, 120.0);
 }
+#[test]
+fn enabled_update_state_is_required_host_metadata() {
+    let meta = aidget::widgets::model::WidgetMeta::new("note", "Note");
+    let mut value = serde_json::to_value(meta).unwrap();
+    assert_eq!(value["enabled"], true);
+    value.as_object_mut().unwrap().remove("enabled");
+    assert!(serde_json::from_value::<aidget::widgets::model::WidgetMeta>(value).is_err());
+}

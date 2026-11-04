@@ -188,7 +188,7 @@ The default data root is `~/.aidget` (`C:\Users\<user>\.aidget` on Windows).
 ├── widgets/
 │   └── <id>/
 │       ├── package.json      # optional npm package metadata (for publishing to npm)
-│       ├── config.json       # title, platform/size, permissions, network and revision
+│       ├── config.json       # widget configuration and state
 │       ├── index.html        # widget structure
 │       ├── style.css         # appearance, size, and layout styles
 │       ├── agents.md         # guidance for future agents
@@ -204,7 +204,7 @@ The default data root is `~/.aidget` (`C:\Users\<user>\.aidget` on Windows).
 │   ├── screenshots/          # widget screenshots
 │   ├── storage/
 │   │   └── <id>.json         # persistent widget data
-│   └── widgets.json          # widget archive state
+│   └── migrations/           # migration completion marker
 ├── skills/
 │   └── aidget/
 │       └── SKILL.md          # the Skill distributed to agents

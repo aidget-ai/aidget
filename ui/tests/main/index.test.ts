@@ -161,6 +161,81 @@ describe('update row', () => {
 });
 
 describe('main window navigation', () => {
+  it('sends the displayed revision when setting widget enabled state', async () => {
+    const initial = state('local-widgets');
+    initial.widgets = [
+      {
+        id: 'clock',
+        title: 'Clock',
+        packageName: null,
+        revision: 7,
+        token: 'token',
+        width: 360,
+        height: 220,
+        enabled: true,
+        createdAt: 1,
+      },
+    ];
+    await loadMain(initial);
+    const toggle = await vi.waitFor(() => {
+      const value = document.querySelector<HTMLButtonElement>('[data-widget="clock"] .switch');
+      expect(value).toBeTruthy();
+      return value!;
+    });
+    toggle.click();
+    await vi.waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith('set_widget_enabled', {
+        id: 'clock',
+        enabled: false,
+        baseRevision: 7,
+      }),
+    );
+  });
+
+  it('refreshes state after a rejected toggle without retrying the write', async () => {
+    const initial = state('local-widgets');
+    initial.widgets = [
+      {
+        id: 'clock',
+        title: 'Clock',
+        packageName: null,
+        revision: 7,
+        token: 'token',
+        width: 360,
+        height: 220,
+        enabled: true,
+        createdAt: 1,
+      },
+    ];
+    await loadMain(initial);
+    const toggle = await vi.waitFor(() => {
+      const value = document.querySelector<HTMLButtonElement>('[data-widget="clock"] .switch');
+      expect(value).toBeTruthy();
+      return value!;
+    });
+    const refreshed = structuredClone(initial);
+    refreshed.widgets[0].revision = 8;
+    refreshed.widgets[0].enabled = false;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === 'set_widget_enabled') {
+        return Promise.reject('revision conflict');
+      }
+      if (command === 'main_state') {
+        return Promise.resolve(refreshed);
+      }
+      return Promise.resolve(null);
+    });
+    toggle.click();
+    await vi.waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+    const fault = document.querySelector<HTMLElement>('[data-fault]')!;
+    expect(fault.hidden).toBe(false);
+    expect(fault.textContent).toContain('revision conflict');
+    expect(mocks.invoke.mock.calls.filter(([name]) => name === 'set_widget_enabled')).toHaveLength(
+      1,
+    );
+    expect(toggle.disabled).toBe(false);
+  });
+
   it('places the archive action before the enabled switch on widget cards', async () => {
     const initial = state('local-widgets');
     initial.widgets = [
