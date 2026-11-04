@@ -200,7 +200,7 @@ describe('update actions', () => {
     expect(mocks.invoke).toHaveBeenCalledTimes(2);
   });
 
-  it('opens localized release notes without rendering them inline', async () => {
+  it('shows the upgrade range for a single release without rendering notes inline', async () => {
     const page = mount();
     await page.refresh();
     const notesRow = document.querySelector<HTMLElement>('[data-update-notes-row]')!;
@@ -208,13 +208,14 @@ describe('update actions', () => {
 
     mocks.handlers.get('aidget://update')!({
       payload: snapshot('found', {
-        latest: '0.1.3',
+        current: '0.1.3',
+        latest: '0.1.4',
         notes: {
-          from: '0.1.0',
-          to: '0.1.3',
+          from: '0.1.3',
+          to: '0.1.4',
           releases: [
             {
-              version: '0.1.3',
+              version: '0.1.4',
               body: '## Improvements\n\n- Fixes the updater.',
             },
           ],
@@ -228,11 +229,36 @@ describe('update actions', () => {
     open.click();
     const dialog = document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!;
     expect(dialog.open).toBe(true);
-    expect(dialog.querySelector('h2')?.textContent).toBe('v0.1.3 release notes');
-    expect(dialog.querySelector('[data-update-notes-range]')).toBeNull();
+    expect(dialog.querySelector('h2')?.textContent).toBe('v0.1.4 release notes');
+    expect(dialog.querySelector('[data-update-notes-range]')?.textContent).toBe('v0.1.3 → v0.1.4');
     expect(dialog.textContent).toContain('Fixes the updater.');
     expect(dialog.querySelector('.release-version')).toBeNull();
   });
+
+  it.each(['0.1.4', 'v0.1.4'])(
+    'omits the range when %s is also the target version',
+    async (from) => {
+      const page = mount();
+      await page.refresh();
+      mocks.handlers.get('aidget://update')!({
+        payload: snapshot('latest', {
+          current: '0.1.4',
+          latest: '0.1.4',
+          notes: {
+            from,
+            to: '0.1.4',
+            releases: [{ version: '0.1.4', body: '## Improvements\n\n- Latest change.' }],
+          },
+        }),
+      });
+
+      document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.click();
+      const dialog = document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!;
+      expect(dialog.querySelector('h2')?.textContent).toBe('v0.1.4 release notes');
+      expect(dialog.querySelector('[data-update-notes-range]')).toBeNull();
+      expect(dialog.querySelector('.release-version')).toBeNull();
+    },
+  );
 
   it('keeps the range and source versions when notes span multiple releases', async () => {
     const page = mount();
@@ -301,7 +327,7 @@ describe('update actions', () => {
     document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.click();
     const dialog = document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!;
     expect(dialog.querySelector('h2')?.textContent).toBe('v0.2.0 更新内容');
-    expect(dialog.querySelector('[data-update-notes-range]')).toBeNull();
+    expect(dialog.querySelector('[data-update-notes-range]')?.textContent).toBe('v0.1.0 → v0.2.0');
     expect(dialog.querySelector('.release-version')).toBeNull();
     expect(dialog.textContent).toContain('中文更新。');
     expect(dialog.textContent).not.toContain('English change.');

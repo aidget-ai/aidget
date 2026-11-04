@@ -1124,6 +1124,7 @@ body[data-platform='windows'] .navigation {
 .community-dialog-header.update-notes-header {
   display: grid;
   gap: 4px;
+  padding-block-start: 32px;
 }
 .update-notes-range {
   margin: 0;

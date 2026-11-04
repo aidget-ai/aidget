@@ -173,7 +173,8 @@ export function createUpdatePage(
     const heading = document.createElement('div');
     heading.className = 'community-dialog-header update-notes-header';
     heading.append(title);
-    if (current.releases.length > 1) {
+    // A single release can still cover an installed-to-target upgrade.
+    if (versionValue(current.from) !== versionValue(current.to)) {
       const range = document.createElement('p');
       range.className = 'update-notes-range';
       range.dataset.updateNotesRange = '';
