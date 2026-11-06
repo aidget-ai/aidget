@@ -83,8 +83,11 @@ fn persist_window_position(
 }
 
 #[tauri::command]
-fn begin_widget_drag(app: tauri::AppHandle) {
-    ui::begin_drag(&app);
+fn begin_widget_drag(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+) -> std::result::Result<(), String> {
+    ui::begin_drag(&app, &window).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -107,8 +110,10 @@ async fn start_widget_drag(
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = app;
-        window.start_dragging().map_err(|error| error.to_string())
+        window.start_dragging().map_err(|error| error.to_string())?;
+        ui::wait_for_drag_release(&app)
+            .await
+            .map_err(|error| error.to_string())
     }
 }
 

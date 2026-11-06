@@ -1,5 +1,4 @@
 //! Widget drag state and position persistence.
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager, WebviewWindow};
@@ -12,11 +11,10 @@ use super::geometry::{
 };
 use super::main_window::emit_main;
 use super::relocation::DisplayNames;
-use super::state::UiState;
+use super::state::{DragGesture, UiState};
 
 /// Whether a move changes the stored frame. A window still at its frame has not
-/// moved, which also covers a click on the drag handle of a widget whose display
-/// is gone. Such a display's windows are evacuated by the system; saving that
+/// moved. The system evacuates the windows of a display that is gone; saving that
 /// would lose the frame that brings them back, so only a drag may replace it.
 pub fn records_move(
     stored_display: &str,
@@ -28,11 +26,13 @@ pub fn records_move(
 }
 
 /// Persist the calling widget window's current frame when it has changed. Moves
-/// also arrive here from the system, which `records_move` tells apart.
+/// also arrive here from the system, which never count as the user's. A window
+/// being dragged waits for `end_drag`, which knows where the drag began.
 pub fn persist_position(app: &AppHandle, window: &WebviewWindow) -> Result<()> {
-    let state = app.state::<UiState>();
-    let user_drag = dragging_active(&state) || native_drag_running(&state);
-    persist(app, window, user_drag)
+    if gesture_owns(&app.state::<UiState>(), window.label()) {
+        return Ok(());
+    }
+    persist(app, window, false)
 }
 
 fn persist(app: &AppHandle, window: &WebviewWindow, user_drag: bool) -> Result<()> {
@@ -98,18 +98,49 @@ fn persist(app: &AppHandle, window: &WebviewWindow, user_drag: bool) -> Result<(
     Ok(())
 }
 
-/// Mark the start of a native widget drag.
-pub fn begin_drag(app: &AppHandle) {
-    let state = app.state::<UiState>();
-    let now = Some(Instant::now());
-    *state.dragging.lock().unwrap() = now;
-    *state.drag_started.lock().unwrap() = now;
+/// Mark the start of a native drag of `window`.
+pub fn begin_drag(app: &AppHandle, window: &WebviewWindow) -> Result<()> {
+    let position = window.outer_position()?;
+    start_gesture(
+        &app.state::<UiState>(),
+        window.label(),
+        (position.x, position.y),
+    );
+    Ok(())
 }
 
-/// Finish a native widget drag and persist its final position.
+/// Remember that `window`, labeled as in `DragGesture`, began a drag at `origin`.
+pub fn start_gesture(state: &UiState, window: &str, origin: (i32, i32)) {
+    *state.dragging.lock().unwrap() = Some(DragGesture {
+        window: window.to_string(),
+        started: Instant::now(),
+        origin,
+    });
+}
+
+/// Finish a native drag and persist where it landed, if it moved the window.
 pub fn end_drag(app: &AppHandle, window: &WebviewWindow) -> Result<()> {
-    *app.state::<UiState>().dragging.lock().unwrap() = None;
-    persist(app, window, true)
+    let position = window.outer_position()?;
+    let state = app.state::<UiState>();
+    if finish_gesture(&state, window.label(), (position.x, position.y)) {
+        persist(app, window, true)
+    } else {
+        Ok(())
+    }
+}
+
+/// End `window`'s drag and report whether it left where the drag began. The stored
+/// frame cannot answer that: the system may hold the window at a spot no frame
+/// describes, where a click is still not a move. Another window's end finishes nothing.
+pub fn finish_gesture(state: &UiState, window: &str, position: (i32, i32)) -> bool {
+    let gesture = state
+        .dragging
+        .lock()
+        .unwrap()
+        .take_if(|gesture| gesture.window == window);
+    gesture.is_some_and(|gesture| {
+        (position.0 - gesture.origin.0).abs() > 1 || (position.1 - gesture.origin.1).abs() > 1
+    })
 }
 
 /// Push or pop the native grabbing cursor around a macOS window drag.
@@ -125,19 +156,51 @@ pub fn set_dragging_cursor(app: &AppHandle, grabbing: bool) -> Result<()> {
 }
 
 /// Wait until the user releases the mouse button that started a native drag.
-#[cfg(target_os = "macos")]
+/// `start_dragging` returns before the drop, so this is how a drag learns its end.
 pub async fn wait_for_drag_release(app: &AppHandle) -> Result<()> {
-    loop {
-        let pressed =
-            run_on_main_thread(app, || objc2_app_kit::NSEvent::pressedMouseButtons() != 0)?;
-        if !pressed {
-            return Ok(());
-        }
+    while mouse_pressed(app)? {
         tokio::time::sleep(Duration::from_millis(8)).await;
     }
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
+fn mouse_pressed(app: &AppHandle) -> Result<bool> {
+    run_on_main_thread(app, || objc2_app_kit::NSEvent::pressedMouseButtons() != 0)
+}
+
+#[cfg(windows)]
+fn mouse_pressed(_app: &AppHandle) -> Result<bool> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+
+    // The sign bit reports a button held now. Either counts: the user can swap them.
+    Ok([VK_LBUTTON, VK_RBUTTON]
+        .into_iter()
+        .any(|button| unsafe { GetAsyncKeyState(i32::from(button.0)) } < 0))
+}
+
+/// The compositor runs a Wayland drag and reports no buttons, so nothing is held there.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn mouse_pressed(app: &AppHandle) -> Result<bool> {
+    use gdk::prelude::*;
+
+    run_on_main_thread(app, || {
+        let Some(display) = gdk::Display::default() else {
+            return false;
+        };
+        if display.backend().is_wayland() {
+            return false;
+        }
+        let pointer = display.default_seat().and_then(|seat| seat.pointer());
+        let root = display.default_screen().root_window();
+        pointer.zip(root).is_some_and(|(pointer, root)| {
+            let (_, _, _, mask) = root.device_position(&pointer);
+            mask.intersects(gdk::ModifierType::BUTTON1_MASK | gdk::ModifierType::BUTTON3_MASK)
+        })
+    })
+}
+
+#[cfg(not(windows))]
 fn run_on_main_thread<T: Send + 'static>(
     app: &AppHandle,
     task: impl FnOnce() -> T + Send + 'static,
@@ -154,21 +217,24 @@ fn run_on_main_thread<T: Send + 'static>(
 /// A drag event can be lost when the drag ends over another app. Expire the
 /// freeze so geometry never stays locked.
 pub(super) fn dragging_active(state: &UiState) -> bool {
-    unexpired(&state.dragging)
-}
-
-/// Whether a move may belong to a native drag that outlived `end_drag`. Only macOS
-/// waits for the mouse release; elsewhere `start_dragging` returns at once.
-///
-/// shortcut: every move for 30s after a drag begins counts as the user's, and a stop
-/// on the way records that display; read the mouse button as macOS does if that bites.
-pub fn native_drag_running(state: &UiState) -> bool {
-    cfg!(not(target_os = "macos")) && unexpired(&state.drag_started)
-}
-
-fn unexpired(started: &Mutex<Option<Instant>>) -> bool {
-    started
+    state
+        .dragging
         .lock()
         .unwrap()
-        .is_some_and(|started| started.elapsed() < Duration::from_secs(30))
+        .as_ref()
+        .is_some_and(unexpired)
+}
+
+/// Whether a running drag belongs to `window`. A drag says nothing about others.
+pub fn gesture_owns(state: &UiState, window: &str) -> bool {
+    state
+        .dragging
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|gesture| gesture.window == window && unexpired(gesture))
+}
+
+fn unexpired(gesture: &DragGesture) -> bool {
+    gesture.started.elapsed() < Duration::from_secs(30)
 }

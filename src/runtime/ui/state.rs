@@ -11,6 +11,16 @@ use crate::runtime::main_startup::MainStartup;
 /// Window label reserved for the main application page.
 pub const MAIN_LABEL: &str = "main";
 
+/// A native drag of one widget window, from the press until the release.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DragGesture {
+    /// Label of the dragged window; moves of other windows are not part of it.
+    pub window: String,
+    pub started: Instant,
+    /// Where the window really was at the press.
+    pub origin: (i32, i32),
+}
+
 /// Runtime state shared by every Tauri window and UI command.
 #[derive(Default)]
 pub struct UiState {
@@ -22,9 +32,7 @@ pub struct UiState {
     /// Last revision whose iframe called `window.aidget.ready()`.
     pub ready: Mutex<HashMap<String, u64>>,
     pub applying: Mutex<bool>,
-    pub dragging: Mutex<Option<Instant>>,
-    /// When the latest drag began, which `dragging` forgets at `end_drag`.
-    pub drag_started: Mutex<Option<Instant>>,
+    pub dragging: Mutex<Option<DragGesture>>,
     pub topology: Mutex<String>,
     pub board_revision: Mutex<u64>,
     pub root: Mutex<std::path::PathBuf>,
