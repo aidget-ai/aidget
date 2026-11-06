@@ -146,14 +146,14 @@ A release is complete only when the workflow has published all of these assets:
 - `aidget-linux-amd64.rpm`
 - `SHA256SUMS`
 
-DeepSeek's `deepseek-flash` model generates the English notes from commit
-subjects since the latest published stable release. When there is no stable
+DeepSeek's `deepseek-flash` model generates the English and Simplified Chinese
+notes together in one call from a Markdown list containing each commit subject
+and body since the latest published stable release. When there is no stable
 release, it uses the full history, including the root commit. Failed tags do not
-set the changelog boundary.
-A second DeepSeek call adds a Simplified Chinese translation below
+set the changelog boundary. The two language sections are separated by exactly
 `<!-- lang:zh -->`. Fixed unsigned installation instructions and contributor
-thanks are appended to each language after generation and translation. Contributors
-come from the same commit range: authors, coauthors, explicit reporter credits and
+thanks are appended to each language after generation. Contributors come from
+the same commit range: authors, coauthors, explicit reporter credits and
 referenced issue/PR authors. Maintainer `micooz`, bots and coding agents are
 excluded; only public names are shown, without hyperlinks. GitHub lookup
 failures abort publication rather than silently dropping names. The notes step
@@ -163,7 +163,12 @@ The English section uses only these level-2 category headings, in this order:
 `## Features`, `## Improvements`, and `## Bug Fixes`. The Simplified Chinese
 section maps them to exactly `## 新功能`, `## 改进`, and `## 错误修复`. A category
 with no changes is omitted. There is no document title, `Changelog` wrapper, or
-other heading level.
+other heading level. An internal-only release begins with
+`<!-- aidget:internal-only -->` and uses the fixed bilingual maintenance message
+`This release contains internal maintenance only; app features and behavior remain unchanged.`
+and `本次更新仅内部维护，应用功能和使用方式保持不变。` Installation instructions
+and thanks are appended as usual. The marker keeps maintenance versions in range
+selection while collapsing their display to one status.
 
 Assets use `aidget-<platform>-<arch>.<ext>`: `darwin/windows/linux`, `arm64/amd64`.
 The macOS ZIP retains its `.app` directory. Names no longer include versions;

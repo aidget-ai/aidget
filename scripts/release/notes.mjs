@@ -7,6 +7,18 @@ import { installationNotes } from './install-notes.mjs';
 import { parseTag } from './version.mjs';
 
 export const CHINESE_MARKER = '<!-- lang:zh -->';
+export const INTERNAL_ONLY_MARKER = '<!-- aidget:internal-only -->';
+const COMMIT_LOG_FORMAT = '--pretty=format:### %h%n**Subject:** %s%n%n%b';
+const CATEGORY_PAIRS = [
+  ['Features', '新功能'],
+  ['Improvements', '改进'],
+  ['Bug Fixes', '错误修复'],
+];
+const MAINTENANCE_ONLY_MESSAGES = {
+  english:
+    'This release contains internal maintenance only; app features and behavior remain unchanged.',
+  chinese: '本次更新仅内部维护，应用功能和使用方式保持不变。',
+};
 
 function required(value, name) {
   if (!value) {
@@ -62,8 +74,58 @@ export function composeNotes(english, chinese, people = []) {
   );
 }
 
-/** Generate English notes since the last published stable tag, or from all history. */
-export async function generateEnglishChangelog({
+function categoryHeadings(markdown, labels) {
+  const headings = [...markdown.matchAll(/^## (.+)$/gm)].map((match) => match[1].trim());
+  const expected = labels.filter((label) => headings.includes(label));
+  if (
+    headings.length === 0 ||
+    headings.length !== expected.length ||
+    headings.some((heading, index) => heading !== expected[index])
+  ) {
+    throw new Error(
+      `release notes must use only these level-2 headings in order: ${labels.join(', ')}`,
+    );
+  }
+  return headings;
+}
+
+/** Split and validate the bilingual Markdown returned by one DeepSeek call. */
+export function splitBilingualNotes(markdown) {
+  const sections = required(markdown.trim(), 'DeepSeek bilingual changelog').split(CHINESE_MARKER);
+  if (sections.length !== 2) {
+    throw new Error(`DeepSeek changelog must contain exactly one ${CHINESE_MARKER} separator`);
+  }
+  const [english, chinese] = sections.map((section) =>
+    required(section.trim(), 'changelog section'),
+  );
+  if (
+    english === `${INTERNAL_ONLY_MARKER}\n\n${MAINTENANCE_ONLY_MESSAGES.english}` &&
+    chinese === MAINTENANCE_ONLY_MESSAGES.chinese
+  ) {
+    return [english, chinese];
+  }
+  const englishHeadings = categoryHeadings(
+    english,
+    CATEGORY_PAIRS.map(([english]) => english),
+  );
+  const chineseHeadings = categoryHeadings(
+    chinese,
+    CATEGORY_PAIRS.map(([, chinese]) => chinese),
+  );
+  const expectedChinese = englishHeadings.map(
+    (heading) => CATEGORY_PAIRS.find(([english]) => english === heading)[1],
+  );
+  if (
+    chineseHeadings.length !== expectedChinese.length ||
+    chineseHeadings.some((heading, index) => heading !== expectedChinese[index])
+  ) {
+    throw new Error('English and Chinese changelog categories must correspond');
+  }
+  return [english, chinese];
+}
+
+/** Generate bilingual notes since the last published stable tag, or from all history. */
+export async function generateBilingualChangelog({
   tag,
   previousTag = '',
   apiKey,
@@ -80,35 +142,61 @@ export async function generateEnglishChangelog({
   // Failed and unpublished tags must not truncate the first release's history.
   const range = previousTag ? `${previousTag}..${tag}` : tag;
   const commits = required(
-    (await git(['log', range, '--pretty=format:%s', '--no-merges'])).trim(),
+    (await git(['log', range, COMMIT_LOG_FORMAT, '--no-merges'])).trim(),
     'release commit list',
   );
-  const prompt = `Based on the following git commit messages, generate a concise and user-friendly changelog in markdown format. Start directly with the category sections. Use only these category headings, in this order and with this exact text:
+  const prompt = `Generate English and Simplified Chinese release notes together from the Git commits below.
+
+Use only facts explicitly present in each commit subject or body. Do not invent behavior, scope, impact, or benefits. The commit type is a hint, but the user-visible impact decides the category. Both languages must describe exactly the same changes, one bullet for one bullet, with no additions, omissions, merges, or reclassification between languages.
+
+Write the English section first. Use only these level-2 headings, in this order and only when non-empty:
 ## Features
 ## Improvements
 ## Bug Fixes
-Omit a category entirely when it has no changes. Do not create any other category. Use exactly \`##\` (level 2) for every category heading. Do not add a document title, a \`# Changelog\` or \`## Changelog\` heading, and do not use \`#\` or \`###\` headings anywhere. Only include meaningful changes, skip trivial commits. Use clear, non-technical language where possible. Output ONLY the changelog content without any preamble. Do not add installation instructions or contributor acknowledgments; these are appended separately.
 
-Commit messages:
-${commits}`;
-  return deepSeekText(prompt, apiKey, fetchImpl, 'changelog');
-}
+After the complete English section, output this exact separator exactly once on its own line:
+${CHINESE_MARKER}
 
-/** Translates generated English notes into Simplified Chinese. */
-export async function translateToChinese(english, apiKey, fetchImpl = fetch) {
-  required(apiKey, 'DEEPSEEK_API_KEY');
-
-  const prompt = `Translate the following release notes into Simplified Chinese. Keep the markdown structure, links, code spans and product names (aidget, Codex, Claude Code, ...) as they are. Translate category headings to exactly:
+Then write the Simplified Chinese section with exactly these corresponding level-2 headings, in the same order and only when non-empty:
 ## 新功能
 ## 改进
 ## 错误修复
-Use only these category headings, in this order. Omit a category entirely when the source has no corresponding category, and do not create or translate any other category heading. Output ONLY the translation without any preamble.
 
-${english}`;
-  return deepSeekText(prompt, apiKey, fetchImpl, 'translation');
+In the Chinese section, preserve links, code spans, product names, and technical identifiers.
+
+Classify entries as follows:
+- Features: newly added user-facing capabilities or workflows.
+- Improvements: enhancements to existing behavior, usability, performance, reliability, or public documentation.
+- Bug Fixes: incorrect behavior that was corrected.
+
+Omit a section entirely when it has no changes. Do not create any other section or heading. Each bullet must describe a concrete user-visible change. Prefer the commit body when the subject is broad. Avoid vague statements such as "improved the workflow", "refined the update process", or "updated documentation" unless the bullet also states what changed. Do not copy a vague subject verbatim.
+
+Merge related commits into one bullet. Omit repository-only, build-only, test-only, CI-only, and internal agent or contributor configuration changes. Do not mention commit hashes, file paths, implementation details, or tests.
+
+If every commit is internal-only and no user-visible change remains, output exactly:
+${INTERNAL_ONLY_MARKER}
+
+${MAINTENANCE_ONLY_MESSAGES.english}
+
+${CHINESE_MARKER}
+
+${MAINTENANCE_ONLY_MESSAGES.chinese}
+
+Output only the two Markdown language sections and the exact separator. Do not add a title, preamble, code fence, English-language marker, installation instructions, acknowledgments, or any other text.
+
+# Release context
+
+- Release: ${tag}
+- Previous stable release: ${previousTag || 'none'}
+- Commit range: ${range}
+
+# Commits
+
+${commits}`;
+  return deepSeekText(prompt, apiKey, fetchImpl, 'bilingual changelog');
 }
 
-/** Generate and translate the changelog, then append fixed installation notes and credits. */
+/** Generate both changelog languages, then append fixed installation notes and credits. */
 export async function generateBilingualNotes({
   tag,
   previousTag = '',
@@ -129,14 +217,14 @@ export async function generateBilingualNotes({
     repository,
     runGit: git,
   });
-  const english = await generateEnglishChangelog({
+  const bilingual = await generateBilingualChangelog({
     tag,
     previousTag,
     apiKey,
     fetchImpl,
     runGit: git,
   });
-  const chinese = await translateToChinese(english, apiKey, fetchImpl);
+  const [english, chinese] = splitBilingualNotes(bilingual);
   return composeNotes(english, chinese, people);
 }
 
