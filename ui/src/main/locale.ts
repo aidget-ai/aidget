@@ -116,6 +116,8 @@ const messages = {
     updateFailed: 'Update failed',
     updateNotes: 'Release notes',
     devUpdateNotesDescription: 'Development builds show only the latest 5 stable release notes.',
+    maintenanceOnlyNotice:
+      'This release contains internal maintenance only; app features and behavior remain unchanged.',
     noUpdateNotes: 'No release notes available',
     updateNotesTitle: 'v{version} release notes',
     otherChanges: 'Other changes',
@@ -272,6 +274,7 @@ const messages = {
     updateFailed: '更新失败',
     updateNotes: '更新内容',
     devUpdateNotesDescription: '开发版只展示近 5 个稳定版本更新内容',
+    maintenanceOnlyNotice: '本次更新仅内部维护，应用功能和使用方式保持不变。',
     noUpdateNotes: '暂无更新内容',
     updateNotesTitle: 'v{version} 更新内容',
     otherChanges: '其他更新',

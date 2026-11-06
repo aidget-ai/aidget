@@ -122,6 +122,7 @@ export function createUpdatePage(
       currentLocale === renderedNotesLocale &&
       current.from === previous.from &&
       current.to === previous.to &&
+      current.maintenanceOnly === previous.maintenanceOnly &&
       current.releases.length === previous.releases.length &&
       current.releases.every(
         (release, index) =>
@@ -136,7 +137,14 @@ export function createUpdatePage(
     title.textContent = t('updateNotesTitle').replace('{version}', current.to.replace(/^v/, ''));
     const content = document.createElement('div');
     content.className = 'community-dialog-content release-notes-content';
-    renderReleaseNotes(content, current, locale(), t('otherChanges'), openExternal);
+    if (current.maintenanceOnly) {
+      const notice = document.createElement('p');
+      notice.className = 'release-notes-maintenance';
+      notice.textContent = t('maintenanceOnlyNotice');
+      content.append(notice);
+    } else {
+      renderReleaseNotes(content, current, locale(), t('otherChanges'), openExternal);
+    }
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'community-dialog-close';
@@ -175,7 +183,8 @@ export function createUpdatePage(
       return;
     }
     if (
-      current.notes?.releases.length &&
+      current.notes &&
+      (current.notes.maintenanceOnly || current.notes.releases.length) &&
       !notesRefreshRequired &&
       (!current.isDebugBuild || debugNotesLoaded)
     ) {
@@ -201,7 +210,7 @@ export function createUpdatePage(
         onFault(next.error ?? t('updateFailed'));
         return;
       }
-      if (!next.notes?.releases.length) {
+      if (!next.notes || (!next.notes.maintenanceOnly && !next.notes.releases.length)) {
         notesRefreshRequired = true;
         return;
       }
@@ -302,7 +311,9 @@ export function createUpdatePage(
       : t(stateMessages[current.state]);
 
     notesOpen.textContent = t('open');
-    const hasNotes = Boolean(current.notes?.releases.length);
+    const hasNotes = Boolean(
+      current.notes && (current.notes.maintenanceOnly || current.notes.releases.length),
+    );
     const notesUnavailable =
       current.isDebugBuild &&
       notesRefreshRequired &&

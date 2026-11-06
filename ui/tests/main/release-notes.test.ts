@@ -70,6 +70,8 @@ describe('release-note rendering', () => {
       {
         from: '1.0.0',
         to: '1.1.0',
+        maintenanceVersions: [],
+        maintenanceOnly: false,
         releases: [
           {
             version: '1.1.0',
@@ -104,6 +106,8 @@ describe('release-note rendering', () => {
     const notes: UpdateNotes = {
       from: 'v1.0.0',
       to: 'v1.2.0',
+      maintenanceVersions: [],
+      maintenanceOnly: false,
       releases: [
         {
           version: '1.2.0',
@@ -172,6 +176,8 @@ describe('release-note rendering', () => {
       {
         from: '1.0.0',
         to: '1.1.0',
+        maintenanceVersions: [],
+        maintenanceOnly: false,
         releases: [
           {
             version: '1.1.0',
@@ -218,6 +224,8 @@ describe('release-note rendering', () => {
       {
         from: '1.0.0',
         to: '1.1.0',
+        maintenanceVersions: [],
+        maintenanceOnly: false,
         releases: [
           {
             version: '1.1.0',

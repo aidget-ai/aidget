@@ -17,6 +17,8 @@ fn the_snapshot_serializes_to_the_field_names_the_main_window_reads() {
                 version: "0.2.0".to_string(),
                 body: "notes".to_string(),
             }],
+            maintenance_versions: Vec::new(),
+            maintenance_only: false,
         })),
         staged: true,
     })
@@ -26,6 +28,8 @@ fn the_snapshot_serializes_to_the_field_names_the_main_window_reads() {
     assert_eq!(value["isDebugBuild"], false);
     assert_eq!(value["latest"], "0.2.0");
     assert_eq!(value["notes"]["from"], "0.1.0");
+    assert_eq!(value["notes"]["maintenanceVersions"], serde_json::json!([]));
+    assert_eq!(value["notes"]["maintenanceOnly"], false);
     assert_eq!(value["notes"]["releases"][0]["body"], "notes");
     assert_eq!(value["staged"], true);
 }

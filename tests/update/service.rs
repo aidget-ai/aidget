@@ -189,6 +189,149 @@ fn a_debug_build_loads_the_five_newest_stable_release_notes() {
 }
 
 #[test]
+fn multiple_internal_releases_collapse_into_one_maintenance_note() {
+    let maintenance = concat!(
+        "<!-- aidget:internal-only -->\n\n",
+        "This release contains internal maintenance only; app features and behavior remain unchanged.\n\n",
+        "<!-- lang:zh -->\n\n",
+        "本次更新仅内部维护，应用功能和使用方式保持不变。"
+    );
+    let body = release_list(&[
+        ("v3.0.0", maintenance, false, false),
+        ("v2.0.0", maintenance, false, false),
+    ]);
+    let base = super::serve_once(200, &body);
+    let service = UpdateService::for_build(&base, "owner/repo", "1.0.0");
+
+    let snapshot = block_on(service.check(None));
+    let notes = snapshot.notes.expect("maintenance notes");
+
+    assert_eq!((notes.from.as_str(), notes.to.as_str()), ("1.0.0", "3.0.0"));
+    assert!(notes.maintenance_only);
+    assert!(notes.releases.is_empty());
+    assert_eq!(notes.maintenance_versions, ["3.0.0", "2.0.0"]);
+}
+
+#[test]
+fn mixed_internal_and_user_visible_releases_keep_only_user_visible_notes() {
+    let maintenance = concat!(
+        "<!-- aidget:internal-only -->\n\n",
+        "This release contains internal maintenance only; app features and behavior remain unchanged."
+    );
+    let body = release_list(&[
+        ("v3.0.0", maintenance, false, false),
+        ("v2.0.0", "## Features\n\n- Visible change.", false, false),
+    ]);
+    let base = super::serve_once(200, &body);
+    let service = UpdateService::for_build(&base, "owner/repo", "1.0.0");
+
+    let snapshot = block_on(service.check(None));
+    let notes = snapshot.notes.expect("visible release notes");
+
+    assert!(!notes.maintenance_only);
+    assert_eq!(notes.releases.len(), 1);
+    assert_eq!(notes.releases[0].version, "2.0.0");
+    assert_eq!(notes.releases[0].body, "## Features\n\n- Visible change.");
+    assert_eq!(notes.maintenance_versions, ["3.0.0"]);
+}
+
+#[test]
+fn a_new_internal_release_keeps_its_maintenance_note_without_a_retained_range() {
+    let maintenance = concat!(
+        "<!-- aidget:internal-only -->\n\n",
+        "This release contains internal maintenance only; app features and behavior remain unchanged."
+    );
+    let body = release_list(&[
+        ("v3.0.0", maintenance, false, false),
+        (
+            "v2.0.0",
+            "## Features\n\n- Previous visible change.",
+            false,
+            false,
+        ),
+    ]);
+    let base = super::serve_once(200, &body);
+    let service = UpdateService::for_build(&base, "owner/repo", "3.0.0");
+
+    let snapshot = block_on(service.check(None));
+    let notes = snapshot.notes.expect("current maintenance note");
+
+    assert_eq!(snapshot.state, UpdateState::Latest);
+    assert_eq!((notes.from.as_str(), notes.to.as_str()), ("2.0.0", "3.0.0"));
+    assert!(notes.maintenance_only);
+    assert!(notes.releases.is_empty());
+    assert_eq!(notes.maintenance_versions, ["3.0.0"]);
+}
+
+#[test]
+fn cache_restore_recomputes_maintenance_after_installing_a_middle_version() {
+    let directory = tempfile::tempdir().unwrap();
+    let cache = directory.path().join("update/releases.json");
+    let maintenance = concat!(
+        "<!-- aidget:internal-only -->\n\n",
+        "This release contains internal maintenance only; app features and behavior remain unchanged."
+    );
+    let body = release_list(&[
+        ("v3.0.0", maintenance, false, false),
+        ("v2.0.0", "## Features\n\n- Visible change.", false, false),
+    ]);
+    let first_base = super::serve_once(200, &body);
+    let first =
+        UpdateService::for_build_with_cache(&first_base, "owner/repo", "1.0.0", &cache).unwrap();
+    let found = block_on(first.check(None));
+    assert_eq!(
+        found.notes.as_deref().map(|notes| notes.releases.len()),
+        Some(1)
+    );
+    drop(first);
+
+    let restored =
+        UpdateService::for_build_with_cache("unused", "owner/repo", "2.0.0", &cache).unwrap();
+    let notes = restored
+        .snapshot()
+        .notes
+        .expect("remaining maintenance range");
+
+    assert_eq!((notes.from.as_str(), notes.to.as_str()), ("2.0.0", "3.0.0"));
+    assert!(notes.maintenance_only);
+    assert!(notes.releases.is_empty());
+    assert_eq!(notes.maintenance_versions, ["3.0.0"]);
+}
+
+#[test]
+fn an_internal_only_range_survives_cache_restart() {
+    let directory = tempfile::tempdir().unwrap();
+    let cache = directory.path().join("update/releases.json");
+    let maintenance = concat!(
+        "<!-- aidget:internal-only -->\n\n",
+        "This release contains internal maintenance only; app features and behavior remain unchanged.\n\n",
+        "<!-- lang:zh -->\n\n",
+        "本次更新仅内部维护，应用功能和使用方式保持不变。"
+    );
+    let body = release_list(&[
+        ("v3.0.0", maintenance, false, false),
+        ("v2.0.0", maintenance, false, false),
+    ]);
+
+    let first_base = super::serve_once(200, &body);
+    let first =
+        UpdateService::for_build_with_cache(&first_base, "owner/repo", "1.0.0", &cache).unwrap();
+    let found = block_on(first.check(None));
+    let expected = *found.notes.clone().expect("maintenance range");
+    assert!(expected.maintenance_only);
+    assert!(expected.releases.is_empty());
+    drop(first);
+
+    let second_base = super::serve_once(200, &body);
+    let second =
+        UpdateService::for_build_with_cache(&second_base, "owner/repo", "3.0.0", &cache).unwrap();
+    let latest = block_on(second.check(None));
+
+    assert_eq!(latest.state, UpdateState::Latest);
+    assert_eq!(latest.notes.as_deref(), Some(&expected));
+}
+
+#[test]
 fn a_release_build_at_the_feed_version_is_latest() {
     let base = super::serve_once(
         200,
@@ -447,6 +590,8 @@ fn an_installed_target_reuses_the_retained_range() {
                     body: "two".into(),
                 },
             ],
+            maintenance_versions: Vec::new(),
+            maintenance_only: false,
         })
     );
     drop(first);

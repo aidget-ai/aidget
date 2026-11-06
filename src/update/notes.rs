@@ -13,6 +13,7 @@ use crate::update::version;
 const CACHE_SCHEMA: u32 = 1;
 const CACHE_LIMIT: usize = 8 * 1024 * 1024;
 const RECENT_LIMIT: usize = 5;
+const INTERNAL_ONLY_MARKER: &str = "<!-- aidget:internal-only -->";
 
 /// One stable release body included in an aggregated notes range.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -34,6 +35,12 @@ pub struct UpdateNotes {
     pub to: String,
     /// Releases ordered newest-first.
     pub releases: Vec<ReleaseNote>,
+    /// Maintenance-only release versions ordered newest-first.
+    #[serde(default)]
+    pub maintenance_versions: Vec<String>,
+    /// Whether every release in the range contains only internal maintenance.
+    #[serde(default)]
+    pub maintenance_only: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -164,6 +171,28 @@ pub(crate) fn select(
     {
         return Ok(cache.last_range.clone());
     }
+    if let (Some(current_text), Some(current_version)) =
+        (current.as_ref(), current_version.as_ref())
+    {
+        if current_version.cmp_precedence(&latest_version).is_eq() {
+            let previous = releases
+                .iter()
+                .find_map(|release| {
+                    let candidate = version::normalised(&release.tag_name);
+                    semver::Version::parse(&candidate)
+                        .ok()
+                        .filter(|candidate| candidate.cmp_precedence(current_version).is_lt())
+                        .map(|_| candidate)
+                })
+                .unwrap_or_else(|| current_text.clone());
+            let current_release = releases.iter().find(|release| {
+                version::normalised(&release.tag_name).as_str() == current_text.as_str()
+            });
+            cache.last_range = current_release
+                .and_then(|release| non_empty(bundle(previous, latest.clone(), [release])));
+            return Ok(cache.last_range.clone());
+        }
+    }
     match current.as_deref() {
         Some(current) => Ok(cache
             .recent
@@ -196,49 +225,108 @@ fn bundle<'a>(
     to: String,
     releases: impl IntoIterator<Item = &'a Release>,
 ) -> UpdateNotes {
+    let releases = releases.into_iter().collect::<Vec<_>>();
+    let maintenance_versions = releases
+        .iter()
+        .filter(|release| is_internal_only(release))
+        .map(|release| version::normalised(&release.tag_name))
+        .collect::<Vec<_>>();
+    let maintenance_only =
+        !releases.is_empty() && releases.iter().all(|release| is_internal_only(release));
     UpdateNotes {
         from,
         to,
         releases: releases
             .into_iter()
+            .filter(|release| !is_internal_only(release))
             .filter(|release| !release.body.trim().is_empty())
             .map(|release| ReleaseNote {
                 version: version::normalised(&release.tag_name),
                 body: release.body.trim().to_string(),
             })
             .collect(),
+        maintenance_versions,
+        maintenance_only,
     }
 }
 
+fn is_internal_only(release: &Release) -> bool {
+    release
+        .body
+        .lines()
+        .any(|line| line.trim() == INTERNAL_ONLY_MARKER)
+}
+
 fn non_empty(notes: UpdateNotes) -> Option<UpdateNotes> {
-    (!notes.releases.is_empty()).then_some(notes)
+    (notes.maintenance_only || !notes.releases.is_empty()).then_some(notes)
 }
 
 /// Notes newer than a release build's range start, or just its own release when
 /// it is already latest.
 fn notes_for_release(notes: &UpdateNotes, current: &str) -> Option<UpdateNotes> {
     let current = version::normalised(current);
+    if notes.maintenance_only {
+        let current_version = semver::Version::parse(&current).ok()?;
+        let target_version = semver::Version::parse(&notes.to).ok()?;
+        if current_version.cmp_precedence(&target_version).is_gt() {
+            return None;
+        }
+        let maintenance_versions = notes
+            .maintenance_versions
+            .iter()
+            .filter(|version| is_after(version, &current))
+            .cloned()
+            .collect();
+        return Some(UpdateNotes {
+            from: if current == notes.to {
+                notes.from.clone()
+            } else {
+                current
+            },
+            to: notes.to.clone(),
+            releases: Vec::new(),
+            maintenance_versions,
+            maintenance_only: true,
+        });
+    }
     if current == notes.to {
         let current_version = semver::Version::parse(&current).ok()?;
+        let from = notes
+            .releases
+            .iter()
+            .map(|release| release.version.as_str())
+            .chain(notes.maintenance_versions.iter().map(String::as_str))
+            .filter_map(|version| {
+                semver::Version::parse(version)
+                    .ok()
+                    .filter(|version| version.cmp_precedence(&current_version).is_lt())
+            })
+            .max_by(semver::Version::cmp_precedence)
+            .map(|version| version.to_string())
+            .unwrap_or_else(|| current.clone());
+        if notes
+            .maintenance_versions
+            .iter()
+            .any(|version| version == &current)
+        {
+            return Some(UpdateNotes {
+                from,
+                to: notes.to.clone(),
+                releases: Vec::new(),
+                maintenance_versions: vec![current],
+                maintenance_only: true,
+            });
+        }
         let latest = notes
             .releases
             .iter()
             .find(|release| release.version == current)?;
-        let from = notes
-            .releases
-            .iter()
-            .find(|release| {
-                semver::Version::parse(&release.version)
-                    .is_ok_and(|release| release.cmp_precedence(&current_version).is_lt())
-            })
-            .map_or_else(
-                || latest.version.clone(),
-                |previous| previous.version.clone(),
-            );
         return Some(UpdateNotes {
             from,
             to: notes.to.clone(),
             releases: vec![latest.clone()],
+            maintenance_versions: Vec::new(),
+            maintenance_only: false,
         });
     }
     let current_version = semver::Version::parse(&current).ok()?;
@@ -252,12 +340,28 @@ fn notes_for_release(notes: &UpdateNotes, current: &str) -> Option<UpdateNotes> 
         })
         .cloned()
         .collect::<Vec<_>>();
-    if releases.is_empty() {
+    let maintenance_versions = notes
+        .maintenance_versions
+        .iter()
+        .filter(|version| is_after(version, &current))
+        .cloned()
+        .collect::<Vec<_>>();
+    if releases.is_empty() && maintenance_versions.is_empty() {
         return None;
     }
+    let maintenance_only = releases.is_empty();
     Some(UpdateNotes {
         from: current,
         to: notes.to.clone(),
         releases,
+        maintenance_only,
+        maintenance_versions,
     })
+}
+
+fn is_after(candidate: &str, current: &str) -> bool {
+    semver::Version::parse(candidate)
+        .ok()
+        .zip(semver::Version::parse(current).ok())
+        .is_some_and(|(candidate, current)| candidate.cmp_precedence(&current).is_gt())
 }

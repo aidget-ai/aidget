@@ -206,6 +206,8 @@ a service-initialization error; an unwritable cache makes the check fail.
 The cache stores:
 
 - Up to five of the newest stable releases, with their complete bilingual bodies.
+- Maintenance-only release versions separately from visible release bodies, so
+  cached ranges can be re-filtered after the installed version changes.
 - The current-to-target range for a pending or installed update.
 
 On startup, a retained range is reused when the running build is unknown or
@@ -221,6 +223,14 @@ release. After a check:
 
 Release bodies with no text are omitted. The range survives restarts so notes
 remain available while an update is pending and after it has been installed.
+
+Versions marked `<!-- aidget:internal-only -->` remain in the cached release set
+for range selection but are filtered from normal note entries. Mixed ranges keep
+their user-visible releases. If the whole range is maintenance-only,
+`UpdateNotes.maintenanceOnly` makes the dialog show one localized notice without
+category headings or version badges. Retaining those versions also lets a cache
+re-filter correctly after installing a middle maintenance version. Older caches
+default the new fields to empty or false.
 
 The dialog selects the interface language from the release body. English is the
 text before `<!-- lang:zh -->`; Chinese is the text after it. Rendering stops at

@@ -39,7 +39,15 @@ to: string,
 /**
  * Releases ordered newest-first.
  */
-releases: Array<ReleaseNote>, };
+releases: Array<ReleaseNote>,
+/**
+ * Maintenance-only release versions ordered newest-first.
+ */
+maintenanceVersions: Array<string>,
+/**
+ * Whether every release in the range contains only internal maintenance.
+ */
+maintenanceOnly: boolean, };
 export type UpdateState = "idle" | "checking" | "latest" | "source" | "no_release" | "found" | "downloading" | "ready" | "installing" | "error";
 export type UpdateSnapshot = { state: UpdateState,
 /**

@@ -1141,6 +1141,12 @@ body[data-platform='windows'] .navigation {
   gap: 18px;
   margin-block-start: 8px;
 }
+.release-notes-maintenance {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.65;
+}
 .release-notes-category {
   display: grid;
   gap: 8px;

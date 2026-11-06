@@ -157,6 +157,8 @@ describe('update actions', () => {
     const notes = {
       from: '7.0.0',
       to: '8.0.0',
+      maintenanceVersions: [],
+      maintenanceOnly: false,
       releases: [{ version: '8.0.0', body: '## Changes\n\n- Faster launch.' }],
     };
     let finishNotes: (value: UpdateSnapshot) => void = () => {};
@@ -200,11 +202,15 @@ describe('update actions', () => {
     const cachedNotes = {
       from: '3.0.0',
       to: '5.0.0',
+      maintenanceVersions: [],
+      maintenanceOnly: false,
       releases: [{ version: '5.0.0', body: '## Changes\n\n- Cached content.' }],
     };
     const currentNotes = {
       from: '7.0.0',
       to: '8.0.0',
+      maintenanceVersions: [],
+      maintenanceOnly: false,
       releases: [{ version: '8.0.0', body: '## Changes\n\n- Current content.' }],
     };
     mocks.invoke
@@ -225,10 +231,40 @@ describe('update actions', () => {
     );
   });
 
+  it('renders the maintenance notice after a debug on-demand check', async () => {
+    mocks.invoke
+      .mockResolvedValueOnce(snapshot('idle', { isDebugBuild: true }))
+      .mockResolvedValueOnce(
+        snapshot('source', {
+          isDebugBuild: true,
+          notes: {
+            from: '1.0.0',
+            to: '2.0.0',
+            maintenanceVersions: ['2.0.0'],
+            maintenanceOnly: true,
+            releases: [],
+          },
+        }),
+      );
+    const page = mount('zh-CN');
+    await page.refresh();
+
+    document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.click();
+
+    await vi.waitFor(() =>
+      expect(document.querySelector('.release-notes-maintenance')?.textContent).toBe(
+        '本次更新仅内部维护，应用功能和使用方式保持不变。',
+      ),
+    );
+    expect(document.querySelector('.release-version')).toBeNull();
+  });
+
   it('reports a failed debug release-notes request without opening cached content', async () => {
     const cachedNotes = {
       from: '7.0.0',
       to: '8.0.0',
+      maintenanceVersions: [],
+      maintenanceOnly: false,
       releases: [{ version: '8.0.0', body: '## Changes\n\n- Old content.' }],
     };
     mocks.invoke
@@ -378,6 +414,8 @@ describe('update actions', () => {
         notes: {
           from: '0.1.3',
           to: '0.1.4',
+          maintenanceVersions: [],
+          maintenanceOnly: false,
           releases: [
             {
               version: '0.1.4',
@@ -400,6 +438,35 @@ describe('update actions', () => {
     expect(dialog.querySelector('.release-version')).toBeNull();
   });
 
+  it('renders one maintenance notice for an all-internal upgrade range', async () => {
+    const page = mount('zh-CN');
+    await page.refresh();
+    mocks.handlers.get('aidget://update')!({
+      payload: snapshot('found', {
+        latest: '0.1.6',
+        notes: {
+          from: '0.1.1',
+          to: '0.1.6',
+          maintenanceVersions: ['0.1.6', '0.1.5'],
+          maintenanceOnly: true,
+          releases: [],
+        },
+      }),
+    });
+
+    const open = document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!;
+    expect(open.disabled).toBe(false);
+    open.click();
+    const dialog = document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!;
+    expect(dialog.open).toBe(true);
+    expect(dialog.querySelector('[data-update-notes-range]')?.textContent).toBe('v0.1.1 → v0.1.6');
+    expect(dialog.querySelector('.release-notes-maintenance')?.textContent).toBe(
+      '本次更新仅内部维护，应用功能和使用方式保持不变。',
+    );
+    expect(dialog.querySelector('.release-version')).toBeNull();
+    expect(dialog.querySelectorAll('.release-notes-category')).toHaveLength(0);
+  });
+
   it.each(['0.1.4', 'v0.1.4'])(
     'omits the range when %s is also the target version',
     async (from) => {
@@ -412,6 +479,8 @@ describe('update actions', () => {
           notes: {
             from,
             to: '0.1.4',
+            maintenanceVersions: [],
+            maintenanceOnly: false,
             releases: [{ version: '0.1.4', body: '## Improvements\n\n- Latest change.' }],
           },
         }),
@@ -434,6 +503,8 @@ describe('update actions', () => {
         notes: {
           from: '0.1.0',
           to: '0.1.3',
+          maintenanceVersions: [],
+          maintenanceOnly: false,
           releases: [
             {
               version: '0.1.3',
@@ -465,6 +536,8 @@ describe('update actions', () => {
         notes: {
           from: '0.1.0',
           to: '0.2.0',
+          maintenanceVersions: [],
+          maintenanceOnly: false,
           releases: [
             {
               version: '0.2.0',
@@ -507,6 +580,8 @@ describe('update actions', () => {
     const notes = {
       from: '0.1.0',
       to: '0.1.3',
+      maintenanceVersions: [],
+      maintenanceOnly: false,
       releases: [
         {
           version: '0.1.3',
