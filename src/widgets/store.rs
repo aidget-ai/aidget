@@ -539,9 +539,10 @@ impl Store {
             return Ok(());
         }
         let mut frame = WidgetFrame::default_for(index);
-        // CLI writes run without the GUI, so `place_new_widget` never sees them.
+        // CLI writes run without the GUI, which alone can measure this display.
         if let Some(display) = display {
             frame.display = display;
+            frame.unplaced = true;
         }
         board.widgets.insert(id.to_string(), frame);
         board.revision += 1;
@@ -696,7 +697,12 @@ impl Store {
         Ok(target)
     }
 
-    pub fn move_widget(&self, id: &str, base_revision: u64, frame: WidgetFrame) -> Result<Board> {
+    pub fn move_widget(
+        &self,
+        id: &str,
+        base_revision: u64,
+        mut frame: WidgetFrame,
+    ) -> Result<Board> {
         let _lock = self.write_lock()?;
         validate_id(id)?;
         self.load_meta(id)?;
@@ -706,6 +712,8 @@ impl Store {
                 current: Box::new(crate::common::error::ConflictCurrent::Board(board)),
             });
         }
+        // A move is the user's, so the GUI must not place the widget over it.
+        frame.unplaced = false;
         board.widgets.insert(id.to_string(), frame);
         board.revision += 1;
         self.save_board(&board)?;

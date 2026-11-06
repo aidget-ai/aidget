@@ -39,16 +39,43 @@ fn created_widget_starts_on_the_primary_display_by_default() {
 }
 
 #[test]
+fn a_widget_created_on_a_chosen_display_waits_for_the_gui_to_place_it() {
+    let (_dir, store) = store();
+    choose_display(&store, "Monitor #2");
+
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+
+    assert!(store.load_board().unwrap().widgets["note"].unplaced);
+}
+
+#[test]
+fn a_widget_created_without_a_chosen_display_keeps_its_automatic_frame() {
+    let (_dir, store) = store();
+
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+
+    assert!(!store.load_board().unwrap().widgets["note"].unplaced);
+}
+
+#[test]
+fn a_move_before_the_first_opening_is_not_placed_over() {
+    let (_dir, store) = store();
+    choose_display(&store, "Monitor #2");
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+    let board = store.load_board().unwrap();
+    let mut frame = board.widgets["note"].clone();
+    frame.x = 5.0;
+
+    let board = store.move_widget("note", board.revision, frame).unwrap();
+
+    assert!(!board.widgets["note"].unplaced);
+    assert_eq!(board.widgets["note"].x, 5.0);
+}
+
+#[test]
 fn created_widget_starts_on_the_chosen_display() {
     let (_dir, store) = store();
-    save_preferences(
-        store.root(),
-        UiPreferences {
-            default_display: Some("Monitor #2".to_string()),
-            ..UiPreferences::default()
-        },
-    )
-    .unwrap();
+    choose_display(&store, "Monitor #2");
 
     store.create("note", "Note", WidgetEdit::default()).unwrap();
 
@@ -56,6 +83,17 @@ fn created_widget_starts_on_the_chosen_display() {
         store.load_board().unwrap().widgets["note"].display,
         "Monitor #2"
     );
+}
+
+fn choose_display(store: &Store, display: &str) {
+    save_preferences(
+        store.root(),
+        UiPreferences {
+            default_display: Some(display.to_string()),
+            ..UiPreferences::default()
+        },
+    )
+    .unwrap();
 }
 
 #[test]
@@ -825,6 +863,7 @@ fn deleted_widget_can_be_restored_with_its_saved_frame() {
         y: 220.0,
         w: 420.0,
         h: 260.0,
+        unplaced: false,
     };
     let revision = store.load_board().unwrap().revision;
     store.move_widget("note", revision, frame.clone()).unwrap();

@@ -65,6 +65,7 @@ fn main_window_lists_all_widgets_and_marks_enabled_state() {
             y: 20.0,
             w: 420.0,
             h: 260.0,
+            unplaced: false,
         },
     );
     store.save_board(&board).unwrap();

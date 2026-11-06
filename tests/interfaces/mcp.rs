@@ -152,6 +152,7 @@ fn board_conflict_points_at_a_user_drag_instead_of_a_retry() {
             y: 60.0,
             w: 360.0,
             h: 220.0,
+            unplaced: false,
         },
     );
     let error = mcp_error(Error::RevisionConflict {

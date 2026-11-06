@@ -107,6 +107,7 @@ pub fn moved_frame(
         y: (position.1 - area_position.1) as f64 / scale,
         w: current.w,
         h: current.h,
+        unplaced: false,
     }
 }
 
@@ -315,6 +316,7 @@ pub fn place_new_widget(app: &AppHandle, store: &Store, id: &str) -> Result<()> 
             y: placed.position.y,
             w: placed.size.width,
             h: placed.size.height,
+            unplaced: false,
         },
     )?;
     Ok(())

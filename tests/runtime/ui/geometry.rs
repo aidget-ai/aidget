@@ -46,6 +46,7 @@ fn cross_display_frame_is_not_pulled_back() {
         y: -100.0,
         w: 360.0,
         h: 220.0,
+        unplaced: false,
     };
     let (x, y) = place_frame(&frame, (0, 0), (3024, 1786), 2.0, true);
     assert_eq!((x, y), (0, -200));
@@ -59,6 +60,7 @@ fn negative_offsets_are_kept_on_a_live_display() {
         y: -3000.0,
         w: 360.0,
         h: 220.0,
+        unplaced: false,
     };
     let (x, y) = place_frame(&frame, (0, 0), (3024, 1786), 2.0, true);
     assert_eq!((x, y), (-2400, -6000));
@@ -72,6 +74,7 @@ fn missing_display_frame_is_clamped_into_fallback() {
         y: 80.0,
         w: 360.0,
         h: 220.0,
+        unplaced: false,
     };
     let (x, y) = place_frame(&frame, (0, 0), (3024, 1786), 2.0, false);
     assert_eq!((x, y), ((3024.0 - 720.0) as i32, 160));
@@ -85,6 +88,7 @@ fn moving_a_widget_does_not_infer_size_from_stale_native_pixels() {
         y: 50.0,
         w: 360.0,
         h: 220.0,
+        unplaced: false,
     };
 
     let moved = moved_frame(
