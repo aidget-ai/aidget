@@ -1,4 +1,6 @@
-use aidget::runtime::update::{check_and_maybe_download, exit_action, DeferredQuit, ExitAction};
+use aidget::runtime::update::{
+    check_and_maybe_download, check_on_launch, exit_action, DeferredQuit, ExitAction,
+};
 use aidget::update::{UpdateService, UpdateSnapshot, UpdateState};
 use std::io::{Read, Write};
 use std::sync::{
@@ -9,6 +11,7 @@ use std::sync::{
 struct Feed {
     base: String,
     release: Arc<Mutex<(u16, String)>>,
+    queries: Arc<AtomicUsize>,
     downloads: Arc<AtomicUsize>,
     bad_asset: Arc<Mutex<bool>>,
     asset_status: Arc<Mutex<u16>>,
@@ -20,12 +23,14 @@ impl Feed {
         listener.set_nonblocking(true).unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let release = Arc::new(Mutex::new((200, String::new())));
+        let queries = Arc::new(AtomicUsize::new(0));
         let downloads = Arc::new(AtomicUsize::new(0));
         let bad_asset = Arc::new(Mutex::new(false));
         let asset_status = Arc::new(Mutex::new(200));
         let feed = Self {
             base,
             release: release.clone(),
+            queries: queries.clone(),
             downloads: downloads.clone(),
             bad_asset: bad_asset.clone(),
             asset_status: asset_status.clone(),
@@ -43,6 +48,7 @@ impl Feed {
                 let count = stream.read(&mut buffer).unwrap();
                 let request = String::from_utf8_lossy(&buffer[..count]);
                 let (status, body) = if request.contains("/releases?") {
+                    queries.fetch_add(1, Ordering::SeqCst);
                     let (status, body) = release.lock().unwrap().clone();
                     let body = if status == 200 {
                         let release = serde_json::from_str::<serde_json::Value>(&body).unwrap();
@@ -101,6 +107,18 @@ fn run<F: std::future::Future>(f: F) -> F::Output {
         .build()
         .unwrap()
         .block_on(f)
+}
+
+#[test]
+fn a_debug_build_skips_the_launch_check_without_network_access() {
+    let feed = Feed::new();
+    let service = UpdateService::for_debug_build(&feed.base, "owner/repo", "1.0.0");
+
+    let result = run(check_on_launch(service, None, true));
+
+    assert!(result.is_none());
+    assert_eq!(feed.queries.load(Ordering::SeqCst), 0);
+    assert_eq!(feed.downloads.load(Ordering::SeqCst), 0);
 }
 
 #[test]

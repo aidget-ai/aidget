@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::common::error::{Error, Result};
 use crate::common::utils::{atomic_write, parse_json, read_bounded};
@@ -14,7 +15,7 @@ const CACHE_LIMIT: usize = 8 * 1024 * 1024;
 const RECENT_LIMIT: usize = 5;
 
 /// One stable release body included in an aggregated notes range.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseNote {
     /// Normalized version without the leading `v`.
@@ -24,7 +25,7 @@ pub struct ReleaseNote {
 }
 
 /// Bilingual release bodies covering an installed version to a target version.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateNotes {
     /// Installed version from which the retained range begins.

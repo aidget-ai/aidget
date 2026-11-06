@@ -1,8 +1,7 @@
 import DOMPurify from 'dompurify';
 import { marked, type Token } from 'marked';
 
-import type { Language } from '../types/rust';
-import type { ReleaseNote, UpdateNotes } from './update';
+import type { Language, ReleaseNote, UpdateNotes } from '../types/rust';
 
 const CHINESE_MARKER = '<!-- lang:zh -->';
 const ALLOWED_TAGS = [

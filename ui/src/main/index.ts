@@ -1107,6 +1107,7 @@ async function refreshState() {
 
 async function toggleWidget(view: WidgetView) {
   view.toggle.disabled = true;
+  view.toggle.setAttribute('aria-busy', 'true');
   fault.hidden = true;
   try {
     await invoke('set_widget_enabled', {
@@ -1119,6 +1120,7 @@ async function toggleWidget(view: WidgetView) {
     await refreshState();
   } finally {
     view.toggle.disabled = false;
+    view.toggle.setAttribute('aria-busy', 'false');
   }
 }
 
@@ -1201,6 +1203,7 @@ async function initializeAutostart() {
 
 autoStart.addEventListener('click', async () => {
   autoStart.disabled = true;
+  autoStart.setAttribute('aria-busy', 'true');
   fault.hidden = true;
   try {
     if (autoStart.getAttribute('aria-checked') === 'true') {
@@ -1213,6 +1216,7 @@ autoStart.addEventListener('click', async () => {
     showFault(`${t('startupFailed')}: ${String(error)}`);
   } finally {
     autoStart.disabled = false;
+    autoStart.setAttribute('aria-busy', 'false');
   }
 });
 

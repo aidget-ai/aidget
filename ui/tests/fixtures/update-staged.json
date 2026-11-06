@@ -1,5 +1,6 @@
 {
   "state": "ready",
+  "isDebugBuild": false,
   "current": "1.0.0",
   "latest": "2.0.0",
   "error": null,

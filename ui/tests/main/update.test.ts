@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   listen: vi.fn(async (_event: string, _handler: Handler) => () => {}),
   handlers: new Map<string, Handler>(),
+  autoDownload: vi.fn(async (_enabled: boolean) => {}),
+  fault: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
@@ -29,6 +31,7 @@ const mainHtml = readFileSync('ui/main.html', 'utf8');
 function snapshot(state: UpdateSnapshot['state'], extra: Partial<UpdateSnapshot> = {}) {
   return {
     state,
+    isDebugBuild: false,
     current: 'v0.1.0',
     latest: null,
     error: null,
@@ -56,8 +59,8 @@ function mount(locale: 'en-US' | 'zh-CN' = 'en-US') {
     about,
     header,
     () => locale,
-    async () => {},
-    () => {},
+    mocks.autoDownload,
+    mocks.fault,
     () => {},
   );
   page.setAboutActive(true);
@@ -68,6 +71,8 @@ beforeEach(() => {
   mocks.invoke.mockReset().mockResolvedValue(snapshot('idle'));
   mocks.listen.mockClear();
   mocks.handlers.clear();
+  mocks.autoDownload.mockClear();
+  mocks.fault.mockClear();
   vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function (
     this: HTMLDialogElement,
   ) {
@@ -109,6 +114,166 @@ describe('update actions', () => {
     expect(row.hidden).toBe(false);
     expect(open.textContent).toBe('Open');
     expect(open.disabled).toBe(true);
+  });
+
+  it('hides automatic update actions in a debug build while keeping release notes available', async () => {
+    mocks.invoke.mockResolvedValueOnce(snapshot('idle', { isDebugBuild: true }));
+    const page = mount('zh-CN');
+    await page.refresh();
+
+    const action = document.querySelector<HTMLButtonElement>('[data-update-action]')!;
+    const header = document.querySelector<HTMLButtonElement>('[data-update-header]')!;
+    const toggle = document.querySelector<HTMLButtonElement>('[data-update-auto-download]')!;
+    const versionNote = document.querySelector<HTMLElement>('[data-update-version-debug-note]')!;
+    const debugNote = document.querySelector<HTMLElement>('[data-update-debug-note]')!;
+    const notesNote = document.querySelector<HTMLElement>('[data-update-notes-limit-note]')!;
+    const open = document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!;
+
+    expect(action.hidden).toBe(true);
+    page.setAboutActive(false);
+    expect(header.hidden).toBe(true);
+    expect(toggle.disabled).toBe(true);
+    expect(toggle.getAttribute('aria-busy')).toBe('false');
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggle.getAttribute('aria-describedby')).toBe(debugNote.id);
+    expect(versionNote.hidden).toBe(false);
+    expect(versionNote.textContent).toBe(
+      '开发版固定为 0.1.1 版本，发布正式版时会动态注入新版本号。',
+    );
+    expect(debugNote.hidden).toBe(false);
+    expect(debugNote.textContent).toBe('开发版不支持自动下载更新');
+    expect(notesNote.hidden).toBe(false);
+    expect(notesNote.textContent).toBe('开发版只展示近 5 个稳定版本更新内容');
+    expect(open.disabled).toBe(false);
+    expect(open.textContent).toBe('打开');
+
+    page.setAutoDownload(true);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    toggle.click();
+    expect(mocks.autoDownload).not.toHaveBeenCalled();
+  });
+
+  it('loads debug release notes on demand once and opens the existing dialog', async () => {
+    const notes = {
+      from: '7.0.0',
+      to: '8.0.0',
+      releases: [{ version: '8.0.0', body: '## Changes\n\n- Faster launch.' }],
+    };
+    let finishNotes: (value: UpdateSnapshot) => void = () => {};
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === 'update_state') {
+        return Promise.resolve(snapshot('idle', { isDebugBuild: true }));
+      }
+      if (command === 'update_check') {
+        return new Promise<UpdateSnapshot>((resolve) => {
+          finishNotes = resolve;
+        });
+      }
+      return Promise.resolve(snapshot('idle', { isDebugBuild: true }));
+    });
+    const page = mount();
+    await page.refresh();
+    const open = document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!;
+
+    open.click();
+    open.click();
+
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === 'update_check')).toHaveLength(
+      1,
+    );
+    expect(open.disabled).toBe(true);
+    expect(open.getAttribute('aria-busy')).toBe('true');
+    expect(open.textContent).toBe('Loading…');
+
+    finishNotes(snapshot('source', { isDebugBuild: true, notes }));
+    await vi.waitFor(() =>
+      expect(document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')?.open).toBe(
+        true,
+      ),
+    );
+    expect(document.querySelector('[data-update-notes-dialog]')!.textContent).toContain(
+      'Faster launch.',
+    );
+  });
+
+  it('refreshes cached debug release notes before the first open', async () => {
+    const cachedNotes = {
+      from: '3.0.0',
+      to: '5.0.0',
+      releases: [{ version: '5.0.0', body: '## Changes\n\n- Cached content.' }],
+    };
+    const currentNotes = {
+      from: '7.0.0',
+      to: '8.0.0',
+      releases: [{ version: '8.0.0', body: '## Changes\n\n- Current content.' }],
+    };
+    mocks.invoke
+      .mockResolvedValueOnce(snapshot('idle', { isDebugBuild: true, notes: cachedNotes }))
+      .mockResolvedValueOnce(snapshot('source', { isDebugBuild: true, notes: currentNotes }));
+    const page = mount();
+    await page.refresh();
+
+    document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.click();
+
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-update-notes-dialog]')?.textContent).toContain(
+        'Current content.',
+      ),
+    );
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === 'update_check')).toHaveLength(
+      1,
+    );
+  });
+
+  it('reports a failed debug release-notes request without opening cached content', async () => {
+    const cachedNotes = {
+      from: '7.0.0',
+      to: '8.0.0',
+      releases: [{ version: '8.0.0', body: '## Changes\n\n- Old content.' }],
+    };
+    mocks.invoke
+      .mockResolvedValueOnce(snapshot('idle', { isDebugBuild: true }))
+      .mockResolvedValueOnce(
+        snapshot('error', {
+          isDebugBuild: true,
+          error: 'update feed unavailable',
+          notes: cachedNotes,
+        }),
+      );
+    const page = mount();
+    await page.refresh();
+
+    document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.click();
+
+    await vi.waitFor(() => expect(mocks.fault).toHaveBeenCalledWith('update feed unavailable'));
+    expect(document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!.open).toBe(
+      false,
+    );
+    expect(document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.disabled).toBe(
+      false,
+    );
+  });
+
+  it('shows an empty debug release-notes state when no stable release is published', async () => {
+    mocks.invoke
+      .mockResolvedValueOnce(snapshot('idle', { isDebugBuild: true }))
+      .mockResolvedValueOnce(snapshot('no_release', { isDebugBuild: true }));
+    const page = mount('zh-CN');
+    await page.refresh();
+
+    document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.click();
+
+    await vi.waitFor(() => {
+      const empty = document.querySelector<HTMLElement>('[data-update-notes-empty]')!;
+      expect(empty.hidden).toBe(false);
+      expect(empty.textContent).toBe('暂无更新内容');
+    });
+    expect(document.querySelector<HTMLButtonElement>('[data-update-notes-open]')!.disabled).toBe(
+      true,
+    );
+    expect(document.querySelector<HTMLDialogElement>('[data-update-notes-dialog]')!.open).toBe(
+      false,
+    );
   });
 
   it('shows update progress in the version action and disables repeats', async () => {

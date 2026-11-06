@@ -21,6 +21,8 @@ pub use install::InstallOutcome;
 #[derive(Clone)]
 pub struct UpdateService {
     snapshot: Arc<Mutex<UpdateSnapshot>>,
+    /// Rust debug builds may load release notes but cannot download or install.
+    debug_build: bool,
     /// Where the release feed is read from; production uses [`github::API_BASE`].
     base: Arc<str>,
     /// The `owner/repo` the feed is read for.
@@ -54,11 +56,12 @@ pub struct UpdateService {
 impl UpdateService {
     /// Build the production service with a persistent release-notes cache.
     pub fn new(notes_path: impl Into<PathBuf>) -> Result<Self> {
-        Self::for_build_with_cache(
+        Self::for_build_with_cache_and_mode(
             github::API_BASE,
             github::REPOSITORY,
             version::build_stamp(),
             notes_path,
+            cfg!(debug_assertions),
         )
     }
 
@@ -70,7 +73,16 @@ impl UpdateService {
         let notes_path = std::env::temp_dir()
             .join("aidget-update-tests")
             .join(format!("{}.json", uuid::Uuid::new_v4()));
-        Self::for_build_with_cache(base, repository, build, notes_path)
+        Self::for_build_with_cache_and_mode(base, repository, build, notes_path, false)
+            .expect("a unique test cache path is readable")
+    }
+
+    /// A release-shaped test service that applies the Rust debug-build update policy.
+    pub fn for_debug_build(base: &str, repository: &str, build: &str) -> Self {
+        let notes_path = std::env::temp_dir()
+            .join("aidget-update-tests")
+            .join(format!("{}.json", uuid::Uuid::new_v4()));
+        Self::for_build_with_cache_and_mode(base, repository, build, notes_path, true)
             .expect("a unique test cache path is readable")
     }
 
@@ -81,13 +93,24 @@ impl UpdateService {
         build: &str,
         notes_path: impl Into<PathBuf>,
     ) -> Result<Self> {
+        Self::for_build_with_cache_and_mode(base, repository, build, notes_path, false)
+    }
+
+    fn for_build_with_cache_and_mode(
+        base: &str,
+        repository: &str,
+        build: &str,
+        notes_path: impl Into<PathBuf>,
+        debug_build: bool,
+    ) -> Result<Self> {
         let notes_path = notes_path.into();
         let notes_cache = notes::load(&notes_path)?;
-        let current = version::is_released(build).then_some(build);
+        let current = (!debug_build && version::is_released(build)).then_some(build);
         let retained = notes::initial(&notes_cache, current).map(Box::new);
         Ok(UpdateService {
             snapshot: Arc::new(Mutex::new(UpdateSnapshot {
                 state: UpdateState::Idle,
+                is_debug_build: debug_build,
                 current: build.to_string(),
                 latest: None,
                 error: None,
@@ -96,6 +119,7 @@ impl UpdateService {
                 notes: retained,
                 staged: false,
             })),
+            debug_build,
             base: Arc::from(base),
             repository: Arc::from(repository),
             build: Arc::from(build),
@@ -107,6 +131,11 @@ impl UpdateService {
             install_settled: Arc::new((Mutex::new(()), Condvar::new())),
             announce: Arc::new(Mutex::new(None)),
         })
+    }
+
+    /// Whether this process is a Rust debug build.
+    pub fn is_debug_build(&self) -> bool {
+        self.debug_build
     }
 
     pub fn snapshot(&self) -> UpdateSnapshot {
@@ -175,6 +204,7 @@ impl UpdateService {
         token: Option<&str>,
         auto_download: bool,
     ) -> UpdateSnapshot {
+        let auto_download = auto_download && !self.debug_build;
         if !self.begin() {
             return self.snapshot();
         }
@@ -192,11 +222,12 @@ impl UpdateService {
             Ok(Ok(releases)) => {
                 let selected = {
                     let mut cache = self.notes_cache.lock().unwrap();
-                    let current = version::is_released(&self.build).then_some(self.build.as_ref());
-                    notes::select(&mut cache, current, &releases).and_then(|selected| {
-                        notes::save(&self.notes_path, &cache)?;
-                        Ok(selected.map(Box::new))
-                    })
+                    notes::select(&mut cache, self.notes_current(), &releases).and_then(
+                        |selected| {
+                            notes::save(&self.notes_path, &cache)?;
+                            Ok(selected.map(Box::new))
+                        },
+                    )
                 };
                 match selected {
                     Ok(notes) => self.settle(releases[0].clone(), &releases, notes, auto_download),
@@ -305,6 +336,11 @@ impl UpdateService {
 
     /// A download needs a release to install, and a platform to install it on.
     fn prepare_allowed(&self) -> Result<Target> {
+        if self.debug_build {
+            return Err(Error::Other(
+                "debug builds cannot download updates".to_string(),
+            ));
+        }
         if self.release.lock().unwrap().is_none() {
             return Err(Error::Other("no release to download yet".to_string()));
         }
@@ -447,7 +483,7 @@ impl UpdateService {
         // A build from a working tree cannot swap itself for a release, so the
         // feed's answer does not make it updatable. Saying `Latest` there would
         // claim a comparison that never happened.
-        if !version::is_released(&current) {
+        if self.debug_build || !version::is_released(&current) {
             *self.release.lock().unwrap() = None;
             return UpdateSnapshot {
                 state: UpdateState::Source,
@@ -470,6 +506,10 @@ impl UpdateService {
             notes,
             ..self.snapshot()
         }
+    }
+
+    fn notes_current(&self) -> Option<&str> {
+        (!self.debug_build && version::is_released(&self.build)).then_some(self.build.as_ref())
     }
 
     fn settle_download(&self, path: PathBuf, version: String) -> UpdateSnapshot {

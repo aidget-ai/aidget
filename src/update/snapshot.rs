@@ -4,11 +4,12 @@
 //! on has one definition, and so the state machine file stays about the machine.
 
 use serde::Serialize;
+use ts_rs::TS;
 
 use crate::update::notes::UpdateNotes;
 
 /// Where the update flow currently stands.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateState {
     /// No check has run yet.
@@ -51,10 +52,12 @@ impl UpdateState {
 }
 
 /// The payload the main window renders.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSnapshot {
     pub state: UpdateState,
+    /// Whether this process is a Rust debug build for which automatic updates are disabled.
+    pub is_debug_build: bool,
     /// What this build is; see [`build_stamp`].
     pub current: String,
     /// The release version found by the last check, once one has run.

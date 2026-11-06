@@ -65,6 +65,17 @@ The tag decides, not a clean tree: the release workflow writes the version into
 the manifests after checking out the tag. A runtime repository override is
 rejected because it would let any local process redirect the updater.
 
+**Rust debug builds do not update automatically.** `cfg!(debug_assertions)` is
+reported as `UpdateSnapshot.is_debug_build`; it is separate from the Git build
+stamp because a debug build can still sit on a release tag. Those builds skip the
+launch check and always disable automatic downloading. The About page hides the
+check and global update actions, disables the automatic-download switch without
+changing its saved preference, and keeps **Release notes** available. Opening
+those notes on demand runs the normal feed check with automatic downloading
+forced off; debug builds always select the newest five stable releases as a
+source build would. Release builds keep the existing check, download and install
+behavior.
+
 **Install kind comes from the package manager on the machine.** Linux uses the
 package this machine's package manager can install: `dpkg` if `PATH` has it,
 otherwise `rpm`, otherwise the build cannot update itself in place. `dpkg` wins

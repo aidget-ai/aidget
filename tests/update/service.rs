@@ -6,6 +6,7 @@ fn a_new_service_is_idle_and_reports_its_build() {
         UpdateService::for_build("https://example.invalid", "owner/repo", "0.1.0").snapshot();
 
     assert_eq!(snapshot.state, UpdateState::Idle);
+    assert!(!snapshot.is_debug_build);
     assert_eq!(snapshot.current, "0.1.0");
     assert_eq!(snapshot.latest, None);
     assert_eq!(snapshot.error, None);
@@ -144,6 +145,47 @@ fn a_source_build_can_still_show_stable_release_notes() {
     let notes = snapshot.notes.expect("stable notes");
     assert_eq!((notes.from.as_str(), notes.to.as_str()), ("2.0.0", "2.0.0"));
     assert_eq!(notes.releases[0].body, "two");
+}
+
+#[test]
+fn a_debug_build_never_downloads_even_at_a_release_version() {
+    let base = release_with_asset();
+    let service = UpdateService::for_debug_build(&base, "owner/repo", "0.1.0");
+
+    let snapshot = block_on(service.check_with_policy(None, true));
+
+    assert!(snapshot.is_debug_build);
+    assert_eq!(snapshot.state, UpdateState::Source);
+    assert_eq!(snapshot.latest, None);
+    assert!(!snapshot.staged);
+    assert!(service.staged().is_none());
+}
+
+#[test]
+fn a_debug_build_loads_the_five_newest_stable_release_notes() {
+    let body = release_list(&[
+        ("v9.0.0", "preview", true, false),
+        ("v8.0.0", "eight", false, false),
+        ("v7.0.0", "seven", false, false),
+        ("v6.0.0", "six", false, false),
+        ("v5.0.0", "five", false, false),
+        ("v4.0.0", "four", false, false),
+        ("v3.0.0", "three", false, false),
+    ]);
+    let base = super::serve_once(200, &body);
+    let service = UpdateService::for_debug_build(&base, "owner/repo", "1.0.0");
+
+    let snapshot = block_on(service.check(None));
+    let notes = snapshot.notes.expect("recent stable notes");
+
+    assert_eq!(snapshot.state, UpdateState::Source);
+    assert_eq!((notes.from.as_str(), notes.to.as_str()), ("4.0.0", "8.0.0"));
+    assert_eq!(notes.releases.len(), 5);
+    assert_eq!(notes.releases[0].body, "eight");
+    assert!(!notes
+        .releases
+        .iter()
+        .any(|release| release.body == "preview"));
 }
 
 #[test]

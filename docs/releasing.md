@@ -159,9 +159,11 @@ excluded; only public names are shown, without hyperlinks. GitHub lookup
 failures abort publication rather than silently dropping names. The notes step
 uses `GH_TOKEN` with read access to issues and pull requests.
 
-Generated notes start directly with level-2 category headings such as
-`## Features` and `## Bug Fixes`; there is no document title, `Changelog`
-wrapper, or other heading level.
+The English section uses only these level-2 category headings, in this order:
+`## Features`, `## Improvements`, and `## Bug Fixes`. The Simplified Chinese
+section maps them to exactly `## 新功能`, `## 改进`, and `## 错误修复`. A category
+with no changes is omitted. There is no document title, `Changelog` wrapper, or
+other heading level.
 
 Assets use `aidget-<platform>-<arch>.<ext>`: `darwin/windows/linux`, `arm64/amd64`.
 The macOS ZIP retains its `.app` directory. Names no longer include versions;

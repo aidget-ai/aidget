@@ -83,7 +83,11 @@ export async function generateEnglishChangelog({
     (await git(['log', range, '--pretty=format:%s', '--no-merges'])).trim(),
     'release commit list',
   );
-  const prompt = `Based on the following git commit messages, generate a concise and user-friendly changelog in markdown format. Start directly with the category sections. Use exactly \`##\` (level 2) for every category heading, for example \`## Features\` and \`## Bug Fixes\`. Do not add a document title, a \`# Changelog\` or \`## Changelog\` heading, and do not use \`#\` or \`###\` headings anywhere. Group changes by category (e.g., Features, Bug Fixes, Improvements). Only include meaningful changes, skip trivial commits. Use clear, non-technical language where possible. Output ONLY the changelog content without any preamble. Do not add installation instructions or contributor acknowledgments; these are appended separately.
+  const prompt = `Based on the following git commit messages, generate a concise and user-friendly changelog in markdown format. Start directly with the category sections. Use only these category headings, in this order and with this exact text:
+## Features
+## Improvements
+## Bug Fixes
+Omit a category entirely when it has no changes. Do not create any other category. Use exactly \`##\` (level 2) for every category heading. Do not add a document title, a \`# Changelog\` or \`## Changelog\` heading, and do not use \`#\` or \`###\` headings anywhere. Only include meaningful changes, skip trivial commits. Use clear, non-technical language where possible. Output ONLY the changelog content without any preamble. Do not add installation instructions or contributor acknowledgments; these are appended separately.
 
 Commit messages:
 ${commits}`;
@@ -94,7 +98,11 @@ ${commits}`;
 export async function translateToChinese(english, apiKey, fetchImpl = fetch) {
   required(apiKey, 'DEEPSEEK_API_KEY');
 
-  const prompt = `Translate the following release notes into Simplified Chinese. Keep the markdown structure, headings, links, code spans and product names (aidget, Codex, Claude Code, ...) as they are. Output ONLY the translation without any preamble.
+  const prompt = `Translate the following release notes into Simplified Chinese. Keep the markdown structure, links, code spans and product names (aidget, Codex, Claude Code, ...) as they are. Translate category headings to exactly:
+## 新功能
+## 改进
+## 错误修复
+Use only these category headings, in this order. Omit a category entirely when the source has no corresponding category, and do not create or translate any other category heading. Output ONLY the translation without any preamble.
 
 ${english}`;
   return deepSeekText(prompt, apiKey, fetchImpl, 'translation');

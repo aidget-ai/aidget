@@ -4,6 +4,7 @@ use aidget::{
     community::model::*,
     runtime::ui::LocalWidgetDetails,
     settings::Language,
+    update::{ReleaseNote, UpdateNotes, UpdateSnapshot, UpdateState},
     widgets::{
         model::{WidgetDragMode, WidgetPermission},
         package::*,
@@ -31,6 +32,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         AgentProblem::decl(&cfg),
         IntegrationMutation::decl(&cfg),
         Language::decl(&cfg),
+        ReleaseNote::decl(&cfg),
+        UpdateNotes::decl(&cfg),
+        UpdateState::decl(&cfg),
+        UpdateSnapshot::decl(&cfg),
         WidgetPermission::decl(&cfg),
         WidgetDragMode::decl(&cfg),
         WidgetPlatform::decl(&cfg),

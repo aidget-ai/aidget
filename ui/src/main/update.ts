@@ -1,47 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import type { Language } from '../types/rust';
+import type { Language, UpdateNotes, UpdateSnapshot, UpdateState } from '../types/rust';
 import { translate, type MessageKey } from './locale';
 import { renderReleaseNotes } from './release-notes';
 
-/** What the backend reports about the update flow, in the order it settles. */
-export type UpdateState =
-  | 'idle'
-  | 'checking'
-  | 'latest'
-  | 'no_release'
-  | 'source'
-  | 'found'
-  | 'downloading'
-  | 'ready'
-  | 'installing'
-  | 'error';
-
-/** One stable release included in the retained update-notes range. */
-export interface ReleaseNote {
-  version: string;
-  body: string;
-}
-
-/** Bilingual release bodies for the installed-to-target range. */
-export interface UpdateNotes {
-  from: string;
-  to: string;
-  releases: ReleaseNote[];
-}
-
-/** The payload `update_*` commands answer with. Mirrors `update::UpdateSnapshot`. */
-export interface UpdateSnapshot {
-  state: UpdateState;
-  current: string;
-  latest: string | null;
-  error: string | null;
-  done: number | null;
-  total: number | null;
-  notes: UpdateNotes | null;
-  staged: boolean;
-}
+export type { ReleaseNote, UpdateNotes, UpdateSnapshot, UpdateState } from '../types/rust';
 
 const stateMessages: Record<UpdateState, MessageKey> = {
   idle: 'updateIdle',
@@ -81,7 +45,11 @@ export function createUpdatePage(
   const actionLabel = action.querySelector<HTMLElement>('[data-update-label]')!;
   const headerLabel = headerAction.querySelector<HTMLElement>('[data-update-label]')!;
   const autoDownloadSwitch = root.querySelector<HTMLButtonElement>('[data-update-auto-download]')!;
+  const versionDebugNote = root.querySelector<HTMLElement>('[data-update-version-debug-note]')!;
+  const debugNote = root.querySelector<HTMLElement>('[data-update-debug-note]')!;
   const notesOpen = root.querySelector<HTMLButtonElement>('[data-update-notes-open]')!;
+  const notesEmpty = root.querySelector<HTMLElement>('[data-update-notes-empty]')!;
+  const notesLimitNote = root.querySelector<HTMLElement>('[data-update-notes-limit-note]')!;
   const t = (key: MessageKey) => translate(locale(), key);
   const notesDialog = document.createElement('dialog');
   notesDialog.className = 'community-dialog update-notes-dialog';
@@ -92,6 +60,10 @@ export function createUpdatePage(
 
   let snapshot: UpdateSnapshot | undefined;
   let autoDownload = false;
+  let autoDownloadSaving = false;
+  let notesLoading = false;
+  let notesRefreshRequired = false;
+  let debugNotesLoaded = false;
   let aboutActive = false;
   let notice: UpdateState | undefined;
   let noticeTimer: number | undefined;
@@ -189,32 +161,87 @@ export function createUpdatePage(
     renderedNotesLocale = currentLocale;
   }
 
-  function showNotes() {
-    const current = snapshot?.notes;
-    if (!current) {
+  function openNotes(current: UpdateNotes) {
+    renderNotesDialog(current);
+    if (!notesDialog.open) {
+      notesDialog.showModal();
+    }
+    notesDialog.focus();
+  }
+
+  async function showNotes() {
+    const current = snapshot;
+    if (!current || notesLoading) {
       return;
     }
-    try {
-      renderNotesDialog(current);
-      if (!notesDialog.open) {
-        notesDialog.showModal();
+    if (
+      current.notes?.releases.length &&
+      !notesRefreshRequired &&
+      (!current.isDebugBuild || debugNotesLoaded)
+    ) {
+      try {
+        openNotes(current.notes);
+      } catch (error: unknown) {
+        onFault(String(error));
       }
-      notesDialog.focus();
+      return;
+    }
+    if (!current.isDebugBuild) {
+      return;
+    }
+
+    notesLoading = true;
+    render();
+    try {
+      const next = await invoke<UpdateSnapshot>('update_check');
+      snapshot = next;
+      watch();
+      if (next.state === 'error') {
+        notesRefreshRequired = true;
+        onFault(next.error ?? t('updateFailed'));
+        return;
+      }
+      if (!next.notes?.releases.length) {
+        notesRefreshRequired = true;
+        return;
+      }
+      notesRefreshRequired = false;
+      debugNotesLoaded = true;
+      openNotes(next.notes);
     } catch (error: unknown) {
+      notesRefreshRequired = true;
       onFault(String(error));
+    } finally {
+      notesLoading = false;
+      render();
     }
   }
 
   function render() {
-    autoDownloadSwitch.setAttribute('aria-checked', String(autoDownload));
-    autoDownloadSwitch.setAttribute('aria-label', t('autoDownload'));
-
     const current = snapshot;
+    const debugBuild = current?.isDebugBuild ?? false;
+    autoDownloadSwitch.setAttribute('aria-checked', String(debugBuild ? false : autoDownload));
+    autoDownloadSwitch.setAttribute('aria-label', t('autoDownload'));
+    autoDownloadSwitch.disabled = debugBuild || autoDownloadSaving;
+    autoDownloadSwitch.setAttribute('aria-busy', String(autoDownloadSaving));
+    versionDebugNote.hidden = !debugBuild;
+    versionDebugNote.textContent = t('devVersionDescription');
+    debugNote.hidden = !debugBuild;
+    debugNote.textContent = t('autoDownloadDebugUnavailable');
+    notesLimitNote.hidden = !debugBuild;
+    notesLimitNote.textContent = t('devUpdateNotesDescription');
+    if (debugBuild) {
+      autoDownloadSwitch.setAttribute('aria-describedby', debugNote.id);
+    } else {
+      autoDownloadSwitch.removeAttribute('aria-describedby');
+    }
+
     if (!current) {
       status.textContent = t('updateIdle');
       renderAction(action, actionLabel, t('checkNow'), 'check', false);
       headerAction.hidden = true;
       notesOpen.disabled = true;
+      notesEmpty.hidden = true;
       return;
     }
 
@@ -260,6 +287,7 @@ export function createUpdatePage(
         : busy
           ? 'progress'
           : 'update';
+    action.hidden = current.isDebugBuild;
     renderAction(action, actionLabel, label, mode, busy);
     renderAction(headerAction, headerLabel, label, mode, busy);
 
@@ -274,7 +302,18 @@ export function createUpdatePage(
       : t(stateMessages[current.state]);
 
     notesOpen.textContent = t('open');
-    notesOpen.disabled = !current.notes?.releases.length;
+    const hasNotes = Boolean(current.notes?.releases.length);
+    const notesUnavailable =
+      current.isDebugBuild &&
+      notesRefreshRequired &&
+      !notesLoading &&
+      !hasNotes &&
+      current.state !== 'error';
+    notesOpen.disabled = notesLoading || (!hasNotes && (!current.isDebugBuild || notesUnavailable));
+    notesOpen.textContent = notesLoading ? t('loading') : t('open');
+    notesOpen.setAttribute('aria-busy', String(notesLoading));
+    notesEmpty.hidden = !notesUnavailable;
+    notesEmpty.textContent = t('noUpdateNotes');
     if (notesDialog.open && current.notes) {
       try {
         renderNotesDialog(current.notes);
@@ -290,7 +329,7 @@ export function createUpdatePage(
       current.state === 'installing' ||
       (current.state === 'checking' && current.latest !== null) ||
       (current.state === 'error' && current.latest !== null);
-    headerAction.hidden = aboutActive || !headerActionable;
+    headerAction.hidden = current.isDebugBuild || aboutActive || !headerActionable;
 
     // Keep the verified download when this recheck fails; surface the error
     // separately so the user can retry.
@@ -350,11 +389,12 @@ export function createUpdatePage(
       return;
     }
     const next = !autoDownload;
-    autoDownloadSwitch.disabled = true;
+    autoDownloadSaving = true;
+    render();
     void onAutoDownload(next)
       .catch((error: unknown) => onFault(String(error)))
       .finally(() => {
-        autoDownloadSwitch.disabled = false;
+        autoDownloadSaving = false;
         render();
       });
   });

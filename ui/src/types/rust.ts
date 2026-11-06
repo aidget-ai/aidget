@@ -18,6 +18,65 @@ export type IntegrationResource = "mcp" | "skills";
 export type AgentProblem = { agentId: string, resource: IntegrationResource, message: string, };
 export type IntegrationMutation = { state: IntegrationState, problems: Array<AgentProblem>, };
 export type Language = "en-US" | "zh-CN";
+export type ReleaseNote = {
+/**
+ * Normalized version without the leading `v`.
+ */
+version: string,
+/**
+ * Complete bilingual Markdown body published with the release.
+ */
+body: string, };
+export type UpdateNotes = {
+/**
+ * Installed version from which the retained range begins.
+ */
+from: string,
+/**
+ * Stable target version shown in the dialog title.
+ */
+to: string,
+/**
+ * Releases ordered newest-first.
+ */
+releases: Array<ReleaseNote>, };
+export type UpdateState = "idle" | "checking" | "latest" | "source" | "no_release" | "found" | "downloading" | "ready" | "installing" | "error";
+export type UpdateSnapshot = { state: UpdateState,
+/**
+ * Whether this process is a Rust debug build for which automatic updates are disabled.
+ */
+isDebugBuild: boolean,
+/**
+ * What this build is; see [`build_stamp`].
+ */
+current: string,
+/**
+ * The release version found by the last check, once one has run.
+ */
+latest: string | null, error: string | null,
+/**
+ * Bytes downloaded so far, while `state` is `Downloading`.
+ */
+done: number | null,
+/**
+ * The asset's size in bytes, when the release says.
+ */
+total: number | null,
+/**
+ * Stable release notes retained for the About dialog.
+ *
+ * Boxed to keep the frequently cloned snapshot small.
+ */
+notes: UpdateNotes | null,
+/**
+ * Whether a verified download is waiting on disk.
+ *
+ * `state` says what is happening; this says what is available. Without it
+ * the window has to read availability off the last outcome, so a failed
+ * check, a failed download or a failed install each hid work that was still
+ * possible.
+ */
+staged: boolean, };
 export type WidgetPermission = "script" | "location" | "storage";
 export type WidgetDragMode = "all" | "handle";
 export type WidgetPlatform = "macos" | "windows" | "linux";

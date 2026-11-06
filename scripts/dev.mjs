@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { chmod, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -82,6 +82,12 @@ async function main() {
   <key>CFBundlePackageType</key><string>APPL</string>`,
       ),
     );
+    // Moving a linker-signed executable into a new bundle invalidates its
+    // signature on current macOS versions. Re-sign after writing Info.plist so
+    // the development app can pass taskgated and launch from any terminal.
+    execFileSync('codesign', ['--force', '--deep', '--sign', '-', dirname(contents)], {
+      stdio: 'inherit',
+    });
     // Preserve Cargo's PID so Tauri terminates the application itself on reload.
     process.execve(executable, [executable, ...args.slice(2)], process.env);
     return;

@@ -124,6 +124,9 @@ pub fn announce(app: &tauri::AppHandle, service: &UpdateService) {
 /// apply.
 pub fn start_check(app: &tauri::AppHandle) {
     let service = app.state::<UpdateService>().inner().clone();
+    if service.is_debug_build() {
+        return;
+    }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         // Let the windows and widgets settle before touching the network.
@@ -133,11 +136,23 @@ pub fn start_check(app: &tauri::AppHandle) {
                 let token = settings
                     .github_token
                     .map(|token| token.as_str().to_string());
-                check_and_maybe_download(service, token.as_deref(), settings.auto_download).await;
+                let _ = check_on_launch(service, token.as_deref(), settings.auto_download).await;
             }
             Err(error) => eprintln!("aidget: cannot read settings for the update check: {error}"),
         }
     });
+}
+
+/// Run the launch policy without loading a debug build's update metadata.
+pub async fn check_on_launch(
+    service: UpdateService,
+    token: Option<&str>,
+    auto_download: bool,
+) -> Option<UpdateSnapshot> {
+    if service.is_debug_build() {
+        return None;
+    }
+    Some(check_and_maybe_download(service, token, auto_download).await)
 }
 
 /// Run one check, then download when a newer release was found and automatic

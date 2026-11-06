@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { localizedChangelog, renderReleaseNotes } from '../../src/main/release-notes';
-import type { UpdateNotes } from '../../src/main/update';
+import type { UpdateNotes } from '../../src/types/rust';
 
 const body = `# Changelog
 

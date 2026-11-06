@@ -129,6 +129,12 @@ test.skipIf(process.platform !== 'darwin')(
       expect(application.args).toEqual(['ui', '--no-main-window']);
       expect(application.path).toBe(join(root, 'aidget-dev.app/Contents/MacOS/aidget'));
       expect(applicationPid).toBe(runner.pid);
+      await promisify(execFile)('codesign', [
+        '--verify',
+        '--deep',
+        '--strict',
+        join(root, 'aidget-dev.app'),
+      ]);
       const exited = once(runner, 'exit');
       runner.kill('SIGKILL');
       await exited;

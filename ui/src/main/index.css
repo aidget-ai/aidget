@@ -658,6 +658,9 @@ body[data-platform='windows'] .navigation {
 }
 .switch:disabled {
   opacity: 0.55;
+  cursor: not-allowed;
+}
+.switch:disabled[aria-busy='true'] {
   cursor: wait;
 }
 
