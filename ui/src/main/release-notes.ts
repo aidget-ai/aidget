@@ -1,6 +1,7 @@
 import DOMPurify from 'dompurify';
 import { marked, type Token } from 'marked';
 
+import type { Language } from '../types/rust';
 import type { ReleaseNote, UpdateNotes } from './update';
 
 const CHINESE_MARKER = '<!-- lang:zh -->';
@@ -22,18 +23,18 @@ const ALLOWED_TAGS = [
 ];
 
 /** Select one language's changelog, excluding install and thanks footers. */
-export function localizedChangelog(body: string, language: 'en' | 'zh') {
+export function localizedChangelog(body: string, language: Language) {
   const separator = body.indexOf(CHINESE_MARKER);
-  if (separator < 0 && language === 'zh') {
+  if (separator < 0 && language === 'zh-CN') {
     throw new Error('release notes are missing the Chinese-language separator');
   }
   const selected =
     separator < 0
       ? body
-      : language === 'zh'
+      : language === 'zh-CN'
         ? body.slice(separator + CHINESE_MARKER.length)
         : body.slice(0, separator);
-  const cutoff = language === 'zh' ? '### 安装说明' : '### Installation';
+  const cutoff = language === 'zh-CN' ? '### 安装说明' : '### Installation';
   const lines = selected.split(/\r?\n/);
   const end = lines.findIndex((line) => line.trim() === cutoff);
   const changelog = (end < 0 ? lines : lines.slice(0, end)).join('\n').trim();
@@ -57,7 +58,7 @@ interface Category {
 export function renderReleaseNotes(
   root: HTMLElement,
   notes: UpdateNotes,
-  language: 'en' | 'zh',
+  language: Language,
   otherLabel: string,
   openLink: (url: string) => void,
 ) {
@@ -213,7 +214,7 @@ function keepHttpsLinks(root: ParentNode) {
   }
 }
 
-function categoriesFor(release: ReleaseNote, language: 'en' | 'zh', otherLabel: string) {
+function categoriesFor(release: ReleaseNote, language: Language, otherLabel: string) {
   const categories: Category[] = [];
   let current: Category | undefined;
   for (const token of marked.lexer(localizedChangelog(release.body, language), { gfm: true })) {

@@ -46,15 +46,15 @@ beforeEach(() => {
 
 describe('release-note language selection', () => {
   it('selects only the changelog in the requested language', () => {
-    expect(localizedChangelog(body, 'en')).toContain('English feature.');
-    expect(localizedChangelog(body, 'en')).toContain('English fix.');
-    expect(localizedChangelog(body, 'en')).not.toContain('Install instructions.');
-    expect(localizedChangelog(body, 'zh')).toContain('中文功能。');
-    expect(localizedChangelog(body, 'zh')).not.toContain('安装说明。');
+    expect(localizedChangelog(body, 'en-US')).toContain('English feature.');
+    expect(localizedChangelog(body, 'en-US')).toContain('English fix.');
+    expect(localizedChangelog(body, 'en-US')).not.toContain('Install instructions.');
+    expect(localizedChangelog(body, 'zh-CN')).toContain('中文功能。');
+    expect(localizedChangelog(body, 'zh-CN')).not.toContain('安装说明。');
   });
 
   it('fails explicitly when the bilingual separator is absent', () => {
-    expect(() => localizedChangelog('# Changelog\n\n- only one language', 'zh')).toThrow(
+    expect(() => localizedChangelog('# Changelog\n\n- only one language', 'zh-CN')).toThrow(
       'Chinese-language separator',
     );
   });
@@ -90,7 +90,7 @@ describe('release-note rendering', () => {
           },
         ],
       },
-      'en',
+      'en-US',
       'Other changes',
       () => {},
     );
@@ -150,7 +150,7 @@ describe('release-note rendering', () => {
       ],
     };
 
-    renderReleaseNotes(root, notes, 'en', 'Other changes', () => {});
+    renderReleaseNotes(root, notes, 'en-US', 'Other changes', () => {});
 
     expect([...root.querySelectorAll('h3')].map((heading) => heading.textContent)).toEqual([
       'Features',
@@ -196,7 +196,7 @@ describe('release-note rendering', () => {
           },
         ],
       },
-      'en',
+      'en-US',
       'Other changes',
       () => {},
     );
@@ -238,7 +238,7 @@ describe('release-note rendering', () => {
           },
         ],
       },
-      'en',
+      'en-US',
       'Other changes',
       open,
     );

@@ -3,6 +3,7 @@ use aidget::{
     agents::{config::AgentResourceState, integration::*},
     community::model::*,
     runtime::ui::LocalWidgetDetails,
+    settings::Language,
     widgets::{
         model::{WidgetDragMode, WidgetPermission},
         package::*,
@@ -29,6 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         IntegrationResource::decl(&cfg),
         AgentProblem::decl(&cfg),
         IntegrationMutation::decl(&cfg),
+        Language::decl(&cfg),
         WidgetPermission::decl(&cfg),
         WidgetDragMode::decl(&cfg),
         WidgetPlatform::decl(&cfg),

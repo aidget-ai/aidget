@@ -26,6 +26,8 @@ pub struct UiState {
     pub topology: Mutex<String>,
     pub board_revision: Mutex<u64>,
     pub root: Mutex<std::path::PathBuf>,
+    /// Serialize language initialization with all other preference writes.
+    pub preferences: Mutex<()>,
     pub storage_lock: Mutex<()>,
     pub startup: MainStartup,
 }

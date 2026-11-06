@@ -1,5 +1,5 @@
-import { translate, type Locale, type MessageKey } from './locale';
-import { resolvedLocale } from './preferences';
+import type { Language } from '../types/rust';
+import { translate, type MessageKey } from './locale';
 import { createSegmentedControl } from './segmented-control';
 import { createSortIcon } from './sort-icon';
 
@@ -7,11 +7,11 @@ import { createSortIcon } from './sort-icon';
 export type CommunitySort = `${'downloads' | 'published'}-${'asc' | 'desc'}`;
 
 /** Select a catalogue metric in a segmented control; repeat its activation to reverse ordering. */
-export function createCommunitySort(locale: () => Locale, changed: () => void) {
+export function createCommunitySort(locale: () => Language, changed: () => void) {
   let value: CommunitySort = 'published-desc';
   let disabled = false;
   let downloadsPending = false;
-  const t = (key: MessageKey) => translate(resolvedLocale(locale()), key);
+  const t = (key: MessageKey) => translate(locale(), key);
   const element = document.createElement('div');
   element.className = 'community-sort segmented-control';
   element.setAttribute('role', 'group');

@@ -18,6 +18,12 @@ fn github_token_changes_are_reserved_for_the_main_window() {
 }
 
 #[test]
+fn language_initialization_is_reserved_for_the_main_window() {
+    assert!(MAIN_COMMANDS.contains(&"initialize_language"));
+    assert!(!WIDGET_COMMANDS.contains(&"initialize_language"));
+}
+
+#[test]
 fn cached_community_catalogues_are_reserved_for_the_main_window() {
     assert!(MAIN_COMMANDS.contains(&"community_cached"));
     assert!(!WIDGET_COMMANDS.contains(&"community_cached"));

@@ -1,9 +1,9 @@
 import { createElement, LayoutGrid, ShieldCheck } from 'lucide';
 
 import type { CommunityEntry } from '../types/rust';
+import type { Language } from '../types/rust';
 import { createCommunityMedia } from './community-media';
-import { translate, type Locale } from './locale';
-import { resolvedLocale } from './preferences';
+import { translate } from './locale';
 
 /** Maintain one catalogue card, retaining decoded media while its digest remains unchanged. */
 export function createCommunityCard(
@@ -11,10 +11,10 @@ export function createCommunityCard(
   commit: string,
   media: ReturnType<typeof createCommunityMedia>,
   scrollRoot: Element,
-  locale: () => Locale,
+  locale: () => Language,
   details: (entry: CommunityEntry, commit: string) => void,
 ) {
-  const t = (key: Parameters<typeof translate>[1]) => translate(resolvedLocale(locale()), key);
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale(), key);
   let revision = commit;
   const element = document.createElement('article');
   element.className = 'widget-card community-card';

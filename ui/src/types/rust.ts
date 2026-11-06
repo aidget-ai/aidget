@@ -17,6 +17,7 @@ mcpDisplayArgs: Array<string>, skillDirectory: string, skillContent: string, dat
 export type IntegrationResource = "mcp" | "skills";
 export type AgentProblem = { agentId: string, resource: IntegrationResource, message: string, };
 export type IntegrationMutation = { state: IntegrationState, problems: Array<AgentProblem>, };
+export type Language = "en-US" | "zh-CN";
 export type WidgetPermission = "script" | "location" | "storage";
 export type WidgetDragMode = "all" | "handle";
 export type WidgetPlatform = "macos" | "windows" | "linux";

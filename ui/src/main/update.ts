@@ -1,8 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import { translate, type Locale, type MessageKey } from './locale';
-import { resolvedLocale } from './preferences';
+import type { Language } from '../types/rust';
+import { translate, type MessageKey } from './locale';
 import { renderReleaseNotes } from './release-notes';
 
 /** What the backend reports about the update flow, in the order it settles. */
@@ -71,7 +71,7 @@ const UPDATE_EVENT = 'aidget://update';
 export function createUpdatePage(
   root: HTMLElement,
   headerAction: HTMLButtonElement,
-  locale: () => Locale,
+  locale: () => Language,
   onAutoDownload: (enabled: boolean) => Promise<void>,
   onFault: (message: string) => void,
   openExternal: (url: string) => void,
@@ -82,7 +82,7 @@ export function createUpdatePage(
   const headerLabel = headerAction.querySelector<HTMLElement>('[data-update-label]')!;
   const autoDownloadSwitch = root.querySelector<HTMLButtonElement>('[data-update-auto-download]')!;
   const notesOpen = root.querySelector<HTMLButtonElement>('[data-update-notes-open]')!;
-  const t = (key: MessageKey) => translate(resolvedLocale(locale()), key);
+  const t = (key: MessageKey) => translate(locale(), key);
   const notesDialog = document.createElement('dialog');
   notesDialog.className = 'community-dialog update-notes-dialog';
   notesDialog.dataset.updateNotesDialog = '';
@@ -98,7 +98,7 @@ export function createUpdatePage(
   let previousState: UpdateState | undefined;
   let poll: number | undefined;
   let renderedNotes: UpdateNotes | undefined;
-  let renderedNotesLocale: ReturnType<typeof resolvedLocale> | undefined;
+  let renderedNotesLocale: Language | undefined;
 
   function stopNotice() {
     window.clearTimeout(noticeTimer);
@@ -143,7 +143,7 @@ export function createUpdatePage(
   }
 
   function renderNotesDialog(current: UpdateNotes) {
-    const currentLocale = resolvedLocale(locale());
+    const currentLocale = locale();
     const previous = renderedNotes;
     const unchanged =
       previous !== undefined &&
@@ -164,7 +164,7 @@ export function createUpdatePage(
     title.textContent = t('updateNotesTitle').replace('{version}', current.to.replace(/^v/, ''));
     const content = document.createElement('div');
     content.className = 'community-dialog-content release-notes-content';
-    renderReleaseNotes(content, current, resolvedLocale(locale()), t('otherChanges'), openExternal);
+    renderReleaseNotes(content, current, locale(), t('otherChanges'), openExternal);
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'community-dialog-close';

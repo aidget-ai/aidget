@@ -88,7 +88,7 @@ function page(hasGithubToken = false) {
   const notify = vi.fn();
   const page = createCommunityPage(
     root,
-    () => 'en',
+    () => 'en-US',
     installed,
     () => hasGithubToken,
     notify,
@@ -148,10 +148,10 @@ describe('community cards', () => {
     expect(root.querySelector('article')).toBe(card);
   });
   it('distinguishes zero npm downloads from unavailable data', () => {
-    expect(weeklyDownloads(0, 'en')).toBe('0');
-    expect(weeklyDownloads(null, 'en')).toBeNull();
-    expect(weeklyDownloads(16000, 'en')).toBe('16k');
-    expect(weeklyDownloads(16000, 'zh')).toBe('16k');
+    expect(weeklyDownloads(0, 'en-US')).toBe('0');
+    expect(weeklyDownloads(null, 'en-US')).toBeNull();
+    expect(weeklyDownloads(16000, 'en-US')).toBe('16k');
+    expect(weeklyDownloads(16000, 'zh-CN')).toBe('16k');
   });
   it('keeps discovery cards compact and shows real zero downloads', async () => {
     const { root } = page();
@@ -454,7 +454,7 @@ describe('community discovery controls', () => {
   it('renders and translates the banner and opens its repository link', async () => {
     const root = document.createElement('section');
     document.body.append(root);
-    let locale: 'en' | 'zh-CN' = 'zh-CN';
+    let locale: 'en-US' | 'zh-CN' = 'zh-CN';
     const controller = createCommunityPage(
       root,
       () => locale,
@@ -473,7 +473,7 @@ describe('community discovery controls', () => {
     expect(link.lastElementChild?.tagName.toLowerCase()).toBe('svg');
     link.click();
     await vi.waitFor(() => expect(mocks.openUrl).toHaveBeenCalledWith(link.href));
-    locale = 'en';
+    locale = 'en-US';
     controller.render();
     expect(link.textContent).toBe('widget repository');
     expect(banner.textContent).toContain('security-reviewed');

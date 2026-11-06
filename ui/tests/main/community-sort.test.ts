@@ -7,7 +7,7 @@ beforeEach(() => document.body.replaceChildren());
 
 it('exposes two sort buttons and reverses the active metric without opening a menu', () => {
   const changed = vi.fn();
-  const control = createCommunitySort(() => 'en', changed);
+  const control = createCommunitySort(() => 'en-US', changed);
   document.body.append(control.element);
   expect(control.element.getAttribute('role')).toBe('group');
   expect(control.element.getAttribute('aria-label')).toBe('Sort');
@@ -28,7 +28,7 @@ it('exposes two sort buttons and reverses the active metric without opening a me
 });
 
 it('preserves ordering through translation and disables both buttons during loading', () => {
-  let locale: 'en' | 'zh-CN' = 'en';
+  let locale: 'en-US' | 'zh-CN' = 'en-US';
   const control = createCommunitySort(
     () => locale,
     () => {},
@@ -52,7 +52,7 @@ it('preserves ordering through translation and disables both buttons during load
 
 it('keeps each directional SVG decorative while buttons expose names and direction help', () => {
   const control = createCommunitySort(
-    () => 'en',
+    () => 'en-US',
     () => {},
   );
   const rows = [...control.element.querySelectorAll<HTMLButtonElement>('button')];
@@ -66,7 +66,7 @@ it('keeps each directional SVG decorative while buttons expose names and directi
 
 it('disables only download sorting while statistics are pending', () => {
   const changed = vi.fn();
-  const control = createCommunitySort(() => 'en', changed);
+  const control = createCommunitySort(() => 'en-US', changed);
   document.body.append(control.element);
   const published = control.element.querySelector<HTMLButtonElement>('[data-sort="published"]')!;
   const downloads = control.element.querySelector<HTMLButtonElement>('[data-sort="downloads"]')!;

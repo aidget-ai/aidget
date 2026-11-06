@@ -25,8 +25,8 @@ it('keeps logo and screenshot nodes when paths or metadata change but digests re
   entry.entry.config.logo = 'logo.png';
   entry.entry.files.push({ path: 'logo.png', size: 32, sha256: 'f'.repeat(64) });
   const details = vi.fn();
-  const media = createCommunityMedia(() => 'en');
-  const card = createCommunityCard(entry, 'a'.repeat(40), media, root, () => 'en', details);
+  const media = createCommunityMedia(() => 'en-US');
+  const card = createCommunityCard(entry, 'a'.repeat(40), media, root, () => 'en-US', details);
   root.append(card.element);
   card.update(entry, 'a'.repeat(40), false, 'Install');
   await vi.waitFor(() => expect(root.querySelectorAll('img')).toHaveLength(2));
@@ -52,8 +52,8 @@ it('hands the displayed revision to details after an update', () => {
   document.body.append(root);
   const entry = communityEntry(1);
   const details = vi.fn();
-  const media = createCommunityMedia(() => 'en');
-  const card = createCommunityCard(entry, 'a'.repeat(40), media, root, () => 'en', details);
+  const media = createCommunityMedia(() => 'en-US');
+  const card = createCommunityCard(entry, 'a'.repeat(40), media, root, () => 'en-US', details);
   root.append(card.element);
   const next = structuredClone(entry);
   next.entry.config.title = 'Updated title';

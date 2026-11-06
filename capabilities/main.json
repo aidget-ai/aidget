@@ -10,6 +10,7 @@
     "allow-main-widget-details",
     "allow-integration-state",
     "allow-set-agent-integration",
+    "allow-initialize-language",
     "allow-set-preferences",
     "allow-set-github-token",
     "allow-set-widget-enabled",

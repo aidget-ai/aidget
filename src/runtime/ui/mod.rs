@@ -30,10 +30,10 @@ pub use geometry::{
     physical_geometry, place_frame, place_in_work_area, place_new_widget,
 };
 pub use main_page::{
-    cached_preview, delete_widget, deleted_widget_preview, local_widget_details, main_payload,
-    main_widget_preview, main_widgets, purge_deleted_widget, restore_widget, set_github_token,
-    set_preferences, set_widget_enabled, GithubTokenSummary, LocalWidgetDetails, MainState,
-    WidgetSummary,
+    cached_preview, delete_widget, deleted_widget_preview, initialize_language,
+    local_widget_details, main_payload, main_widget_preview, main_widgets, purge_deleted_widget,
+    restore_widget, set_github_token, set_preferences, set_widget_enabled, GithubTokenSummary,
+    LocalWidgetDetails, MainState, WidgetSummary,
 };
 pub use main_window::{mark_main_painted, show_main, show_main_now};
 pub use state::{

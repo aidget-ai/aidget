@@ -1,7 +1,7 @@
 use aidget::runtime::main_window_state;
 use aidget::runtime::ui::{
-    cached_preview, main_widgets, set_github_token as change_github_token, GithubTokenSummary,
-    MainState, WidgetSummary,
+    cached_preview, initialize_language, main_widgets, set_github_token as change_github_token,
+    GithubTokenSummary, MainState, UiState, WidgetSummary,
 };
 use aidget::settings::{
     save_github_token, save_preferences, GithubToken, Language, MainPage, Theme, TrayClickAction,
@@ -9,6 +9,10 @@ use aidget::settings::{
 };
 use aidget::widgets::model::{DeletedWidgetSummary, WidgetFrame};
 use aidget::widgets::store::{Store, WidgetEdit, CONFIG_FILE};
+use tauri::{
+    test::{mock_builder, mock_context, noop_assets},
+    Manager,
+};
 use tempfile::TempDir;
 
 #[test]
@@ -82,6 +86,36 @@ fn main_window_lists_all_widgets_and_marks_enabled_state() {
     // The documented contract: one version everywhere. Whether the build may update
     // itself is the update row's answer, not the version string's.
     assert_eq!(state.version, env!("CARGO_PKG_VERSION"));
+}
+
+#[test]
+fn main_state_leaves_language_empty_until_initialization() {
+    let dir = TempDir::new().unwrap();
+    let store = Store::new(dir.path());
+    store.ensure_layout().unwrap();
+
+    assert_eq!(main_widgets(&store).unwrap().language, None);
+}
+
+#[test]
+fn language_initialization_does_not_replace_an_existing_choice() {
+    let dir = TempDir::new().unwrap();
+    let store = Store::new(dir.path());
+    store.ensure_layout().unwrap();
+    let app = mock_builder().build(mock_context(noop_assets())).unwrap();
+    let state = UiState::default();
+    *state.root.lock().unwrap() = store.root().to_path_buf();
+    app.manage(state);
+    let handle = app.handle();
+
+    assert_eq!(
+        initialize_language(handle, Language::ZhCn).unwrap(),
+        Language::ZhCn
+    );
+    assert_eq!(
+        initialize_language(handle, Language::EnUs).unwrap(),
+        Language::ZhCn
+    );
 }
 
 #[test]
@@ -241,7 +275,7 @@ fn main_state_exposes_widget_metadata_in_camel_case() {
         }],
         version: "0.1.0".to_string(),
         theme: Theme::Dark,
-        language: Language::ZhCn,
+        language: Some(Language::ZhCn),
         tray_click_action: TrayClickAction::Window,
         last_page: MainPage::Integrations,
         github_token: Some(GithubTokenSummary {

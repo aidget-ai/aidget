@@ -60,9 +60,9 @@ describe('Agent controls', () => {
           {
             all: '全部',
             empty: '无 Agent',
-            installFor: translate('zh', 'installFor'),
-            replaceFor: translate('zh', 'replaceFor'),
-            removeFrom: translate('zh', 'removeFrom'),
+            installFor: translate('zh-CN', 'installFor'),
+            replaceFor: translate('zh-CN', 'replaceFor'),
+            removeFrom: translate('zh-CN', 'removeFrom'),
           },
           false,
           onChange,
@@ -88,7 +88,7 @@ describe('Agent controls', () => {
         },
       ],
     };
-    for (const locale of ['zh', 'en'] as const) {
+    for (const locale of ['zh-CN', 'en-US'] as const) {
       for (const resource of ['mcp', 'skills'] as const) {
         const root = document.createElement('div');
         const onChange = vi.fn();
@@ -107,7 +107,7 @@ describe('Agent controls', () => {
           onChange,
         );
         const button = root.querySelector<HTMLButtonElement>('[data-agent="codex"]')!;
-        const action = locale === 'zh' ? '从 Codex 移除：' : 'Remove from Codex: ';
+        const action = locale === 'zh-CN' ? '从 Codex 移除：' : 'Remove from Codex: ';
         expect(button.getAttribute('aria-label')).toBe(action);
         expect(button.title).toBe(`${action}${installedInfo.agents[0][resource]!.path}`);
         button.click();

@@ -6,8 +6,8 @@ import type {
   WidgetPermission,
   WidgetPlatform,
 } from '../types/rust';
-import { translate, type Locale, type MessageKey } from './locale';
-import { resolvedLocale } from './preferences';
+import type { Language } from '../types/rust';
+import { translate, type MessageKey } from './locale';
 
 const platformNames: Record<WidgetPlatform, string> = {
   macos: 'macOS',
@@ -25,9 +25,9 @@ export function renderWidgetDetailsContent(
   config: WidgetConfig,
   description: string | null,
   previews: HTMLElement[],
-  locale: Locale,
+  locale: Language,
 ) {
-  const t = (key: MessageKey) => translate(resolvedLocale(locale), key);
+  const t = (key: MessageKey) => translate(locale, key);
   const content = document.createElement('div');
   content.className = 'community-dialog-content';
   const images = document.createElement('div');
@@ -82,7 +82,7 @@ export function renderWidgetDetailsContent(
 }
 
 /** Display installed metadata without community identity or an installation action. */
-export function createLocalWidgetDetails(root: HTMLElement, locale: () => Locale) {
+export function createLocalWidgetDetails(root: HTMLElement, locale: () => Language) {
   let details: LocalWidgetDetails | undefined;
   let generation = 0;
   const dialog = document.createElement('dialog');
@@ -99,7 +99,7 @@ export function createLocalWidgetDetails(root: HTMLElement, locale: () => Locale
     if (!details) {
       return;
     }
-    const t = (key: MessageKey) => translate(resolvedLocale(locale()), key);
+    const t = (key: MessageKey) => translate(locale(), key);
     const title = document.createElement('h2');
     title.id = 'local-widget-detail-title';
     title.textContent = details.config.title;

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize};
 use toml_edit::{value, DocumentMut};
+use ts_rs::TS;
 
 use crate::common::error::{Error, Result};
 use crate::common::utils::atomic_write_private;
@@ -110,15 +111,12 @@ impl Theme {
 }
 
 /// Selected UI language.
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, TS)]
 pub enum Language {
-    /// Follow the operating system language.
+    /// US English UI.
     #[default]
-    #[serde(rename = "system")]
-    System,
-    /// English UI.
-    #[serde(rename = "en")]
-    En,
+    #[serde(rename = "en-US")]
+    EnUs,
     /// Simplified Chinese UI.
     #[serde(rename = "zh-CN")]
     ZhCn,
@@ -127,8 +125,7 @@ pub enum Language {
 impl Language {
     fn as_str(self) -> &'static str {
         match self {
-            Language::System => "system",
-            Language::En => "en",
+            Language::EnUs => "en-US",
             Language::ZhCn => "zh-CN",
         }
     }
@@ -204,9 +201,9 @@ pub struct Settings {
     /// Main-window color theme.
     #[serde(default)]
     pub theme: Theme,
-    /// Main-window language.
+    /// Main-window language, selected on the first main-window launch.
     #[serde(default)]
-    pub language: Language,
+    pub language: Option<Language>,
     /// Primary-click behavior for the tray icon.
     #[serde(default)]
     pub tray_click_action: TrayClickAction,
@@ -234,7 +231,7 @@ impl Default for Settings {
             trash_retention: NonZeroUsize::new(DEFAULT_TRASH_RETENTION)
                 .expect("default trash retention is non-zero"),
             theme: Theme::default(),
-            language: Language::default(),
+            language: None,
             tray_click_action: TrayClickAction::default(),
             last_page: MainPage::default(),
             github_token: None,
@@ -245,14 +242,16 @@ impl Default for Settings {
 
 impl Settings {
     /// Return the preference subset exposed to the main window.
-    pub fn preferences(&self) -> UiPreferences {
-        UiPreferences {
+    pub fn preferences(&self) -> Result<UiPreferences> {
+        Ok(UiPreferences {
             theme: self.theme,
-            language: self.language,
+            language: self.language.ok_or_else(|| {
+                Error::Other("main-window language is not initialized".to_string())
+            })?,
             tray_click_action: self.tray_click_action,
             last_page: self.last_page,
             auto_download: self.auto_download,
-        }
+        })
     }
 }
 
@@ -271,7 +270,6 @@ pub fn ensure(root: &Path) -> Result<()> {
         .parse::<DocumentMut>()
         .map_err(|error| Error::Other(format!("toml: {error}")))?;
     insert_missing(&mut document, "theme", Theme::System.as_str());
-    insert_missing(&mut document, "language", Language::System.as_str());
     insert_missing(
         &mut document,
         "tray_click_action",
@@ -291,7 +289,36 @@ pub fn load(root: &Path) -> Result<Settings> {
     let bytes = fs::read(settings_path(root))?;
     let text =
         std::str::from_utf8(&bytes).map_err(|error| Error::Other(format!("toml: {error}")))?;
-    toml::from_str(text).map_err(|error| Error::Other(format!("toml: {error}")))
+    let mut document = text
+        .parse::<DocumentMut>()
+        .map_err(|error| Error::Other(format!("toml: {error}")))?;
+    let mut replaced_invalid_language = false;
+    if let Some(item) = document.get("language") {
+        match item.as_str() {
+            Some("zh-CN" | "en-US") => {}
+            Some("en") => {
+                document["language"] = value(Language::EnUs.as_str());
+            }
+            Some("system") => {
+                document.remove("language");
+            }
+            _ => {
+                document["language"] = value(Language::EnUs.as_str());
+                replaced_invalid_language = true;
+            }
+        }
+    }
+
+    let normalized = document.to_string();
+    let settings =
+        toml::from_str(&normalized).map_err(|error| Error::Other(format!("toml: {error}")))?;
+    if normalized != text {
+        atomic_write_private(&settings_path(root), normalized.as_bytes())?;
+        if replaced_invalid_language {
+            eprintln!("aidget: invalid language setting; using en-US");
+        }
+    }
+    Ok(settings)
 }
 
 /// Update only the UI preferences while preserving retention settings
@@ -309,6 +336,23 @@ pub fn save_preferences(root: &Path, preferences: UiPreferences) -> Result<()> {
     document["last_page"] = value(preferences.last_page.as_str());
     document["auto_download"] = value(preferences.auto_download);
     atomic_write_private(&path, document.to_string().as_bytes())
+}
+
+/// Save the system-derived language only when no explicit choice exists.
+pub fn initialize_language(root: &Path, language: Language) -> Result<Language> {
+    let settings = load(root)?;
+    if let Some(current) = settings.language {
+        return Ok(current);
+    }
+
+    let path = settings_path(root);
+    let text = fs::read_to_string(&path)?;
+    let mut document = text
+        .parse::<DocumentMut>()
+        .map_err(|error| Error::Other(format!("toml: {error}")))?;
+    document["language"] = value(language.as_str());
+    atomic_write_private(&path, document.to_string().as_bytes())?;
+    Ok(language)
 }
 
 /// Save or remove the optional GitHub token without changing other settings.
@@ -347,9 +391,6 @@ trash_retention = {DEFAULT_TRASH_RETENTION}\n\
 \n\
 # Main-window color theme: system, light, or dark.\n\
 theme = \"system\"\n\
-\n\
-# Main-window language: system, en, or zh-CN.\n\
-language = \"system\"\n\
 \n\
 # Primary tray click: window or menu.\n\
 tray_click_action = \"window\"\n\

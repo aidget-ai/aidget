@@ -49,7 +49,7 @@ it('renders empty permissions as plain text, and declared permissions and origin
   const configured = structuredClone(details.config);
   configured.permissions = ['script', 'storage'];
   configured.network = ['https://api.example.com'];
-  const content = renderWidgetDetailsContent(configured, details.description, [], 'en');
+  const content = renderWidgetDetailsContent(configured, details.description, [], 'en-US');
   expect(
     [...content.querySelectorAll('.community-permissions li')].map((item) => item.textContent),
   ).toEqual(['JavaScript', 'Local storage']);
@@ -60,7 +60,7 @@ it('renders empty permissions as plain text, and declared permissions and origin
 });
 
 it('shows the local preview without community identity or header actions, translates and closes', async () => {
-  let locale: 'en' | 'zh-CN' = 'en';
+  let locale: 'en-US' | 'zh-CN' = 'en-US';
   const root = document.createElement('section');
   document.body.append(root);
   const controller = createLocalWidgetDetails(root, () => locale);
@@ -89,7 +89,7 @@ it('does not let an older or canceled read open a dialog, and exposes read failu
   );
   const root = document.createElement('section');
   document.body.append(root);
-  const controller = createLocalWidgetDetails(root, () => 'en');
+  const controller = createLocalWidgetDetails(root, () => 'en-US');
   const older = controller.show('old');
   const newer = controller.show('new');
   const latest = structuredClone(details);

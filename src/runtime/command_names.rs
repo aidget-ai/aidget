@@ -12,7 +12,7 @@ macro_rules! command_groups {
 command_groups! {
     MAIN_COMMANDS: [
         "main_state", "main_painted", "main_widget_cached_preview", "main_widget_details",
-        "integration_state", "set_agent_integration", "set_preferences",
+        "integration_state", "set_agent_integration", "initialize_language", "set_preferences",
         "set_github_token",
         "set_widget_enabled", "delete_widget", "restore_widget",
         "deleted_widget_preview", "purge_deleted_widget", "main_widget_preview",

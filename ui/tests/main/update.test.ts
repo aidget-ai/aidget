@@ -41,7 +41,7 @@ function snapshot(state: UpdateSnapshot['state'], extra: Partial<UpdateSnapshot>
 }
 
 /// Mount the real page markup and create the row against it.
-function mount(locale: 'en' | 'zh-CN' = 'en') {
+function mount(locale: 'en-US' | 'zh-CN' = 'en-US') {
   const start = mainHtml.indexOf('<body>') + '<body>'.length;
   const end = mainHtml.lastIndexOf('</body>');
   document.body.innerHTML = mainHtml.slice(start, end).replace(/<script[\s\S]*?<\/script>/g, '');

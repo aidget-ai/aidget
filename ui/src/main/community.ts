@@ -9,11 +9,11 @@ import type {
   DownloadCount,
   PackageAuthor,
 } from '../types/rust';
+import type { Language } from '../types/rust';
 import { createCommunityCard } from './community-card';
 import { createCommunityMedia } from './community-media';
 import { createCommunitySort } from './community-sort';
-import { translate, type Locale, type MessageKey } from './locale';
-import { resolvedLocale } from './preferences';
+import { translate, type MessageKey } from './locale';
 import { renderWidgetDetailsContent } from './widget-details';
 
 /** Format npm's count without confusing an absent response with a real zero. */
@@ -33,7 +33,7 @@ function authorName(author: PackageAuthor | null) {
 /** Render a community catalogue. Remote HTML never enters this document. */
 export function createCommunityPage(
   root: HTMLElement,
-  locale: () => Locale,
+  locale: () => Language,
   installed: () => Promise<void>,
   hasGithubToken: () => boolean,
   notify: (message: string) => void,
@@ -48,7 +48,7 @@ export function createCommunityPage(
   let lastAttempt = -Infinity;
   let forceCheck = false;
   let loadError = '';
-  let detailLocale: Locale | undefined;
+  let detailLocale: Language | undefined;
   const cards = new Map<string, ReturnType<typeof createCommunityCard>>();
   const media = createCommunityMedia(locale);
   const detailMedia: ReturnType<typeof media.create>[] = [];
@@ -58,7 +58,7 @@ export function createCommunityPage(
   let installError = '';
   let linkError = '';
   const counts = new Map<string, DownloadCount>();
-  const t = (key: MessageKey) => translate(resolvedLocale(locale()), key);
+  const t = (key: MessageKey) => translate(locale(), key);
   const header = document.createElement('div');
   header.className = 'community-heading';
   const heading = document.createElement('h1');
@@ -149,7 +149,7 @@ export function createCommunityPage(
   }
   function renderCount(element: HTMLElement, name: string) {
     const count = counts.get(name);
-    const number = weeklyDownloads(count?.weekly ?? null, resolvedLocale(locale()));
+    const number = weeklyDownloads(count?.weekly ?? null, locale());
     element.hidden = number === null;
     element.textContent = number === null ? '' : `↓ ${number}${t('communityPerWeek')}`;
     element.title = `${t('communityNpmDownloads')}${count?.weekly === null ? '' : `: ${count?.weekly ?? ''}`}`;
@@ -172,7 +172,7 @@ export function createCommunityPage(
     root.setAttribute('aria-busy', String(busy));
     const cached =
       snapshot && loadError
-        ? `${t('communityCached')} · ${t('communityLastChecked')}: ${new Date(checkedAt).toLocaleString(resolvedLocale(locale()))}\n`
+        ? `${t('communityCached')} · ${t('communityLastChecked')}: ${new Date(checkedAt).toLocaleString(locale())}\n`
         : '';
     status.textContent =
       linkError ||

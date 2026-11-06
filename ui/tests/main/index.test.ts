@@ -64,7 +64,7 @@ function state(lastPage: MainState['lastPage']): MainState {
     broken: [],
     version: '0.1.0',
     theme: 'system',
-    language: 'system',
+    language: 'en-US',
     trayClickAction: 'window',
     lastPage,
     githubToken: null,
@@ -155,8 +155,126 @@ describe('update row', () => {
       const label = button!.querySelector<HTMLElement>('[data-update-label]');
       const key = label?.dataset.message;
       expect(key, `${selector} needs a labelled data-message key`).toBeTruthy();
-      expect(translate('en', key as never), `${selector} key ${key} has no text`).not.toBe('');
+      expect(translate('en-US', key as never), `${selector} key ${key} has no text`).not.toBe('');
     }
+  });
+});
+
+describe('language initialization', () => {
+  it('offers only explicit Chinese and US English choices', async () => {
+    await loadMain(state('general'));
+
+    const select = document.querySelector<HTMLSelectElement>('[data-language]')!;
+    expect([...select.options].map((option) => [option.value, option.text])).toEqual([
+      ['en-US', 'English'],
+      ['zh-CN', '简体中文'],
+    ]);
+  });
+
+  it('does not follow later system-language changes', async () => {
+    const initial = state('general');
+    initial.language = 'zh-CN';
+    Object.defineProperty(navigator, 'languages', {
+      configurable: true,
+      value: ['en-US'],
+    });
+    await loadMain(initial);
+
+    window.dispatchEvent(new Event('languagechange'));
+
+    expect(document.querySelector<HTMLSelectElement>('[data-language]')!.value).toBe('zh-CN');
+    expect(document.documentElement.lang).toBe('zh-CN');
+  });
+
+  it('initializes once from system language order and merges pending state events', async () => {
+    const initial = state('general');
+    initial.language = null;
+    const localized = { ...initial, language: 'zh-CN' as const };
+    let finishInitialization: ((language: 'zh-CN') => void) | undefined;
+    let mainStateCalls = 0;
+    mocks.invoke.mockImplementation((command: string, args?: { language?: 'zh-CN' | 'en-US' }) => {
+      if (command === 'main_state') {
+        mainStateCalls += 1;
+        return Promise.resolve(mainStateCalls === 1 ? initial : localized);
+      }
+      if (command === 'initialize_language') {
+        expect(args?.language).toBe('zh-CN');
+        return new Promise((resolve) => {
+          finishInitialization = resolve;
+        });
+      }
+      return Promise.resolve(true);
+    });
+    Object.defineProperty(navigator, 'languages', {
+      configurable: true,
+      value: ['ja-JP', 'zh-TW', 'en-US'],
+    });
+
+    await import('../../src/main');
+    await vi.waitFor(() =>
+      expect(mocks.invoke.mock.calls.some(([name]) => name === 'initialize_language')).toBe(true),
+    );
+    expect(document.querySelector<HTMLSelectElement>('[data-language]')!.disabled).toBe(true);
+
+    const onState = mocks.listen.mock.calls.find(([name]) => name === 'aidget://main')![1];
+    onState({ event: 'aidget://main', id: 1, payload: localized });
+    const secondNull = { ...initial };
+    onState({ event: 'aidget://main', id: 2, payload: secondNull });
+    finishInitialization!('zh-CN');
+
+    await vi.waitFor(() =>
+      expect(document.querySelector<HTMLSelectElement>('[data-language]')!.disabled).toBe(false),
+    );
+    expect(document.querySelector<HTMLSelectElement>('[data-language]')!.value).toBe('zh-CN');
+    expect(document.documentElement.lang).toBe('zh-CN');
+    expect(mocks.invoke.mock.calls.filter(([name]) => name === 'initialize_language')).toHaveLength(
+      1,
+    );
+    expect(mocks.invoke).toHaveBeenCalledWith('main_painted');
+  });
+
+  it('shows an initialization failure and keeps language controls disabled', async () => {
+    const initial = state('general');
+    initial.language = null;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === 'main_state') {
+        return Promise.resolve(initial);
+      }
+      if (command === 'initialize_language') {
+        return Promise.reject(new Error('disk full'));
+      }
+      return Promise.resolve(true);
+    });
+    Object.defineProperty(navigator, 'languages', {
+      configurable: true,
+      value: ['en-US'],
+    });
+
+    await import('../../src/main');
+    const fault = document.querySelector<HTMLElement>('[data-fault]')!;
+    await vi.waitFor(() => expect(fault.textContent).toContain('disk full'));
+    expect(fault.hidden).toBe(false);
+    expect(document.querySelector<HTMLSelectElement>('[data-language]')!.disabled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith('main_painted');
+  });
+
+  it('rolls a failed manual language change back to the persisted locale', async () => {
+    await loadMain(state('general'));
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === 'set_preferences') {
+        return Promise.reject(new Error('write failed'));
+      }
+      return Promise.resolve({ state: 'idle' });
+    });
+    const select = document.querySelector<HTMLSelectElement>('[data-language]')!;
+    select.value = 'zh-CN';
+    select.dispatchEvent(new Event('change'));
+
+    await vi.waitFor(() => expect(select.value).toBe('en-US'));
+    expect(document.documentElement.lang).toBe('en-US');
+    expect(document.querySelector<HTMLElement>('[data-fault]')!.textContent).toContain(
+      'write failed',
+    );
   });
 });
 

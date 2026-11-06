@@ -2,8 +2,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { createElement, LayoutGrid } from 'lucide';
 
 import type { CommunityEntry } from '../types/rust';
-import { translate, type Locale } from './locale';
-import { resolvedLocale } from './preferences';
+import type { Language } from '../types/rust';
+import { translate } from './locale';
 
 type Source = { commit: string; package: string; path: string };
 type Job = {
@@ -23,13 +23,13 @@ type Subscriber = {
 };
 
 /** Load only visible/nearby verified media, sharing four request slots across list and dialog. */
-export function createCommunityMedia(locale: () => Locale) {
+export function createCommunityMedia(locale: () => Language) {
   const jobs = new Map<string, Job>();
   const views = new Set<{ render: () => void }>();
   let active = true;
   let running = 0;
   let scheduled = false;
-  const t = (key: Parameters<typeof translate>[1]) => translate(resolvedLocale(locale()), key);
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale(), key);
 
   function schedule() {
     if (scheduled) {

@@ -1,8 +1,8 @@
 use std::fs;
 
 use aidget::settings::{
-    ensure, load, save_github_token, save_preferences, GithubToken, Language, MainPage, Theme,
-    TrayClickAction, UiPreferences, SETTINGS_FILE,
+    ensure, initialize_language, load, save_github_token, save_preferences, GithubToken, Language,
+    MainPage, Theme, TrayClickAction, UiPreferences, SETTINGS_FILE,
 };
 use tempfile::TempDir;
 
@@ -22,7 +22,7 @@ fn settings_are_created_with_retention_and_preference_defaults() {
     assert_eq!(settings.screenshot_retention.get(), 30);
     assert_eq!(settings.trash_retention.get(), 20);
     assert_eq!(settings.theme, Theme::System);
-    assert_eq!(settings.language, Language::System);
+    assert_eq!(settings.language, None);
     assert_eq!(settings.tray_click_action, TrayClickAction::Window);
     assert_eq!(settings.last_page, MainPage::Integrations);
     assert_eq!(settings.github_token, None);
@@ -31,7 +31,7 @@ fn settings_are_created_with_retention_and_preference_defaults() {
     assert!(document.contains("screenshot_retention = 30"));
     assert!(document.contains("trash_retention = 20"));
     assert!(document.contains("theme = \"system\""));
-    assert!(document.contains("language = \"system\""));
+    assert!(!document.contains("language ="));
     assert!(document.contains("tray_click_action = \"window\""));
     assert!(document.contains("last_page = \"integrations\""));
     assert!(document.contains("auto_download = true"));
@@ -76,7 +76,7 @@ trash_retention = 7\n";
     assert!(document.contains("# Pruned widgets remain"));
     assert!(document.contains("trash_retention = 7"));
     assert!(document.contains("theme = \"system\""));
-    assert!(document.contains("language = \"system\""));
+    assert!(!document.contains("language ="));
     assert!(document.contains("tray_click_action = \"window\""));
     assert!(document.contains("last_page = \"integrations\""));
     drop(dir);
@@ -119,7 +119,7 @@ tray_click_action = \"window\"\n",
     assert!(document.contains("tray_click_action = \"menu\""));
     assert!(document.contains("last_page = \"about\""));
     assert!(document.contains("auto_download = false"));
-    assert_eq!(load(&root).unwrap().preferences(), preferences);
+    assert_eq!(load(&root).unwrap().preferences().unwrap(), preferences);
     drop(dir);
 }
 
@@ -191,6 +191,18 @@ fn settings_writes_use_owner_only_permissions() {
         fs::metadata(&path).unwrap().permissions().mode() & 0o777,
         0o600
     );
+
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+    fs::write(
+        &path,
+        "screenshot_retention = 30\ntrash_retention = 20\nlanguage = \"fr\"\n",
+    )
+    .unwrap();
+    assert_eq!(load(&root).unwrap().language, Some(Language::EnUs));
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 }
 
 #[test]
@@ -220,7 +232,6 @@ fn settings_reject_invalid_retention_or_preference_shapes() {
         "screenshot_retention = 30\ntrash_retention = 0\n",
         "screenshot_retention = 30\ntrash_retention = 20\nunknown = true\n",
         "screenshot_retention = 30\ntrash_retention = 20\ntheme = \"sepia\"\n",
-        "screenshot_retention = 30\ntrash_retention = 20\nlanguage = \"fr\"\n",
         "screenshot_retention = 30\ntrash_retention = 20\ntray_click_action = \"popup\"\n",
         "screenshot_retention = 30\ntrash_retention = 20\nlast_page = \"settings\"\n",
         "not = [valid",
@@ -228,5 +239,158 @@ fn settings_reject_invalid_retention_or_preference_shapes() {
         fs::write(&path, invalid).unwrap();
         assert!(load(&root).is_err(), "{invalid}");
     }
+    drop(dir);
+}
+
+#[test]
+fn existing_language_values_are_normalized_without_losing_the_document() {
+    let (dir, root) = root();
+    let path = root.join(SETTINGS_FILE);
+    let original = "\
+# retained comment
+screenshot_retention = 12
+trash_retention = 7
+language = \"en\"
+";
+    fs::write(&path, original).unwrap();
+
+    let settings = load(&root).unwrap();
+    assert_eq!(settings.language, Some(Language::EnUs));
+    let document = fs::read_to_string(&path).unwrap();
+    assert!(document.contains("# retained comment"));
+    assert!(document.contains("language = \"en-US\""));
+    assert!(!document.contains("language = \"en\""));
+
+    load(&root).unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), document);
+    drop(dir);
+}
+
+#[test]
+fn the_legacy_system_value_and_missing_language_wait_for_initialization() {
+    let (dir, root) = root();
+    let path = root.join(SETTINGS_FILE);
+    fs::write(
+        &path,
+        "screenshot_retention = 30\ntrash_retention = 20\nlanguage = \"system\"\n",
+    )
+    .unwrap();
+
+    assert_eq!(load(&root).unwrap().language, None);
+    assert!(!fs::read_to_string(&path).unwrap().contains("language"));
+
+    fs::write(&path, "screenshot_retention = 30\ntrash_retention = 20\n").unwrap();
+    assert_eq!(load(&root).unwrap().language, None);
+    drop(dir);
+}
+
+#[test]
+fn unknown_or_wrongly_typed_language_values_fall_back_to_american_english() {
+    let (dir, root) = root();
+    let path = root.join(SETTINGS_FILE);
+    for language in [
+        "\"\"",
+        "\"fr\"",
+        "42",
+        "true",
+        "[\"en-US\"]",
+        "{ locale = \"en-US\" }",
+    ] {
+        fs::write(
+            &path,
+            format!(
+                "# keep\nscreenshot_retention = 30\ntrash_retention = 20\nlanguage = {language}\n"
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(load(&root).unwrap().language, Some(Language::EnUs));
+        let document = fs::read_to_string(&path).unwrap();
+        assert!(document.contains("# keep"), "{language}");
+        assert!(document.contains("language = \"en-US\""), "{language}");
+    }
+    drop(dir);
+}
+
+#[test]
+fn invalid_other_settings_are_rejected_before_language_migration_writes() {
+    let (dir, root) = root();
+    let path = root.join(SETTINGS_FILE);
+    let original =
+        "screenshot_retention = 30\ntrash_retention = 20\nlanguage = \"fr\"\nunknown = true\n";
+    fs::write(&path, original).unwrap();
+
+    assert!(load(&root).is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+
+    let original = "not = [valid";
+    fs::write(&path, original).unwrap();
+    assert!(load(&root).is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    drop(dir);
+}
+
+#[test]
+fn language_initialization_saves_only_the_first_candidate() {
+    let (dir, root) = root();
+    let path = root.join(SETTINGS_FILE);
+    fs::write(
+        &path,
+        "# retained\nscreenshot_retention = 30\ntrash_retention = 20\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        initialize_language(&root, Language::ZhCn).unwrap(),
+        Language::ZhCn
+    );
+    assert_eq!(
+        initialize_language(&root, Language::EnUs).unwrap(),
+        Language::ZhCn
+    );
+    let document = fs::read_to_string(&path).unwrap();
+    assert!(document.contains("# retained"));
+    assert!(document.contains("language = \"zh-CN\""));
+    assert!(!document.contains("language = \"en-US\""));
+    drop(dir);
+}
+
+#[test]
+fn strict_preference_deserialization_rejects_removed_language_values() {
+    for language in ["\"system\"", "\"en\"", "\"fr\"", "1"] {
+        let value: serde_json::Value = serde_json::from_str(&format!(
+            r#"{{"theme":"system","language":{language},"trayClickAction":"window","lastPage":"general","autoDownload":true}}"#
+        ))
+        .unwrap();
+        assert!(
+            serde_json::from_value::<UiPreferences>(value).is_err(),
+            "{language}"
+        );
+    }
+}
+
+#[test]
+fn language_values_are_serialized_as_exact_bcp_47_tags() {
+    assert_eq!(serde_json::to_string(&Language::EnUs).unwrap(), "\"en-US\"");
+    assert_eq!(serde_json::to_string(&Language::ZhCn).unwrap(), "\"zh-CN\"");
+    assert_eq!(
+        serde_json::from_str::<Language>("\"en-US\"").unwrap(),
+        Language::EnUs
+    );
+    assert_eq!(
+        serde_json::from_str::<Language>("\"zh-CN\"").unwrap(),
+        Language::ZhCn
+    );
+}
+
+#[test]
+fn unreadable_settings_remain_an_explicit_error() {
+    let (dir, root) = root();
+    let path = root.join(SETTINGS_FILE);
+    fs::remove_file(&path).unwrap();
+    fs::create_dir(&path).unwrap();
+
+    assert!(load(&root).is_err());
+    assert!(initialize_language(&root, Language::EnUs).is_err());
     drop(dir);
 }

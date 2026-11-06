@@ -35,6 +35,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         widget_open_url,
         integration_state,
         set_agent_integration,
+        initialize_language,
         set_preferences,
         set_github_token,
         community_list,
@@ -187,6 +188,17 @@ fn set_agent_integration(
     let root = app.state::<ui::UiState>().root.lock().unwrap().clone();
     crate::agents::integration::set_agent_integration(&Store::new(root), change)
         .map_err(|error| error.to_string())
+}
+
+/// Persist the first system-derived language for the main window.
+#[tauri::command]
+fn initialize_language(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    language: crate::settings::Language,
+) -> std::result::Result<crate::settings::Language, String> {
+    ui::require_main_window_label(window.label()).map_err(|error| error.to_string())?;
+    ui::initialize_language(&app, language).map_err(|error| error.to_string())
 }
 
 /// Persist appearance and behavior preferences and apply the primary-click tray

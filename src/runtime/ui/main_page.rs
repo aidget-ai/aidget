@@ -1,6 +1,6 @@
 //! Main-page payloads, settings, widget mutations, and cached previews.
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Runtime};
 
 use crate::common::error::{Error, Result};
 use crate::runtime::main_window_state;
@@ -76,7 +76,7 @@ pub struct MainState {
     pub broken: Vec<crate::widgets::model::BrokenWidget>,
     pub version: String,
     pub theme: Theme,
-    pub language: Language,
+    pub language: Option<Language>,
     pub tray_click_action: TrayClickAction,
     pub last_page: MainPage,
     pub github_token: Option<GithubTokenSummary>,
@@ -87,7 +87,6 @@ pub struct MainState {
 /// List every valid widget, including disabled widgets.
 pub fn main_widgets(store: &Store) -> Result<MainState> {
     let settings = settings::load(store.root())?;
-    let preferences = settings.preferences();
     let github_token = settings.github_token.as_ref().map(GithubTokenSummary::from);
     let board = store.load_board()?;
     let mut widgets = Vec::new();
@@ -125,12 +124,12 @@ pub fn main_widgets(store: &Store) -> Result<MainState> {
         // CLI, doctor, the MCP server and the bundle report. Whether this build may
         // replace itself is the update row's business, not the version's.
         version: env!("CARGO_PKG_VERSION").to_string(),
-        theme: preferences.theme,
-        language: preferences.language,
-        tray_click_action: preferences.tray_click_action.effective(),
-        last_page: preferences.last_page,
+        theme: settings.theme,
+        language: settings.language,
+        tray_click_action: settings.tray_click_action.effective(),
+        last_page: settings.last_page,
         github_token,
-        auto_download: preferences.auto_download,
+        auto_download: settings.auto_download,
     })
 }
 
@@ -142,14 +141,16 @@ pub fn main_payload(app: &AppHandle) -> Result<MainState> {
 
 /// Persist UI preferences and apply the primary-click tray behavior without
 /// restarting. Linux rejects attempts to choose a non-menu tray action.
-pub fn set_preferences(app: &AppHandle, preferences: UiPreferences) -> Result<()> {
+pub fn set_preferences<R: Runtime>(app: &AppHandle<R>, preferences: UiPreferences) -> Result<()> {
     if cfg!(target_os = "linux") && preferences.tray_click_action != TrayClickAction::Menu {
         return Err(Error::InvalidParams(
             "changing the tray click action is unsupported on Linux".to_string(),
         ));
     }
+    let state = app.state::<UiState>();
+    let _preferences_lock = state.preferences.lock().unwrap();
     let store = Store::new(app.state::<UiState>().root.lock().unwrap().clone());
-    let previous = settings::load(store.root())?.preferences();
+    let previous = settings::load(store.root())?.preferences()?;
     let tray = app
         .tray_by_id("aidget")
         .ok_or_else(|| Error::Other("tray icon is not available".to_string()))?;
@@ -166,6 +167,14 @@ pub fn set_preferences(app: &AppHandle, preferences: UiPreferences) -> Result<()
         return Err(error);
     }
     Ok(())
+}
+
+/// Save the first system-derived language, preserving an explicit choice.
+pub fn initialize_language<R: Runtime>(app: &AppHandle<R>, language: Language) -> Result<Language> {
+    let state = app.state::<UiState>();
+    let _preferences_lock = state.preferences.lock().unwrap();
+    let root = state.root.lock().unwrap().clone();
+    settings::initialize_language(&root, language)
 }
 
 /// Verify and persist a newly entered GitHub token, or remove the existing one.

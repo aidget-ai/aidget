@@ -1,8 +1,9 @@
-export type Locale = 'system' | 'en' | 'zh-CN';
-export type MessageKey = keyof typeof messages.en;
+import type { Language } from '../types/rust';
+
+export type MessageKey = keyof (typeof messages)['en-US'];
 
 const messages = {
-  en: {
+  'en-US': {
     communityFetching: 'Fetching data...',
     communityDismissBanner: 'Dismiss community introduction',
     communityIntroduction:
@@ -155,7 +156,7 @@ const messages = {
     maximize: 'Maximize',
     close: 'Close',
   },
-  zh: {
+  'zh-CN': {
     communityFetching: '正在拉取数据...',
     communityDismissBanner: '关闭社区介绍',
     communityIntroduction: '这里是由 aidget 社区经过安全评审的小组件，你可前往 ',
@@ -308,11 +309,21 @@ const messages = {
   },
 } as const;
 
-export function systemLocale(languages: readonly string[]): 'en' | 'zh' {
-  return languages.some((language) => language.toLowerCase().startsWith('zh')) ? 'zh' : 'en';
+/** Match the first supported BCP 47 language in preference order. */
+export function matchSystemLanguage(languages: readonly string[]): Language {
+  for (const language of languages) {
+    const primary = /^([a-z]{2,8})(?:-[a-z0-9]{1,8})*$/i.exec(language)?.[1].toLowerCase();
+    if (primary === 'zh') {
+      return 'zh-CN';
+    }
+    if (primary === 'en') {
+      return 'en-US';
+    }
+  }
+  return 'en-US';
 }
 
-export function translate(locale: 'en' | 'zh', key: MessageKey) {
+export function translate(locale: Language, key: MessageKey) {
   return messages[locale][key];
 }
 
@@ -320,7 +331,7 @@ export function translate(locale: 'en' | 'zh', key: MessageKey) {
  * Render a localized configuration failure for one or several Agents.
  */
 export function formatAgentConfigurationFailure(
-  locale: 'en' | 'zh',
+  locale: Language,
   agentNames: readonly string[],
   details: readonly string[],
 ) {
@@ -328,7 +339,7 @@ export function formatAgentConfigurationFailure(
   if (uniqueNames.length === 0) {
     throw new Error('at least one Agent is required');
   }
-  const separator = locale === 'zh' ? '；' : '; ';
+  const separator = locale === 'zh-CN' ? '；' : '; ';
   const template = translate(
     locale,
     uniqueNames.length === 1

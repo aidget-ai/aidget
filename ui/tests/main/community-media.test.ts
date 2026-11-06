@@ -22,7 +22,7 @@ function setup() {
   const intersections = mockIntersections(false);
   const root = document.createElement('section');
   document.body.append(root);
-  const media = createCommunityMedia(() => 'en');
+  const media = createCommunityMedia(() => 'en-US');
   const create = (index: number, detail = false) => {
     const view = media.create(communityEntry(index), 'screen.png', commit, root, detail);
     root.append(view.element);
