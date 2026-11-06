@@ -720,6 +720,12 @@ impl Store {
         Ok(board)
     }
 
+    /// The frame of a widget still waiting for its first placement.
+    pub fn unplaced_frame(&self, id: &str) -> Result<Option<WidgetFrame>> {
+        let mut board = self.load_board()?;
+        Ok(board.widgets.remove(id).filter(|frame| frame.unplaced))
+    }
+
     /// Set the initial frame only while the target frame still matches the
     /// snapshot used to calculate it. A concurrent user move is preserved.
     pub fn set_initial_frame(
@@ -739,6 +745,8 @@ impl Store {
                     && current.y == expected.y
                     && current.w == expected.w
                     && current.h == expected.h
+                    // A move onto the same spot still clears the mark and must stand.
+                    && current.unplaced == expected.unplaced
             }
             (None, None) => true,
             _ => false,

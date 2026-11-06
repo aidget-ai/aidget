@@ -13,7 +13,7 @@ use crate::widgets::store::Store;
 
 use super::content::{content_token, signature, widget_surface, WidgetState};
 use super::drag::dragging_active;
-use super::geometry::{physical_geometry, place_new_widget};
+use super::geometry::{physical_geometry, place_unplaced_widget};
 use super::main_window::emit_main;
 #[cfg(target_os = "macos")]
 use super::native_surface;
@@ -139,7 +139,7 @@ fn sync_widgets_inner(app: &AppHandle) -> Result<()> {
         };
         if frame.unplaced {
             // Without a display to place on, the next sync tries again.
-            if let Err(error) = place_new_widget(app, &store, &id) {
+            if let Err(error) = place_unplaced_widget(app, &store, &id) {
                 eprintln!("aidget: cannot place {id}: {error}");
                 continue;
             }

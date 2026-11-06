@@ -73,6 +73,44 @@ fn a_move_before_the_first_opening_is_not_placed_over() {
 }
 
 #[test]
+fn a_frame_stops_waiting_for_placement_once_it_is_moved() {
+    let (_dir, store) = store();
+    choose_display(&store, "Monitor #2");
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+    assert!(store.unplaced_frame("note").unwrap().is_some());
+
+    let board = store.load_board().unwrap();
+    let frame = board.widgets["note"].clone();
+    store.move_widget("note", board.revision, frame).unwrap();
+
+    assert!(store.unplaced_frame("note").unwrap().is_none());
+}
+
+#[test]
+fn a_move_onto_the_same_spot_during_placement_is_not_overwritten() {
+    let (_dir, store) = store();
+    choose_display(&store, "Monitor #2");
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+    let board = store.load_board().unwrap();
+    let pending = board.widgets["note"].clone();
+    store
+        .move_widget("note", board.revision, pending.clone())
+        .unwrap();
+    let computed = WidgetFrame {
+        x: 24.0,
+        y: 24.0,
+        unplaced: false,
+        ..pending.clone()
+    };
+
+    let board = store
+        .set_initial_frame("note", Some(&pending), computed)
+        .unwrap();
+
+    assert_eq!(board.widgets["note"].x, pending.x);
+}
+
+#[test]
 fn created_widget_starts_on_the_chosen_display() {
     let (_dir, store) = store();
     choose_display(&store, "Monitor #2");
