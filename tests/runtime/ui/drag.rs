@@ -30,10 +30,35 @@ fn a_window_manager_move_on_a_connected_display_is_recorded() {
 }
 
 #[test]
-fn a_click_on_the_drag_handle_keeps_the_home_of_a_widget_on_a_stand_in_display() {
-    // The widget's display is gone, so it sits where the frame was fitted. A drag
-    // session without movement must not turn that spot into its new home.
-    assert!(!records_move("Monitor #2", &connected(), true, true));
+fn a_drag_onto_the_stand_in_spot_still_adopts_it() {
+    // The system left the window at one spot, and its frame computes to another.
+    let state = UiState::default();
+    start_gesture(&state, DRAGGED, (200, 100));
+
+    let user_drag = finish_gesture(&state, DRAGGED, (1560, 80));
+
+    assert!(records_move("Monitor #2", &connected(), user_drag, true));
+}
+
+#[test]
+fn a_click_on_the_stand_in_spot_keeps_the_home() {
+    let state = UiState::default();
+    start_gesture(&state, DRAGGED, (1560, 80));
+
+    let user_drag = finish_gesture(&state, DRAGGED, (1560, 80));
+
+    assert!(!records_move("Monitor #2", &connected(), user_drag, true));
+}
+
+#[test]
+fn a_drag_that_reports_no_new_position_keeps_the_home() {
+    // Wayland hides global positions, so the window reports the same spot throughout.
+    let state = UiState::default();
+    start_gesture(&state, DRAGGED, (0, 0));
+
+    let user_drag = finish_gesture(&state, DRAGGED, (0, 0));
+
+    assert!(!records_move("Monitor #2", &connected(), user_drag, false));
 }
 
 #[test]

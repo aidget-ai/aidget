@@ -13,16 +13,17 @@ use super::main_window::emit_main;
 use super::relocation::DisplayNames;
 use super::state::{DragGesture, UiState};
 
-/// Whether a move changes the stored frame. A window still at its frame has not
-/// moved. The system evacuates the windows of a display that is gone; saving that
-/// would lose the frame that brings them back, so only a drag may replace it.
+/// Whether a move changes the stored frame. A finished drag always does, even onto
+/// the spot the frame computes to: that spot may only stand in for a display that
+/// is gone. Otherwise a window at its frame has not moved, and the system evacuating
+/// a missing display must not replace the frame that brings its windows back.
 pub fn records_move(
     stored_display: &str,
     connected: &DisplayNames<'_>,
     user_drag: bool,
     at_frame: bool,
 ) -> bool {
-    !at_frame && (user_drag || connected.index(stored_display).is_some())
+    user_drag || (!at_frame && connected.index(stored_display).is_some())
 }
 
 /// Persist the calling widget window's current frame when it has changed. Moves
@@ -179,7 +180,9 @@ fn mouse_pressed(_app: &AppHandle) -> Result<bool> {
         .any(|button| unsafe { GetAsyncKeyState(i32::from(button.0)) } < 0))
 }
 
-/// The compositor runs a Wayland drag and reports no buttons, so nothing is held there.
+/// The compositor runs a Wayland drag and reports no buttons, so nothing is held
+/// there. It also keeps global positions from clients, so a drag there has no
+/// position to save however long the gesture is kept open.
 #[cfg(all(unix, not(target_os = "macos")))]
 fn mouse_pressed(app: &AppHandle) -> Result<bool> {
     use gdk::prelude::*;
