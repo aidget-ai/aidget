@@ -1,281 +1,382 @@
 # Self-update
 
-Design and acceptance criteria for Aidget's one-click self-update (Issue #2).
+Aidget's updater runs in the desktop GUI process. It checks the project's stable
+GitHub Releases, downloads the asset for the current platform, verifies its
+checksum, stages it, and replaces the installation through a platform-specific
+path. The main window renders the updater's snapshot; it never contacts GitHub
+itself.
 
-A few seconds after launch, and whenever **Check for updates** is pressed, the
-running version is compared with the latest stable GitHub release. One click
-downloads, verifies and installs it. The About page retains release notes for the
-current-to-latest range and opens them in a modal dialog.
-**Download updates automatically** decides whether the download starts on its own.
-There is no poller, scheduler or recurring timer: `CONTRIBUTING.md` requires a
-design discussion before adding one, and the approved proposal asks for a launch
-check plus buttons.
+This document describes the behavior implemented in `src/update/` and
+`src/runtime/update.rs`.
 
-## Repository and token scope
+## Runtime lifecycle
 
-Every build reads releases from `aidget-ai/aidget`. Tests inject a local base URL
-and repository through `UpdateService::for_build`; there is no runtime or
-compile-time product setting that can redirect the updater to another repository.
+GUI setup creates one `UpdateService`, registers it as shared Tauri state, and
+starts the launch check. The check waits five seconds so the windows and widgets
+can initialize, then reads `settings.toml` for the GitHub token and the
+automatic-download preference. If the settings cannot be read, the launch check
+ends with a log message and no request.
 
-## Decisions
+There is no poller, scheduler, or recurring timer. After the launch check,
+updates are checked only when the user invokes one of the update commands.
+Rust debug builds skip the launch check entirely.
 
-**Read GitHub Releases directly.** No feed adapter, `latest.json` or own server:
-the paginated releases endpoint supplies the stable release range, and each asset
-carries name, URL, size and `digest`. Drafts and pre-releases are excluded;
-invalid SemVer tags fail the check explicitly.
+Every published `UpdateSnapshot` is emitted to the main window as
+`aidget://update`. This is how the window learns about a launch check that was
+already running before it loaded. While a download or check is active, the
+window also polls `update_state` for progress.
 
-**Reuse the client the repository already has.** `reqwest` (blocking, `rustls`),
-`sha2` and `semver` come with the community pages, so the Rust updater adds no
-dependency. The window uses `marked` and `dompurify` only for retained notes.
-Every GitHub call is blocking and runs inside `spawn_blocking`.
-`community::http::Http` is not reused directly because it answers only "missing or
-unavailable" and hides the status and the headers, while the updater needs both — a
-404 means nothing is published, and `x-ratelimit-*` says how long to wait.
-`update::fetch` builds its own client from the same settings. `semver` compares
-with `cmp_precedence`, not `>`, because its `Ord` orders build metadata and a
-rebuilt release would read as a new one.
+## Which builds may replace themselves
 
-**The configured GitHub token is used only for the metadata check.** Unauthenticated
-traffic gets 60 requests an hour per address, which behind a proxy exit node turns
-a launch check into "rate limit reached". `github_api_get` refuses to attach a
-token unless the URL is HTTPS `api.github.com`. Installer and `SHA256SUMS` requests
-never accept a token, so neither the first `github.com` download request nor the
-cross-host redirect to object storage carries authorization.
+`build.rs` sets `AIDGET_BUILD_STAMP`; the updater uses that stamp as the running
+version. A build may replace itself only when the stamp parses as a release
+version and was produced by an exact tag.
 
-**The commands are reachable from the main window only.** They are listed in
-`command_names::MAIN_COMMANDS` and granted in `capabilities/main.json`, and
-`command_access::authorize` refuses anything outside the window's group before its
-arguments are read. A widget window loads third-party content and must not be able
-to install an update.
+| Build                                         | Example stamp      | Self-updates |
+| --------------------------------------------- | ------------------ | ------------ |
+| `HEAD` is exactly on a tag                    | `v0.1.3`           | yes          |
+| Commits after a tag                           | `0.1.0-5-gabc1234` | no           |
+| Dirty working tree recorded by `git describe` | `0.1.0-dirty`      | no           |
+| No tag or usable `git describe` result        | `0.1.0-untagged`   | no           |
 
-**Assets match the complete public filename.** The updater constructs
-`aidget-<platform>-<arch>.<ext>` and requires exact equality. Product, platform,
-architecture and package type must all match; a similarly named file or a backup
-cannot be selected.
+An exact tag wins even when the tree is dirty because the release workflow
+checks out the tag and then writes the version into the manifests before
+building. A build whose stamp cannot be parsed is also treated as a source
+build. A semver pre-release tag is still a release build, but the update feed
+only offers stable releases.
 
-**Build identity is decided by the tag.** `build.rs` emits `AIDGET_BUILD_STAMP`:
+Rust debug builds have an additional guard: `cfg!(debug_assertions)` is exposed
+as `UpdateSnapshot.is_debug_build` and overrides the build stamp. They never
+download or install, even if the executable happens to be built at a release
+tag.
 
-| HEAD                            | Stamp              | May replace itself |
-| ------------------------------- | ------------------ | ------------------ |
-| on a tag (the release workflow) | `v0.1.3`           | yes                |
-| commits after a tag             | `0.1.0-5-gabc1234` | no                 |
-| uncommitted changes, no tag     | `0.1.0-dirty`      | no                 |
+The About page's displayed version comes from the normal application version;
+`UpdateSnapshot.current` contains the update-specific build stamp. The `source`
+state, not the displayed version string, communicates that a build cannot
+replace itself.
 
-The tag decides, not a clean tree: the release workflow writes the version into
-the manifests after checking out the tag. A runtime repository override is
-rejected because it would let any local process redirect the updater.
+## Release feed
 
-**Rust debug builds do not update automatically.** `cfg!(debug_assertions)` is
-reported as `UpdateSnapshot.is_debug_build`; it is separate from the Git build
-stamp because a debug build can still sit on a release tag. Those builds skip the
-launch check and always disable automatic downloading. The About page hides the
-check and global update actions, disables the automatic-download switch without
-changing its saved preference, and keeps **Release notes** available. Opening
-those notes on demand runs the normal feed check with automatic downloading
-forced off; debug builds always select the newest five stable releases as a
-source build would. Release builds keep the existing check, download and install
-behavior.
+Production builds read releases from the fixed `aidget-ai/aidget` repository.
+Tests can pass another base URL and repository through
+`UpdateService::for_build`; there is no runtime setting for redirecting an
+installed application to another repository.
 
-**Install kind comes from the package manager on the machine.** Linux uses the
-package this machine's package manager can install: `dpkg` if `PATH` has it,
-otherwise `rpm`, otherwise the build cannot update itself in place. `dpkg` wins
-where both are present because `rpm` on a Debian machine is usually only used to
-read `.rpm` files.
+The check reads GitHub's paginated releases endpoint:
 
-**Windows: the installer installs.** A running `.exe` cannot be swapped, and the
-release carries an NSIS installer, so the flags are Tauri's own: `/S` (silent),
-`/UPDATE`, and `/R` when the app should come back. A silent installer stops the
-running app before copying, so nothing waits for it.
+```
+GET /repos/aidget-ai/aidget/releases?per_page=100&page=N
+```
 
-**Packages upgrade through `pkexec`.** `dpkg -i` / `rpm -U` need root, and the app
-has no terminal: the command runs through `pkexec`, which asks the desktop's polkit
-agent, with the tool passed as the absolute path `PATH` resolved. A package install
-never starts on quit, where the password prompt would appear as the window
-disappears.
+Each response is limited to 8 MiB and has a 30-second request timeout. At most
+20 pages are read. Draft releases, releases marked as pre-releases, and tags
+with a semver pre-release component are excluded. Invalid SemVer tags in an
+otherwise eligible release fail the check instead of being skipped.
 
-**`state` says what is happening, `staged` what is available.** The window derives
-the available action from both fields. `UpdateSnapshot.staged` is read from the
-download on disk whenever a snapshot is read, so a failed check, download or
-install does not hide a verified file that can still be retried.
+Eligible releases are sorted newest-first by semver precedence. Build metadata
+does not affect precedence. Pagination stops after a short page, or once the
+current build's version has been reached; this gives release notes enough
+older stable releases without walking the entire feed.
 
-**"Up to date", "nothing published" and "this build cannot replace itself" are
-three states, and none is an error.** A build from a working tree reports
-`Source`; a repository with no release (404 on the releases endpoint) reports
-`NoRelease`. Any other 404 keeps its status, so a renamed repository does not read
-as "nothing to do".
+A `404` whose GitHub error message is exactly `Not Found` means the repository
+has no published release and settles as `no_release`. Other non-success
+responses are errors. When GitHub reports a rate limit, the error includes the
+wait from `x-ratelimit-reset`.
 
-**Release notes are retained.** `state/update/releases.json` atomically stores the
-last installed-to-latest range and the newest five stable releases. When an update
-is installed, its retained range remains available. A pending or installed range
-survives restarts while either endpoint matches the running version. Release builds
-exclude the range start: a build behind the latest shows only newer releases, while
-an already-latest build shows just its own release, bounded below by the previous
-stable version. Source builds fall back to the newest five stable releases. The
-cache is versioned and size-bounded. A malformed cache fails service initialization;
-an unwritable cache fails the check.
-
-The dialog selects the requested language from the bilingual release body,
-excluding installation and thanks footers. It merges categories across releases
-and labels every top-level change with its source version. Markdown is sanitized
-before insertion; only HTTPS links are retained and they open through the platform
-link handler.
-
-The About page's version row keeps reporting the crate version, as
-`docs/development.md` promises for the CLI, doctor, the MCP server, the main window
-and the bundle alike. The `Source` state is what says a build cannot replace
-itself; the version string is not asked to carry that.
-
-**HTTPS, loopback excepted.** A plaintext asset URL means the feed is not GitHub or
-was tampered with, so it is refused. Loopback is allowed because that is the local
-server the tests use, and what it serves still has to match a published checksum.
-
-**One check at a time.** A second check while one is in flight reads the running
-one instead of starting another, and an install refuses to start while anything
-else is in flight.
+The configured GitHub token is used only on the releases request. It is
+attached only when the URL is HTTPS on `api.github.com`; a token-bearing
+metadata URL for any other host is refused. Asset and `SHA256SUMS` downloads
+never receive the token. Network URLs must use HTTPS, with loopback HTTP
+allowed for the local test server. Redirects are followed only while they stay
+on HTTPS, with at most five hops.
 
 ## States
 
+`UpdateSnapshot.state` describes the current flow:
+
+| State         | Meaning                                                                            |
+| ------------- | ---------------------------------------------------------------------------------- |
+| `idle`        | No check has run in this process.                                                  |
+| `checking`    | A feed request is in flight.                                                       |
+| `latest`      | The newest stable release is not newer than this build.                            |
+| `source`      | This build cannot replace itself, including debug builds.                          |
+| `no_release`  | No stable release has been published.                                              |
+| `found`       | A newer stable release exists but has not been downloaded.                         |
+| `downloading` | The selected asset is being downloaded.                                            |
+| `ready`       | A verified download is available to install.                                       |
+| `installing`  | Replacement is running, or finished successfully and the process is about to exit. |
+| `error`       | The last step failed; `error` contains the reason.                                 |
+
+The normal transitions are:
+
 ```
-idle → checking → latest
-                → no_release
-                → source
-                → found ──(automatic or click)──> downloading → ready → installing → (restart)
-                → error
+idle
+  └─> checking ─> latest | source | no_release | found | error
+                    found ─> downloading ─> ready ─> installing
+                                             error
 ```
 
-`ready` is also reached from a failed check when a download is already on disk, and
-from a check that finds the same version: the file is still installable either way.
+`UpdateSnapshot.staged` is separate from `state`: it reports whether the service
+currently holds a verified download. It can therefore remain `true` while the
+state is `ready` with a failed-check error, or `error` after a failed install.
+The verified file is not resumed or rediscovered after the process exits.
 
-## Settings
+A successful install clears `staged` and leaves the state at `installing` until
+the process exits. A failed install leaves the verified download staged so the
+user can retry it.
 
-| Key             | Default | Meaning                                      |
-| --------------- | ------- | -------------------------------------------- |
-| `auto_download` | `true`  | Download as soon as a newer release is found |
+A check that fails does not discard an already verified download. With a staged
+file the state becomes `ready` and the snapshot carries the error; without one
+it becomes `error`. A check that still names the staged version also settles as
+`ready` instead of downloading it again. If the feed moves to an older version
+than the staged file, that staged file is discarded as a channel regression.
 
-A missing key reads as on, so a `settings.toml` written before the updater existed
-behaves like a fresh one. It is part of `UiPreferences` and saved by
-`set_preferences` with the theme and the language; a toggle sends the whole payload
-back, so it cannot overwrite the other preferences with defaults. The Update
-action works with automatic downloading off.
+## Update actions
 
-The About version row and the global page header share one stateful action.
-Checking produces a three-second status on About. Once an update exists, the
-action reads `Update`; clicking it calls `update_apply`, which fetches the latest
-release again. A matching staged version installs directly, while a newer version
-is downloaded and verified before installation. That recheck says
-**Checking…**; **Downloading…** appears only after the backend enters its actual
-`downloading` state. A failed recheck never installs an older staged archive. The
-global copy is hidden on About because the version row already provides the same
-action.
+The main window has one stateful action in the About version row and another
+copy in the global page header outside About. The header copy is hidden on
+About and in debug builds. For `latest`, `no_release`, and `source`, the action
+shows the result for three seconds and then returns to **Check for updates**;
+the status line continues to describe the state.
 
-The About page's **Release notes** row enables **Open** when notes are available.
-The dialog shows the target version and retained range in the interface language.
+The action calls:
 
-## Platform scope
+- `update_check` when no update is actionable. This runs the normal feed check
+  with the saved automatic-download preference.
+- `update_apply` for `found`, `ready`, or an `error` that still has a release.
+  This checks the feed again with automatic downloading forced on. If the
+  recheck yields a verified `ready` state without an error, the verified file is
+  installed. A newer release is downloaded and verified before installation.
 
-Release assets use `aidget-<platform>-<arch>.<ext>` without a version in the
-filename. `scripts/release/assets.mjs` validates the complete set.
+A failed recheck never installs an older staged file. It leaves the verified
+download in place and returns its error. The **Update** action works even when
+automatic downloading is off.
 
-| Platform            | Update asset               | Installation                                    |
-| ------------------- | -------------------------- | ----------------------------------------------- |
-| macOS Apple Silicon | `aidget-darwin-arm64.zip`  | Unpack beside the bundle, rename it in, restart |
-| macOS Intel         | `aidget-darwin-amd64.zip`  | Unpack beside the bundle, rename it in, restart |
-| Windows x64         | `aidget-windows-amd64.exe` | Run the NSIS installer, exit                    |
-| Linux x64 DEB       | `aidget-linux-amd64.deb`   | `pkexec dpkg -i`, restart                       |
-| Linux x64 RPM       | `aidget-linux-amd64.rpm`   | `pkexec rpm -U`, restart                        |
+The action is disabled while the state is `checking`, `downloading`, or
+`installing`. The download label includes a percentage when the backend knows
+the asset size.
 
-DMGs remain available for manual installation. macOS ZIPs retain the complete
-`.app` wrapper, and `SHA256SUMS` covers every update asset. A build without a
-supported package manager reports that it cannot update in place. AppImage is no
-longer published; beta.1 and beta.2 AppImage users must manually migrate to DEB
-or RPM because the next release has no AppImage asset to update from.
+## Automatic download preference
+
+`settings.toml` contains:
+
+| Key             | Default | Meaning                                                            |
+| --------------- | ------- | ------------------------------------------------------------------ |
+| `auto_download` | `true`  | Start downloading as soon as a check finds a newer stable release. |
+
+The key is part of `UiPreferences` and is saved with the other main-window
+preferences. A missing key reads as `true`, and `settings::ensure` adds it to an
+existing settings file. Changing the switch affects later checks; it does not
+start a check by itself.
+
+In a Rust debug build the switch is shown as off and disabled, but the saved
+preference is not changed. The manual update action and the global header action
+are hidden. The **Release notes** action remains available; opening it runs a
+normal feed check with automatic downloading forced off so the newest five
+stable release notes can be loaded.
+
+## Download and verification
+
+For the selected release, the updater chooses the asset whose complete public
+filename exactly matches the current target. A DMG, a backup, or a similarly
+named file is not accepted.
+
+Each download gets a unique temporary directory. Preparing a replacement removes
+the previous staged directory. The asset is written while a SHA-256 is computed,
+with a 600-second total timeout, and progress is published through `done` and
+`total`.
+
+The expected checksum comes from:
+
+1. The asset's `digest` when it is a valid `sha256:<hex>` value.
+2. Otherwise, the release's `SHA256SUMS` asset, matched by the complete filename.
+
+No digest and no matching `SHA256SUMS` entry is an error. A checksum mismatch
+removes the file and its download directory. Only a verified download becomes
+staged and installable. On Windows the downloaded directory is left for the
+NSIS installer after a successful install; other platforms remove it.
+
+## Release notes
+
+Stable release notes are cached at
+`<data-directory>/state/update/releases.json`. The cache is versioned, limited
+to 8 MiB, and written atomically. A missing cache is empty; a malformed cache is
+a service-initialization error; an unwritable cache makes the check fail.
+
+The cache stores:
+
+- Up to five of the newest stable releases, with their complete bilingual bodies.
+- The current-to-target range for a pending or installed update.
+
+On startup, a retained range is reused when the running build is unknown or
+matches either endpoint. Otherwise recent notes are filtered to the running
+release. After a check:
+
+- A release build older than the latest release gets the range from its current
+  version, exclusive, through the latest version, inclusive.
+- An already-latest release build reuses a retained range ending at its version;
+  without one, it gets its own release notes bounded below by the previous
+  stable release.
+- A source or debug build gets up to five of the newest stable releases.
+
+Release bodies with no text are omitted. The range survives restarts so notes
+remain available while an update is pending and after it has been installed.
+
+The dialog selects the interface language from the release body. English is the
+text before `<!-- lang:zh -->`; Chinese is the text after it. Rendering stops at
+the `### Installation` or `### 安装说明` footer. Level-two headings become
+categories, and entries from different releases are merged under the same
+category. When more than one release is present, each entry carries its source
+version badge.
+
+The Markdown is converted into a restricted DOM; block quotes are sanitized
+before insertion. Images are reduced to their alt text. Only HTTPS links are
+kept clickable, and they open through the platform URL opener.
+
+## Platform targets and installation
+
+Release asset names omit the version:
+
+| Platform                                | Updater asset              | Manual update                               | Install on quit               |
+| --------------------------------------- | -------------------------- | ------------------------------------------- | ----------------------------- |
+| macOS Apple Silicon                     | `aidget-darwin-arm64.zip`  | Unpack and replace the `.app`, then restart | Replace the `.app`, then exit |
+| macOS Intel                             | `aidget-darwin-amd64.zip`  | Unpack and replace the `.app`, then restart | Replace the `.app`, then exit |
+| Windows                                 | `aidget-windows-amd64.exe` | Run NSIS with restart                       | Run NSIS without restart      |
+| Linux x86_64 with `dpkg`                | `aidget-linux-amd64.deb`   | `pkexec dpkg -i`, then restart              | Skipped                       |
+| Linux x86_64 without `dpkg`, with `rpm` | `aidget-linux-amd64.rpm`   | `pkexec rpm -U`, then restart               | Skipped                       |
+
+macOS supports the two released architectures. The Windows target is
+`aidget-windows-amd64.exe`; there is no runtime architecture branch. Linux
+requires x86_64 and detects `dpkg` and `rpm` on `PATH`; `dpkg` wins when both
+exist. A platform, architecture, or package-manager combination without an
+updater asset can still check the feed, but downloading reports that the
+installation cannot update itself in place.
+
+DMGs are for manual installation only. `SHA256SUMS` covers every updater asset.
+There is no AppImage updater asset.
+
+### macOS
+
+The running executable is resolved through symlinks and must be inside
+`Contents/MacOS` of an `.app` bundle. The parent directory is probed for
+writability. The updater extracts the ZIP into `.aidget-update` beside the
+bundle with `ditto -x -k`, requires an `.app` at the archive root, moves the old
+bundle aside, moves the new one into place, and removes the previous copy after
+success. If the new bundle cannot be moved into place, the old bundle is restored
+before the error is returned.
+
+Manual updates start the new executable after the replaced process exits.
+Installing on quit leaves the new bundle for the next launch.
+
+### Windows
+
+The downloaded executable is Tauri's NSIS installer. A manual update launches it
+with `/S /UPDATE /R`; current application arguments are preserved with `/ARGS`
+after `/R`. Installing on quit uses `/S /UPDATE` and does not start the
+application again. The installer stops the running application before copying,
+so Aidget does not wait for replacement to finish.
+
+### Linux
+
+The updater runs the package manager through `pkexec`:
+
+```
+pkexec <absolute-dpkg-path> -i <staged-deb>
+pkexec <absolute-rpm-path> -U <staged-rpm>
+```
+
+The tool path is resolved before elevation so the elevated command runs the
+package manager selected by the application. A failed package command reports
+that the previous version is still installed.
+
+Package installation is skipped during quit because the password prompt would
+appear while the window disappears. A manual update schedules the saved
+executable after the old process exits; the package manager owns binary
+replacement, so the saved install path remains the launch path.
+
+### Restart
+
+For macOS and Linux manual updates, Aidget launches `/bin/sh` with a command that
+waits for the old PID, then `exec`s the saved executable with the original
+arguments and appends output to `aidget-relaunch.log` in the temporary
+directory. It does not use `open -a`, so another copy with the same bundle
+identifier cannot be activated instead.
+
+On Windows the NSIS installer performs the restart. If scheduling the
+macOS/Linux replacement fails, Aidget reports that the update is in place but
+must be launched manually.
+
+## Concurrency and quitting
+
+Only one operation may own the update service at a time. `checking`,
+`downloading`, and `installing` are all considered in flight. A second check
+returns the active snapshot, and an install or download that cannot claim the
+service returns without changing it.
+
+Closing the last window does not exit this tray application. A quit while a
+replacement is running is deferred and released after the install settles. A
+failed install releases the deferred quit without retrying the same replacement.
+`UpdateState::installing` is not the quit gate by itself because a completed
+install keeps that state until the process exits; a separate in-progress flag
+covers only the file-replacement window.
+
+On macOS, Cmd+Q can reach the native exit path without an `ExitRequested` event.
+The exit handler therefore waits for an active replacement to finish instead of
+allowing the process to disappear between bundle renames. If a quit races the
+install claim, the losing path also waits once the claim is visible.
+
+At normal exit, `install_on_quit` installs a staged update without restarting for
+macOS and Windows. It does nothing when there is no staged download, when an
+install has already settled during that exit, or when Linux elevation would be
+required. Installing successfully on quit means the next launch is the new
+version.
+
+## Tauri surface
+
+The main window can call:
+
+- `update_state`: read the current snapshot.
+- `update_check`: check the feed and download when the saved preference allows.
+- `update_apply`: recheck, then download and/or install the release.
+
+The commands are in `command_names::MAIN_COMMANDS`, are granted only by
+`capabilities/main.json`, and each checks that the caller is the main window.
+Widget windows, which load third-party content, cannot install updates.
+
+`UpdateSnapshot` and the release-notes types are shared Rust types exported to
+TypeScript with `pnpm typegen`. `src/runtime/update.rs` owns the launch check,
+settings policy, event emission, quit handling, and relaunch; the window renders
+the snapshot and invokes the commands.
 
 ## Code layout
 
 ```
 src/update/
-├── mod.rs            module tree
-├── service.rs        state machine, guards, install hand-off
-├── snapshot.rs       UpdateState and UpdateSnapshot, the window's contract
-├── notes.rs          stable-notes selection and retained range cache
-├── github.rs         paginated releases, asset selection, failure wording
-├── fetch.rs          the GitHub client: deadlines, HTTPS-only redirects, token
-├── version.rs        semver questions, build stamp, tag normalisation
-├── download.rs       streaming download with its SHA-256, asset text reads
-├── verify.rs         digest and SHA256SUMS handling
-├── stage.rs          which asset, and where it lands
+├── service.rs        state machine, ownership guards, install hand-off
+├── service/install.rs
+│                     per-request install outcomes and cleanup
+├── snapshot.rs       UpdateState and UpdateSnapshot
+├── github.rs         release feed, filtering, asset selection, errors
+├── fetch.rs          HTTP client, URL security, token scope
+├── download.rs       streaming download and text assets
+├── stage.rs          per-download directory and asset preparation
+├── verify.rs         digest and SHA256SUMS verification
+├── notes.rs          retained release notes and range selection
+├── target.rs         platform, architecture, package-manager selection
+├── version.rs        semver comparison, build stamp, tag normalization
 └── install/
-    ├── mod.rs        per-platform dispatch and relaunch
-    ├── macos.rs      unpack, swap with rollback, start the new one
+    ├── macos.rs      bundle resolution, ZIP extraction, swap and rollback
     ├── windows.rs    NSIS flags and launch
-    └── linux.rs      deb/rpm through pkexec
+    └── linux.rs      dpkg/rpm through pkexec and relaunch
 ```
 
-The Tauri endpoints live in `src/runtime/commands.rs` with every other command;
-the launch check, the settings the policy needs and install-on-quit live in
-`src/runtime/update.rs`. The window renders from `update_state` and never talks to
-GitHub itself.
+The launch check and Tauri wiring are in `src/runtime/update.rs`; the main
+window's rendering and polling are in `ui/src/main/update.ts` and
+`ui/src/main/release-notes.ts`.
 
-`tests/` mirrors `src/`: `tests/update/*.rs` and `tests/update/install/*.rs`, each
-directory with its `mod.rs`, registered in `tests/main.rs`. Frontend tests live in
-`ui/tests/` and mirror `ui/src/`.
+## Verification and limits
 
-## Traps
-
-- **A launch check cannot be discovered by polling.** The window reads the snapshot
-  when it loads, which is before the check starts, and `idle` stops the poll. Every
-  published snapshot is announced on `aidget://update` instead, so the window hears
-  about a check nobody asked for.
-- **Relaunch waits for the old process on every platform.** On Linux the new
-  instance finds the old one over IPC, asks it to reopen, and exits, leaving nothing
-  running; both platforms now wait on the pid before starting the replacement.
-- **Watching `.git/HEAD` alone misses commits.** Declare the branch and tag refs
-  plus `packed-refs`; otherwise a cached build stamp can survive the commit that
-  should change it. A build with no tag and no describe reports
-  `<version>-untagged`.
-- **A Tauri command that performs network and file work must be `async`.** A
-  synchronous command runs on the main thread, where blocking work stalls the
-  window. `update_apply` publishes download progress while the replacement runs.
-- **Do not relaunch with `open -a`.** LaunchServices resolves an application by its
-  bundle identifier, so with another copy running it activates that one and the
-  bundle just swapped in never starts. The replaced executable is started directly.
-  Its output goes to a file in the temp directory; a detached shell's goes nowhere.
-- **Incremental builds cache the stamp.** `build.rs` reruns only for what it
-  declares, so a rebuild after a checkout can keep the previous `git describe`
-  result. Touch `build.rs` when the stamp matters.
-- **Acceptance builds must be made at the release tag.** Any later commit reports
-  as a build from source.
-- **Download tests use the current platform asset.** The mock server fills
-  `__ASSET__` from `target::current()` so platform selection is tested rather than
-  bypassed.
-- **A check must not discard a downloaded update.** Neither a failed feed nor a feed
-  naming nothing newer says anything about a file that already downloaded and
-  verified.
-- **`ditto -c -k` alone loses the `.app` wrapper.** Releases must pass
-  `--keepParent`, or the archive holds `Contents/` at its root and there is nothing
-  to swap in.
-- **A macOS cross-target check stops in `aws-lc-sys`.** The `reqwest` entry is
-  target-specific on non-macOS Apple platforms and is not the toolchain used by a
-  Windows build.
-- **Unauthenticated quota is per address and shared behind a proxy.** A `403` there
-  is usually the quota, so the answer is reported with `x-ratelimit-reset` and the
-  window says how long to wait.
-- **An async Tauri command cannot hold `State`.** It requires `'static`, so the
-  service is cloned (it shares one `Arc` snapshot) before the `await`.
-- **`UpdateState::Installing` is not the quit gate.** A completed replacement keeps
-  that state until the process exits, so deferring on it would also block the
-  relaunch exit. A separate `installing` flag covers only the file-swap window: a
-  quit that arrives there is recorded in `ExitRequested` and released once the
-  install settles; a failed install exits without retrying the same replacement.
-- **macOS Cmd+Q never sends `ExitRequested`.** The native quit reaches `Exit`
-  directly, so `install_on_quit` waits for an active replacement to settle instead
-  of treating the busy service as `NotStarted` and letting the process die between
-  the two bundle renames. If the quit races the claim, the `NotStarted` arm
-  re-checks the gate and waits too. The wait ends when replacement finishes; a
-  native quit can still win the race against the relaunch script, leaving the new
-  version installed for the next launch without an automatic restart.
-
-## Verification
+Local checks:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -287,32 +388,26 @@ AIDGET_CHECK_TARGET=1 cargo check --lib
 cargo test
 ```
 
-All three platforms run the same suite in CI (macos-latest, ubuntu-22.04,
-windows-2022), so the `cfg(target_os = "windows")` and `cfg(target_os = "linux")`
-install paths are compiled and tested, not only the macOS one. A cross-target
-`cargo check --lib` from macOS is not possible: `aws-lc-sys`, pulled in by the
-repository's `reqwest`, needs an MSVC C toolchain.
+The update tests use a local mock server and cover release filtering and
+pagination, build eligibility, state transitions, download retries, checksum
+handling, asset selection, release-notes caching, the macOS bundle swap, Linux
+package commands, Windows installer arguments, and relaunch ordering. They do
+not contact GitHub.
 
-**Unit tests** (`tests/update/`) cover version comparison and the describe-stamp
-rule, release JSON parsing, per-platform asset selection, the digest and
-`SHA256SUMS` paths, the state machine including its refusals, download failures and
-retries, the macOS swap, and the `pkexec` command lines. They run against a local
-mock server, never against GitHub.
+CI compiles and tests the platform-gated paths on macOS, Windows, and Linux, but
+the automated suite does not perform a real NSIS installation, answer a Linux
+`pkexec` prompt, or install from a read-only/DMG location. macOS and Windows
+release artifacts are currently unsigned, so Gatekeeper or SmartScreen may still
+warn on first launch.
 
-The current automated suite does not exercise these platform operations end to
-end:
+The updater has no:
 
-- Windows installer launch: CI compiles and tests the path, no NSIS install was
-  executed on Windows. UAC elevation, SmartScreen and file locking during a silent
-  install are likewise unverified.
-- Linux `.deb` / `.rpm` end to end: the commands are asserted, the prompt they
-  need cannot be answered in CI.
-- Running from a read-only folder or straight from a DMG: `ensure_writable` writes
-  the advice, it was not run against such a folder.
-
-## Out of scope
-
-Custom feed service or `latest.json`; beta/stable channels; mirrors or proxy
-configuration; Homebrew or container detection; blocked-version bookkeeping;
-bare-file replacement for `.deb` / `.rpm` / Windows; automatic rollback after a
-failed install; a user-configured update repository.
+- recurring check or background daemon;
+- beta/stable channel selection, mirrors, or proxy settings;
+- custom feed, `latest.json`, or runtime repository override;
+- resumable download or cross-restart staging;
+- Homebrew, container, or AppImage detection;
+- blocked-version bookkeeping;
+- bare-file replacement for `.deb`, `.rpm`, or Windows;
+- rollback after a completed replacement fails to start;
+- automatic installation of a Linux package during quit.
