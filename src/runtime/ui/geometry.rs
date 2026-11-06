@@ -262,23 +262,7 @@ pub fn place_new_widget(app: &AppHandle, store: &Store, id: &str) -> Result<()> 
         .filter(|widget| widget.enabled)
         .map(|widget| widget.id)
         .collect();
-    let monitors = app.available_monitors()?;
-    if monitors.is_empty() {
-        return Err(crate::common::error::Error::Other(
-            "no display is available".to_string(),
-        ));
-    }
-    let primary = app.primary_monitor()?;
-    let primary_index = primary.as_ref().and_then(|primary| {
-        monitors
-            .iter()
-            .position(|monitor| same_monitor(monitor, primary))
-    });
-    let displays: Vec<_> = monitors
-        .into_iter()
-        .enumerate()
-        .map(|(index, monitor)| (display_name(&monitor, index), monitor))
-        .collect();
+    let (displays, primary_index) = connected_displays(app)?;
     let mut order: Vec<_> = (0..displays.len()).collect();
     order.sort_by(|&left, &right| {
         let left_primary = Some(left) == primary_index;
@@ -337,6 +321,30 @@ pub fn place_new_widget(app: &AppHandle, store: &Store, id: &str) -> Result<()> 
         },
     )?;
     Ok(())
+}
+
+/// Connected displays under the names frames store, with the primary's position.
+pub(super) fn connected_displays(
+    app: &AppHandle,
+) -> Result<(Vec<(String, tauri::Monitor)>, Option<usize>)> {
+    let monitors = app.available_monitors()?;
+    if monitors.is_empty() {
+        return Err(crate::common::error::Error::Other(
+            "no display is available".to_string(),
+        ));
+    }
+    let primary = app.primary_monitor()?;
+    let primary_index = primary.as_ref().and_then(|primary| {
+        monitors
+            .iter()
+            .position(|monitor| same_monitor(monitor, primary))
+    });
+    let displays = monitors
+        .into_iter()
+        .enumerate()
+        .map(|(index, monitor)| (display_name(&monitor, index), monitor))
+        .collect();
+    Ok((displays, primary_index))
 }
 
 fn logical_area(monitor: &tauri::Monitor) -> f64 {

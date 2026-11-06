@@ -31,6 +31,7 @@ dependencies = [
  "encoding_rs",
  "flate2",
  "fs2",
+ "gdk",
  "include_dir",
  "junction",
  "libc",
