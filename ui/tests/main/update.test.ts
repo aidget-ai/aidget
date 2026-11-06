@@ -68,6 +68,7 @@ function mount(locale: 'en-US' | 'zh-CN' = 'en-US') {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers();
   mocks.invoke.mockReset().mockResolvedValue(snapshot('idle'));
   mocks.listen.mockClear();
   mocks.handlers.clear();
@@ -86,6 +87,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.clearAllTimers();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -369,7 +371,6 @@ describe('update actions', () => {
   });
 
   it('shows the latest result for three seconds before returning to check', async () => {
-    vi.useFakeTimers();
     const page = mount();
     await page.refresh();
     const action = document.querySelector<HTMLButtonElement>('[data-update-action]')!;
@@ -388,7 +389,6 @@ describe('update actions', () => {
   });
 
   it('reads the state again while a download runs', async () => {
-    vi.useFakeTimers();
     const page = mount();
     await page.refresh();
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
