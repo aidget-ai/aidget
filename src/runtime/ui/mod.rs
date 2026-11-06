@@ -11,6 +11,7 @@ mod main_page;
 mod main_window;
 #[cfg(target_os = "macos")]
 mod native_surface;
+mod relocation;
 mod state;
 mod watcher;
 mod widget_windows;
@@ -22,7 +23,7 @@ use crate::widgets::store::Store;
 
 pub use capture::{mark_loaded, mark_ready, screenshot, screenshot_mode, ScreenshotMode};
 pub use content::{content_token, html_paints_own_surface, html_widget_surface, WidgetState};
-pub use drag::{begin_drag, end_drag, persist_position};
+pub use drag::{begin_drag, end_drag, native_drag_running, persist_position, records_move};
 #[cfg(target_os = "macos")]
 pub use drag::{set_dragging_cursor, wait_for_drag_release};
 pub use geometry::{
@@ -36,6 +37,7 @@ pub use main_page::{
     WidgetSummary,
 };
 pub use main_window::{mark_main_painted, show_main, show_main_now};
+pub use relocation::DisplayNames;
 pub use state::{
     record_revision, require_main_window_label, retain_widget_revisions, widget_id, UiState,
     MAIN_LABEL,

@@ -23,6 +23,8 @@ pub struct UiState {
     pub ready: Mutex<HashMap<String, u64>>,
     pub applying: Mutex<bool>,
     pub dragging: Mutex<Option<Instant>>,
+    /// When the latest drag began, which `dragging` forgets at `end_drag`.
+    pub drag_started: Mutex<Option<Instant>>,
     pub topology: Mutex<String>,
     pub board_revision: Mutex<u64>,
     pub root: Mutex<std::path::PathBuf>,
