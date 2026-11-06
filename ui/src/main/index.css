@@ -1232,6 +1232,15 @@ body[data-platform='windows'] .navigation {
   background: var(--surface);
   font-size: 12px;
 }
+.default-display-control {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+.default-display-control select {
+  max-inline-size: 260px;
+}
 .github-token-control {
   display: grid;
   justify-items: end;

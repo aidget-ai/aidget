@@ -509,6 +509,7 @@ impl Store {
             )));
         }
 
+        let display = self.load_settings()?.default_display;
         let dir = self.widget_dir(id)?;
 
         let mut meta = WidgetMeta::new(id, title);
@@ -528,18 +529,21 @@ impl Store {
 
         // A recreated id must not inherit state from a previous widget.
         crate::widgets::storage::clear(self, id)?;
-        self.ensure_frame(id, existing.len())?;
+        self.ensure_frame(id, existing.len(), display)?;
         Ok(meta)
     }
 
-    pub fn ensure_frame(&self, id: &str, index: usize) -> Result<()> {
+    fn ensure_frame(&self, id: &str, index: usize, display: Option<String>) -> Result<()> {
         let mut board = self.load_board()?;
         if board.widgets.contains_key(id) {
             return Ok(());
         }
-        board
-            .widgets
-            .insert(id.to_string(), WidgetFrame::default_for(index));
+        let mut frame = WidgetFrame::default_for(index);
+        // CLI writes run without the GUI, so `place_new_widget` never sees them.
+        if let Some(display) = display {
+            frame.display = display;
+        }
+        board.widgets.insert(id.to_string(), frame);
         board.revision += 1;
         self.save_board(&board)
     }

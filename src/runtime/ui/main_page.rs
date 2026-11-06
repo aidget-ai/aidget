@@ -7,11 +7,12 @@ use crate::runtime::main_window_state;
 use crate::settings::{
     self, GithubToken, Language, MainPage, Theme, TrayClickAction, UiPreferences,
 };
-use crate::widgets::model::{validate_id, DeletedWidgetSummary, WidgetFrame};
+use crate::widgets::model::{validate_id, DeletedWidgetSummary, DisplayInfo, WidgetFrame};
 use crate::widgets::store::{Store, WidgetEdit};
 
 use super::capture::{capture_widget, screenshot_mode, MAIN_PREVIEW_SCALE};
 use super::content::{content_token, signature};
+use super::geometry::displays;
 use super::state::UiState;
 use super::widget_windows::sync_widgets;
 
@@ -82,9 +83,14 @@ pub struct MainState {
     pub github_token: Option<GithubTokenSummary>,
     /// Whether the About page's toggle leaves automatic downloading on.
     pub auto_download: bool,
+    /// Display new widgets try first; `None` keeps automatic placement.
+    pub default_display: Option<String>,
+    /// Connected displays offered by the default display setting.
+    pub displays: Vec<DisplayInfo>,
 }
 
-/// List every valid widget, including disabled widgets.
+/// List every valid widget, including disabled widgets. Display discovery needs
+/// the app handle, so `main_payload` fills `displays`.
 pub fn main_widgets(store: &Store) -> Result<MainState> {
     let settings = settings::load(store.root())?;
     let github_token = settings.github_token.as_ref().map(GithubTokenSummary::from);
@@ -130,13 +136,18 @@ pub fn main_widgets(store: &Store) -> Result<MainState> {
         last_page: settings.last_page,
         github_token,
         auto_download: settings.auto_download,
+        default_display: settings.default_display,
+        displays: Vec::new(),
     })
 }
 
 /// Build the current main-page payload from the widget store and settings.
 pub fn main_payload(app: &AppHandle) -> Result<MainState> {
     let store = Store::new(app.state::<UiState>().root.lock().unwrap().clone());
-    main_widgets(&store)
+    Ok(MainState {
+        displays: displays(app)?,
+        ..main_widgets(&store)?
+    })
 }
 
 /// Persist UI preferences and apply the primary-click tray behavior without

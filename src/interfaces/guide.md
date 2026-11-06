@@ -317,7 +317,8 @@ capture.
 | Placement      | User-controlled     | User-controlled     | Under Wayland, the compositor controls stacking and exact placement |
 
 New widgets are placed into the first free slot inside a display's work area,
-preferring the primary display and falling back to another display when needed.
+preferring the default display chosen in the main window's settings, then the
+primary display, and falling back to another display when needed.
 Later moves are user-owned and take precedence over automatic placement.
 
 On Windows, widget content is served from `http://aidget.localhost`. Native

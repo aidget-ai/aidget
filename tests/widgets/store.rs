@@ -1,6 +1,7 @@
 use crate::common::utils::set_modified;
 use aidget::common::error::Error;
 use aidget::runtime::main_window_state;
+use aidget::settings::{save_preferences, UiPreferences};
 use aidget::widgets::model::{validate_id, WidgetFrame, WidgetPermission, MAX_WIDGETS};
 use aidget::widgets::store::{
     patch_html_region, Store, WidgetEdit, AGENTS_FILE, CONFIG_FILE, HTML_FILE, SETTINGS_FILE,
@@ -14,6 +15,47 @@ fn store() -> (TempDir, Store) {
     let store = Store::new(dir.path());
     store.ensure_layout().unwrap();
     (dir, store)
+}
+
+#[test]
+fn create_rejects_invalid_settings_before_writing_the_widget() {
+    let (_dir, store) = store();
+    fs::write(store.root().join(SETTINGS_FILE), "not = [valid").unwrap();
+
+    assert!(store.create("note", "Note", WidgetEdit::default()).is_err());
+    assert!(!store.widget_dir("note").unwrap().exists());
+}
+
+#[test]
+fn created_widget_starts_on_the_primary_display_by_default() {
+    let (_dir, store) = store();
+
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+
+    assert_eq!(
+        store.load_board().unwrap().widgets["note"].display,
+        "primary"
+    );
+}
+
+#[test]
+fn created_widget_starts_on_the_chosen_display() {
+    let (_dir, store) = store();
+    save_preferences(
+        store.root(),
+        UiPreferences {
+            default_display: Some("Monitor #2".to_string()),
+            ..UiPreferences::default()
+        },
+    )
+    .unwrap();
+
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+
+    assert_eq!(
+        store.load_board().unwrap().widgets["note"].display,
+        "Monitor #2"
+    );
 }
 
 #[test]

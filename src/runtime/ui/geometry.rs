@@ -5,8 +5,11 @@ use tauri::{
 };
 
 use crate::common::error::Result;
+use crate::settings;
 use crate::widgets::model::{DisplayInfo, WidgetFrame};
 use crate::widgets::store::Store;
+
+use super::display_labels::{display_name, display_names};
 
 const PLACEMENT_MARGIN: f64 = 24.0;
 const PLACEMENT_GAP: f64 = 16.0;
@@ -40,13 +43,11 @@ pub fn physical_geometry(app: &AppHandle, frame: &WidgetFrame) -> (i32, i32, f64
             primary.is_some() || !monitors.is_empty(),
         )
     } else {
-        match monitors
+        match display_names(&monitors)
             .iter()
-            .enumerate()
-            .find(|(index, monitor)| display_name(monitor, *index) == frame.display)
-            .map(|(_, monitor)| monitor.clone())
+            .position(|name| *name == frame.display)
         {
-            Some(monitor) => (Some(monitor), true),
+            Some(index) => (Some(monitors[index].clone()), true),
             None => (primary.clone().or_else(|| monitors.first().cloned()), false),
         }
     };
@@ -248,10 +249,11 @@ fn overlap_area(left: LogicalRect<f64, f64>, right: LogicalRect<f64, f64>) -> f6
 
 /// Place a newly installed widget in the first visible free space.
 ///
-/// The primary display is preferred when it has room. Otherwise displays are
-/// tried by available area, and an overlapping-but-visible position is used
-/// only when no display has enough free space.
+/// The display chosen in settings is tried first, then the primary display.
+/// Otherwise displays are tried by available area, and an overlapping-but-visible
+/// position is used only when no display has enough free space.
 pub fn place_new_widget(app: &AppHandle, store: &Store, id: &str) -> Result<()> {
+    let preferred = settings::load(store.root())?.default_display;
     let meta = store.load_meta(id)?;
     let board = store.load_board()?;
     let initial = board.widgets.get(id).cloned();
@@ -263,16 +265,11 @@ pub fn place_new_widget(app: &AppHandle, store: &Store, id: &str) -> Result<()> 
         .map(|widget| widget.id)
         .collect();
     let (displays, primary_index) = connected_displays(app)?;
-    let mut order: Vec<_> = (0..displays.len()).collect();
-    order.sort_by(|&left, &right| {
-        let left_primary = Some(left) == primary_index;
-        let right_primary = Some(right) == primary_index;
-        right_primary.cmp(&left_primary).then_with(|| {
-            let left_area = logical_area(&displays[left].1);
-            let right_area = logical_area(&displays[right].1);
-            right_area.total_cmp(&left_area)
-        })
-    });
+    let candidates: Vec<_> = displays
+        .iter()
+        .map(|(name, monitor)| (name.as_str(), logical_area(monitor)))
+        .collect();
+    let order = placement_order(&candidates, primary_index, preferred.as_deref());
 
     let mut areas = Vec::with_capacity(order.len());
     let mut occupied_by_display = Vec::with_capacity(order.len());
@@ -339,12 +336,28 @@ pub(super) fn connected_displays(
             .iter()
             .position(|monitor| same_monitor(monitor, primary))
     });
-    let displays = monitors
-        .into_iter()
-        .enumerate()
-        .map(|(index, monitor)| (display_name(&monitor, index), monitor))
-        .collect();
-    Ok((displays, primary_index))
+    let names = display_names(&monitors);
+    Ok((names.into_iter().zip(monitors).collect(), primary_index))
+}
+
+/// Order `(name, logical area)` displays for a new widget: the chosen display,
+/// then the primary display, then the rest by area. A chosen display that is not
+/// connected matches nothing, which leaves the automatic order.
+///
+/// Test seam for `place_new_widget`, which needs a running app.
+pub fn placement_order(
+    displays: &[(&str, f64)],
+    primary: Option<usize>,
+    preferred: Option<&str>,
+) -> Vec<usize> {
+    let rank = |index: usize| (Some(displays[index].0) == preferred, Some(index) == primary);
+    let mut order: Vec<_> = (0..displays.len()).collect();
+    order.sort_by(|&left, &right| {
+        rank(right)
+            .cmp(&rank(left))
+            .then_with(|| displays[right].1.total_cmp(&displays[left].1))
+    });
+    order
 }
 
 fn logical_area(monitor: &tauri::Monitor) -> f64 {
@@ -402,13 +415,14 @@ fn frame_rect_on_display(
 pub fn displays(app: &AppHandle) -> Result<Vec<DisplayInfo>> {
     let monitors = app.available_monitors()?;
     let primary = app.primary_monitor().ok().flatten();
+    let names = display_names(&monitors);
     Ok(monitors
         .into_iter()
         .enumerate()
         .map(|(index, monitor)| {
             let area = monitor.work_area();
             let scale = monitor.scale_factor();
-            let name = display_name(&monitor, index);
+            let name = names[index].clone();
             let primary = primary
                 .as_ref()
                 .is_some_and(|primary| same_monitor(primary, &monitor));
@@ -425,22 +439,6 @@ pub fn displays(app: &AppHandle) -> Result<Vec<DisplayInfo>> {
         .collect())
 }
 
-/// The name a frame stores for a monitor at `index`.
-///
-/// macOS and Windows report a device name. Wayland can report none, and an
-/// unnamed monitor must not collapse into `primary`, or every multi-screen
-/// frame would be restored onto one screen, so those keep the list position
-/// and origin as the identifier.
-pub fn display_name(monitor: &tauri::Monitor, index: usize) -> String {
-    match monitor.name().filter(|name| !name.is_empty()) {
-        Some(name) => name.clone(),
-        None => {
-            let position = monitor.position();
-            format!("display-{index}@{}:{}", position.x, position.y)
-        }
-    }
-}
-
 /// Whether two handles describe the same physical display.
 pub(super) fn same_monitor(left: &tauri::Monitor, right: &tauri::Monitor) -> bool {
     left.position() == right.position() && left.size() == right.size()
@@ -448,11 +446,13 @@ pub(super) fn same_monitor(left: &tauri::Monitor, right: &tauri::Monitor) -> boo
 
 /// The stored name of a monitor that is not the primary display.
 pub(super) fn named_display(app: &AppHandle, monitor: &tauri::Monitor) -> String {
-    let index = app
-        .available_monitors()
-        .unwrap_or_default()
+    let monitors = app.available_monitors().unwrap_or_default();
+    let index = monitors
         .iter()
         .position(|candidate| same_monitor(candidate, monitor))
         .unwrap_or(0);
-    display_name(monitor, index)
+    display_names(&monitors)
+        .into_iter()
+        .nth(index)
+        .unwrap_or_else(|| display_name(monitor, index))
 }

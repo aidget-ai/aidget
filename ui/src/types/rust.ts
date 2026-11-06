@@ -109,3 +109,8 @@ export type CachedCommunitySnapshot = { snapshot: CommunitySnapshot,
 checkedAt: number, };
 export type DownloadCount = { package: string, weekly: number | null, error: string | null, };
 export type LocalWidgetDetails = { config: WidgetConfig, description: string | null, preview: string | null, };
+export type DisplayInfo = {
+/**
+ * Stable identifier stored in frames and settings.
+ */
+name: string, primary: boolean, x: number, y: number, width: number, height: number, scale: number, };

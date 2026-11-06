@@ -306,9 +306,10 @@ pub struct WidgetDocument {
     pub frame: Option<WidgetFrame>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct DisplayInfo {
+    /// Stable identifier stored in frames and settings.
     pub name: String,
     pub primary: bool,
     pub x: f64,
