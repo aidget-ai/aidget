@@ -6,7 +6,7 @@ Releases are built and published by `.github/workflows/release.yml` from an
 annotated `vMAJOR.MINOR.PATCH` or `vMAJOR.MINOR.PATCH-beta.N` tag in
 `aidget-ai/aidget`.
 
-- The tag must point to a reviewed commit that is already on `main`.
+- Create the tag only after its reviewed commit is on `main` and has passed Check.
 - The version must be strictly newer than the current latest release.
 - No source version bump commit is created.
 - The workflow injects the tag version into `Cargo.toml`, `package.json` and
@@ -59,6 +59,8 @@ Configure `DEEPSEEK_API_KEY` as a repository Actions secret. It is used only by
 the release notes job: first to generate an English changelog from the commit
 subjects since the previous release, then to translate that changelog into
 Simplified Chinese.
+
+Never commit `DEEPSEEK_API_KEY` or print it in logs.
 
 There are no signing or updater secrets in the current process.
 
@@ -133,7 +135,7 @@ after the four build artifacts and `release-notes` artifact exist.
 
 ## Release assets
 
-Every successful release contains:
+A release is complete only when the workflow has published all of these assets:
 
 - `aidget-darwin-arm64.dmg`
 - `aidget-darwin-amd64.dmg`
@@ -179,17 +181,18 @@ builds cannot self-update to a release without a matching AppImage asset.
   may be retried on the same unpublished tag.
 - A failure that needs a code or workflow change requires a new commit on
   `main` and a new patch tag, or the next beta number during prerelease trials.
-  Never move or delete the failed tag.
+  Never move, delete, or reuse a failed or published tag.
 - A draft release left by a partial publish is replaced on rerun. A published
   release is immutable and cannot be replaced by this workflow.
 - A superseded tag cannot be retried once a higher supported tag exists. Use a
   new reviewed main commit and a higher version instead.
-- Never hand-upload or replace assets after a release is public.
+- Never hand-upload, replace, or remove assets after a release is public.
 
 ## Signing and updates
 
 The current macOS and Windows artifacts are unsigned. macOS users may see
-Gatekeeper warnings, and Windows users may see SmartScreen warnings.
+Gatekeeper warnings, and Windows users may see SmartScreen warnings. Do not claim
+code signing or notarization.
 
 The app checks the latest stable GitHub Release and verifies update downloads
 against `SHA256SUMS`. macOS uses the `.zip` assets for application replacement;
