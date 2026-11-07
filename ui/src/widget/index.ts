@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
+import { createAnimationHost, parseAnimationRequest } from './animation-host';
 import {
   errorMessage,
   failureOf,
@@ -55,6 +56,10 @@ const dragSession = createDragSession(
   () => invoke<void>('end_widget_drag'),
 );
 let activeDrag: DragSignal | null = null;
+const animationHost = createAnimationHost(postToWidget);
+animationHost.setVisible(!document.hidden);
+document.addEventListener('visibilitychange', () => animationHost.setVisible(!document.hidden));
+window.addEventListener('pagehide', () => animationHost.reset());
 
 function apply(next: WidgetState) {
   // The label, not the first event, decides which widget this window shows.
@@ -74,6 +79,7 @@ function apply(next: WidgetState) {
   handle.hidden = next.dragMode === 'all';
   if (reload || sandboxChanged) {
     dragSession.cancel();
+    animationHost.reset();
     setPointerTracking(false);
     pendingRevision = next.revision;
     frame.src = widgetUrl(origin, next.id, next.revision, next.token);
@@ -125,6 +131,7 @@ function showFault(message: string) {
 }
 
 frame.addEventListener('error', () => {
+  animationHost.reset();
   setPointerTracking(false);
   showFault('无法读取小组件文件');
 });
@@ -187,6 +194,11 @@ window.addEventListener('pagehide', () => dragSession.cancel());
 // Host side of the widget bridge: only the iframe this window owns may ask,
 // and only for methods the host actually implements.
 window.addEventListener('message', (event) => {
+  const animation = parseAnimationRequest(event, frame.contentWindow, state);
+  if (animation) {
+    animationHost.accept(animation);
+    return;
+  }
   const drag = parseDragSignal(event, frame.contentWindow, state);
   if (drag) {
     if (drag.phase === 'cancel') {

@@ -18,6 +18,12 @@
   var declared = [];
   var readySent = false;
   var pointerListeners = [];
+  var animationCallbacks = new Map();
+  var animationHandle = 0;
+  var animationSequence = 0;
+  var animationRequest = 0;
+  var animationSession = '';
+  var deliveringAnimation = false;
   var versionMatch = /(?:^|[?&])v=(\d+)-([^&]+)/.exec(location.search || '');
   var revision = versionMatch ? Number(versionMatch[1]) : 0;
   var token = versionMatch ? versionMatch[2] : '';
@@ -71,6 +77,35 @@
     );
   }
 
+  function animationSignal(type) {
+    window.parent.postMessage(
+      {
+        source: 'aidget-widget',
+        type: type,
+        revision: revision,
+        token: token,
+        session: animationSession,
+        request: animationRequest,
+      },
+      '*',
+    );
+  }
+
+  function scheduleAnimation() {
+    if (deliveringAnimation || animationRequest || !animationCallbacks.size) {
+      return;
+    }
+    animationRequest = ++animationSequence;
+    animationSignal('animation-frame-request');
+  }
+
+  function cancelAnimation() {
+    if (animationRequest) {
+      animationSignal('animation-frame-cancel');
+      animationRequest = 0;
+    }
+  }
+
   window.addEventListener('message', function (event) {
     if (event.source !== window.parent) {
       return;
@@ -81,6 +116,39 @@
     }
     if (data.type === 'permissions') {
       declared = Array.isArray(data.permissions) ? data.permissions.slice() : [];
+      return;
+    }
+    if (data.type === 'animation-frame') {
+      if (
+        !animationRequest ||
+        data.revision !== revision ||
+        data.token !== token ||
+        data.session !== animationSession ||
+        data.request !== animationRequest ||
+        !Number.isFinite(data.timestamp) ||
+        data.timestamp < performance.timeOrigin
+      ) {
+        return;
+      }
+      animationRequest = 0;
+      deliveringAnimation = true;
+      // Snapshot IDs so re-entrant requests wait for the next frame and cancellation still works.
+      var handles = Array.from(animationCallbacks.keys());
+      var timestamp = data.timestamp - performance.timeOrigin;
+      handles.forEach(function (handle) {
+        var callback = animationCallbacks.get(handle);
+        if (!callback) {
+          return;
+        }
+        animationCallbacks.delete(handle);
+        try {
+          callback(timestamp);
+        } catch (error) {
+          console.error(error);
+        }
+      });
+      deliveringAnimation = false;
+      scheduleAnimation();
       return;
     }
     if (data.type === 'pointer') {
@@ -113,6 +181,8 @@
   });
 
   window.addEventListener('pagehide', function () {
+    animationCallbacks.clear();
+    cancelAnimation();
     if (!pointerListeners.length) {
       return;
     }
@@ -140,6 +210,29 @@
     },
     openUrl: function (url) {
       return call('open_url', { url: url });
+    },
+    // One-shot frames use the shell's clock without replacing the browser's API.
+    requestAnimationFrame: function (callback) {
+      if (typeof callback !== 'function') {
+        throw new TypeError('requestAnimationFrame requires a function');
+      }
+      if (!Number.isSafeInteger(revision) || revision <= 0 || !token) {
+        throw new Error('animation frames require a versioned widget document');
+      }
+      if (!animationSession) {
+        // A fresh nonce distinguishes reloads of the same content revision.
+        animationSession = Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-');
+      }
+      var handle = ++animationHandle;
+      animationCallbacks.set(handle, callback);
+      scheduleAnimation();
+      return handle;
+    },
+    cancelAnimationFrame: function (handle) {
+      animationCallbacks.delete(handle);
+      if (!animationCallbacks.size) {
+        cancelAnimation();
+      }
     },
     onPointer: function (handler) {
       if (typeof handler !== 'function') {

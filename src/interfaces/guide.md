@@ -178,8 +178,8 @@ or refresh behavior change.
 ## window.aidget bridge
 
 Every bridge method below requires `script`. Additional grants are listed per
-method. Calls time out after 25 seconds unless the method documents a shorter
-limit.
+method. Request/response calls time out after 25 seconds unless the method documents
+a shorter limit. Pointer subscriptions and animation frames have no request timeout.
 
 ### `ready()`
 
@@ -224,6 +224,31 @@ The tracking region is the full widget window, including transparent areas.
 An occluded widget receives nothing. When a listener subscribes while the
 pointer is already inside, no event is invented immediately; the next pointer
 movement starts with `enter`.
+
+### `requestAnimationFrame(callback)` and `cancelAnimationFrame(handle)`
+
+```js
+const handle = window.aidget.requestAnimationFrame((timestamp) => {
+  // Update animation styles using the document-relative timestamp.
+});
+window.aidget.cancelAnimationFrame(handle);
+```
+
+Requests one animation callback using the widget shell's rendering clock. This
+avoids WebKit's reduced frame rate for sandboxed iframes that have not received
+a user interaction. The browser's own `requestAnimationFrame` remains available.
+
+The returned handle belongs to this document and can be cancelled repeatedly.
+The callback receives milliseconds relative to this document's
+`performance.timeOrigin`, like `performance.now()`. Callbacks in one batch share
+a timestamp; callbacks requested during that batch run in a later frame. A
+callback that throws does not prevent the remaining callbacks from running.
+
+Only pending callbacks generate frame messages. Stop requesting frames when an
+animation settles. Hidden shell documents pause pending frames until visible;
+unloading the widget cancels its pending callbacks. Window blur does not pause
+this API. Actual frame rate depends on the WebView, display and system load.
+Use elapsed time for interpolation and cap long gaps when resuming.
 
 ### `requestLocation()`
 

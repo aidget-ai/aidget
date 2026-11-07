@@ -12,6 +12,8 @@ interface Harness {
     requestLocation: () => Promise<unknown>;
     fetch: (url: unknown, options?: unknown) => Promise<unknown>;
     openUrl: (url: unknown) => Promise<unknown>;
+    requestAnimationFrame: (callback: (timestamp: number) => void) => number;
+    cancelAnimationFrame: (handle: number) => void;
     onPointer: (handler: (event: { type: string; x: number; y: number }) => void) => () => void;
     storage: {
       getItem: (key: unknown) => Promise<unknown>;
@@ -44,6 +46,9 @@ function install(
     setTimeout,
     clearTimeout,
     Map,
+    crypto,
+    Uint32Array,
+    performance: { timeOrigin: 1000 },
     console: { error: (error: unknown) => errors.push(error) },
   };
   sandbox.window = {
@@ -451,5 +456,125 @@ describe('network and links', () => {
       code: 'http_error',
       message: 'HTTP 403',
     });
+  });
+});
+
+describe('host animation frames', () => {
+  function deliver(harness: Harness, timestamp = 1032) {
+    const request = harness.posted
+      .slice()
+      .reverse()
+      .find((message) => message.type === 'animation-frame-request')!;
+    harness.send({ ...request, source: 'aidget-host', type: 'animation-frame', timestamp });
+  }
+
+  it('batches callbacks without scheduling an iframe animation frame and goes idle', () => {
+    const harness = install();
+    const first = vi.fn();
+    const second = vi.fn();
+    harness.api!.requestAnimationFrame(first);
+    harness.api!.requestAnimationFrame(second);
+    expect(harness.posted).toHaveLength(1);
+    expect(harness.posted[0]).toMatchObject({
+      source: 'aidget-widget',
+      type: 'animation-frame-request',
+      revision: 2,
+      token: 'token',
+      request: 1,
+    });
+    deliver(harness);
+    expect(first).toHaveBeenCalledWith(32);
+    expect(second).toHaveBeenCalledWith(32);
+    expect(harness.posted).toHaveLength(1);
+  });
+
+  it('defers callbacks registered during a frame and permits cancellation in the same batch', () => {
+    const harness = install();
+    const later = vi.fn();
+    const cancelled = vi.fn();
+    let handle: number;
+    harness.api!.requestAnimationFrame(() => {
+      harness.api!.cancelAnimationFrame(handle);
+      harness.api!.requestAnimationFrame(later);
+    });
+    handle = harness.api!.requestAnimationFrame(cancelled);
+    deliver(harness);
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(later).not.toHaveBeenCalled();
+    expect(harness.posted).toHaveLength(2);
+    deliver(harness, 1048);
+    expect(later).toHaveBeenCalledWith(48);
+  });
+
+  it('cancels the pending host frame and rejects its late response after a new request', () => {
+    const harness = install();
+    const first = vi.fn();
+    const handle = harness.api!.requestAnimationFrame(first);
+    const stale = harness.posted[0];
+    harness.api!.cancelAnimationFrame(handle);
+    harness.api!.cancelAnimationFrame(handle);
+    expect(harness.posted).toHaveLength(2);
+    expect(harness.posted[1]).toMatchObject({ type: 'animation-frame-cancel', request: 1 });
+    const current = vi.fn();
+    harness.api!.requestAnimationFrame(current);
+    harness.send({ ...stale, source: 'aidget-host', type: 'animation-frame', timestamp: 1032 });
+    expect(current).not.toHaveBeenCalled();
+    deliver(harness);
+    expect(current).toHaveBeenCalledOnce();
+    expect(first).not.toHaveBeenCalled();
+  });
+
+  it('rejects foreign, stale, malformed and previous-document frames', () => {
+    const harness = install();
+    const callback = vi.fn();
+    harness.api!.requestAnimationFrame(callback);
+    const frame = {
+      ...harness.posted[0],
+      source: 'aidget-host',
+      type: 'animation-frame',
+      timestamp: 1032,
+    };
+    for (const patch of [
+      { revision: 1 },
+      { token: 'old' },
+      { session: 'old' },
+      { request: 2 },
+      { timestamp: NaN },
+      { timestamp: 900 },
+    ]) {
+      harness.send({ ...frame, ...patch });
+    }
+    harness.send(frame, {});
+    expect(callback).not.toHaveBeenCalled();
+    deliver(harness);
+    expect(callback).toHaveBeenCalledOnce();
+    const reloaded = install();
+    const nextCallback = vi.fn();
+    reloaded.api!.requestAnimationFrame(nextCallback);
+    expect(reloaded.posted[0].session).not.toBe(harness.posted[0].session);
+    reloaded.send(frame);
+    expect(nextCallback).not.toHaveBeenCalled();
+    deliver(reloaded);
+    expect(nextCallback).toHaveBeenCalledOnce();
+  });
+
+  it('isolates callback failures and releases pending work on pagehide', () => {
+    const harness = install();
+    expect(() => harness.api!.requestAnimationFrame(null as never)).toThrow(
+      'requestAnimationFrame requires a function',
+    );
+    harness.api!.requestAnimationFrame(() => {
+      throw new Error('animation failed');
+    });
+    const callback = vi.fn();
+    harness.api!.requestAnimationFrame(callback);
+    deliver(harness);
+    expect(harness.errors).toHaveLength(1);
+    expect(callback).toHaveBeenCalledOnce();
+    harness.api!.requestAnimationFrame(callback);
+    harness.emitWindow('pagehide');
+    expect(harness.posted.at(-1)).toMatchObject({ type: 'animation-frame-cancel' });
+    deliver(harness);
+    expect(callback).toHaveBeenCalledOnce();
   });
 });
