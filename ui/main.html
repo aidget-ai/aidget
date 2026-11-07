@@ -278,13 +278,23 @@
                   </div>
                 </div>
                 <div class="settings-row">
-                  <span class="setting-label" data-message="launchAtLogin"></span>
+                  <div class="setting-copy">
+                    <span class="setting-label" data-message="launchAtLogin"></span>
+                    <span
+                      class="setting-note"
+                      id="autostart-debug-note"
+                      data-autostart-debug-note
+                      data-message="launchAtLoginDebugUnavailable"
+                      hidden
+                    ></span>
+                  </div>
                   <button
                     class="switch"
                     type="button"
                     role="switch"
                     aria-checked="false"
                     data-autostart
+                    disabled
                   >
                     <span></span>
                   </button>

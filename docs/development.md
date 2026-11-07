@@ -13,6 +13,10 @@ alongside each other with separate system-tray icons. On macOS, Cargo launches
 the executable from a minimal `aidget-dev.app` beside the compiled binary so the
 system can display its menu-bar icon.
 
+Debug builds disable their `aidget-dev` autostart entry on GUI startup and keep
+the setting unavailable. Release builds use `aidget` and refresh an enabled entry
+with the current executable and absolute `--home`, preserving disabled autostart.
+
 ## Agent integrations
 
 MCP and Skill use the fixed name `aidget` and can be installed independently.

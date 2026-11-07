@@ -1,3 +1,4 @@
+pub mod autostart;
 pub mod bridge_script;
 pub mod command_access;
 pub mod command_names;

@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide';
 
-import type { Language } from '../types/rust';
+import type { Language, UpdateSnapshot } from '../types/rust';
 import { renderAgentStrip } from './agent-controls';
 import { createCommunityPage } from './community';
 import { renderDisplaySelect, selectedDisplay } from './display-select';
@@ -1227,10 +1227,21 @@ async function purgeDeletedWidget(view: DeletedWidgetView) {
 }
 
 async function initializeAutostart() {
-  autoStart.setAttribute('aria-checked', String(await isEnabled()));
+  const { isDebugBuild } = await invoke<UpdateSnapshot>('update_state');
+  document.querySelector<HTMLElement>('[data-autostart-debug-note]')!.hidden = !isDebugBuild;
+  if (isDebugBuild) {
+    autoStart.setAttribute('aria-describedby', 'autostart-debug-note');
+  } else {
+    autoStart.removeAttribute('aria-describedby');
+  }
+  autoStart.setAttribute('aria-checked', String(isDebugBuild ? false : await isEnabled()));
+  autoStart.disabled = isDebugBuild;
 }
 
 autoStart.addEventListener('click', async () => {
+  if (autoStart.disabled) {
+    return;
+  }
   autoStart.disabled = true;
   autoStart.setAttribute('aria-busy', 'true');
   fault.hidden = true;

@@ -114,6 +114,12 @@ fn run_ui(store: Store, show_main_window: bool, detach: bool) -> Result<()> {
     let app = tauri::Builder::default()
         .plugin(
             tauri_plugin_autostart::Builder::new()
+                // Development launches must not replace the installed app's login entry.
+                .app_name(if cfg!(debug_assertions) {
+                    "aidget-dev"
+                } else {
+                    "aidget"
+                })
                 .args([
                     "--home",
                     store.root().to_str().ok_or_else(|| {
@@ -130,6 +136,7 @@ fn run_ui(store: Store, show_main_window: bool, detach: bool) -> Result<()> {
         })
         .invoke_handler(aidget::runtime::commands::handler())
         .setup(move |app| {
+            aidget::runtime::autostart::refresh(app.handle(), cfg!(debug_assertions))?;
             // Registered here rather than on the builder: the service has to be
             // told where to report before anything can publish a snapshot.
             let update_service = aidget::update::UpdateService::new(

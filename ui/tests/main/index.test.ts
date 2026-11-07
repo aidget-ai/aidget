@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 
 import type { EventCallback } from '@tauri-apps/api/event';
+import { enable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import type { IntegrationInfo } from '../../src/main/integration';
@@ -117,13 +118,16 @@ function prepareDocument() {
   });
 }
 
-async function loadMain(initial: MainState) {
+async function loadMain(initial: MainState, isDebugBuild = false) {
   mocks.invoke.mockImplementation((command: string, args?: { preferences?: unknown }) => {
     if (command === 'main_state') {
       return Promise.resolve(initial);
     }
     if (command === 'main_painted') {
       return Promise.resolve(true);
+    }
+    if (command === 'update_state') {
+      return Promise.resolve({ state: 'idle', isDebugBuild, notes: null });
     }
     if (command === 'set_preferences') {
       return Promise.resolve();
@@ -147,7 +151,43 @@ beforeEach(() => {
   mocks.invoke.mockReset();
   mocks.listen.mockClear();
   mocks.openUrl.mockReset().mockResolvedValue(undefined);
+  vi.mocked(enable).mockClear();
+  vi.mocked(isEnabled).mockReset().mockResolvedValue(false);
   prepareDocument();
+});
+
+describe('launch at login', () => {
+  it('keeps development autostart disabled and explains why in the selected language', async () => {
+    const initial = state('general');
+    initial.language = 'zh-CN';
+    vi.mocked(isEnabled).mockResolvedValue(true);
+    await loadMain(initial, true);
+    const toggle = document.querySelector<HTMLButtonElement>('[data-autostart]')!;
+    const note = document.querySelector<HTMLElement>('[data-autostart-debug-note]')!;
+    await vi.waitFor(() => expect(toggle.disabled).toBe(true));
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toBe('开发版不支持开机自启');
+    toggle.click();
+    expect(enable).not.toHaveBeenCalled();
+
+    const language = document.querySelector<HTMLSelectElement>('[data-language]')!;
+    language.value = 'en-US';
+    language.dispatchEvent(new Event('change'));
+    await vi.waitFor(() =>
+      expect(note.textContent).toBe('Development builds cannot launch at login'),
+    );
+    expect(toggle.disabled).toBe(true);
+  });
+
+  it('retains the native autostart state and switch for release builds', async () => {
+    vi.mocked(isEnabled).mockResolvedValue(true);
+    await loadMain(state('general'));
+    const toggle = document.querySelector<HTMLButtonElement>('[data-autostart]')!;
+    await vi.waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+    expect(toggle.disabled).toBe(false);
+    expect(document.querySelector<HTMLElement>('[data-autostart-debug-note]')!.hidden).toBe(true);
+  });
 });
 
 describe('update row', () => {
@@ -407,6 +447,9 @@ describe('main window navigation', () => {
     ];
     const rejectPreviews: ((reason?: unknown) => void)[] = [];
     mocks.invoke.mockImplementation((command: string) => {
+      if (command === 'update_state') {
+        return Promise.resolve({ state: 'idle', isDebugBuild: false, notes: null });
+      }
       if (command === 'main_state') {
         return Promise.resolve(initial);
       }
