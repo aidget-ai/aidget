@@ -72,6 +72,7 @@ fn sync_widgets_inner(app: &AppHandle) -> Result<()> {
     for id in existing {
         if !ids.contains(&id) {
             if let Some(window) = app.get_webview_window(&label(&id)) {
+                crate::runtime::pointer::detach(app, &window);
                 if let Err(error) = window.close() {
                     eprintln!("aidget: cannot close {id}: {error}");
                 }
@@ -220,6 +221,9 @@ fn build_window(
 
     #[cfg(target_os = "macos")]
     native_surface::apply(&window, state.surface)?;
+    if let Err(error) = crate::runtime::pointer::attach(app, &window) {
+        eprintln!("aidget: cannot track pointer for {id}: {error}");
+    }
 
     Ok(window)
 }

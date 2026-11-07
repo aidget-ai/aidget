@@ -27,6 +27,7 @@ fn markdown_guide_documents_the_bridge_and_platform_contracts() {
     for method in [
         "ready()",
         "permissions",
+        "onPointer(handler)",
         "requestLocation()",
         "storage",
         "fetch(url, options?)",
@@ -37,6 +38,7 @@ fn markdown_guide_documents_the_bridge_and_platform_contracts() {
     assert!(markdown.contains("Every bridge method below requires `script`"));
     assert!(markdown.contains("Requires `location` in addition to `script`"));
     assert!(markdown.contains("Requires `storage` in addition to `script`"));
+    assert!(markdown.contains("| Pointer hover  | AppKit tracking"));
 }
 
 #[test]

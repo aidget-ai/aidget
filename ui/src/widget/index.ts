@@ -5,9 +5,12 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   errorMessage,
   failureOf,
+  parsePointerEvent,
+  parsePointerSubscription,
   parseReady,
   parseRequest,
   permissionsMessage,
+  pointerMessage,
   resultMessage,
   routeRequest,
 } from './bridge';
@@ -33,6 +36,8 @@ const handle = document.querySelector<HTMLElement>('[data-drag-handle]')!;
 
 let state: WidgetState | null = null;
 let pendingRevision = 0;
+let pointerEnabled = false;
+let pointerToggle = Promise.resolve();
 const appWindow = getCurrentWindow();
 const ownId = widgetIdFromLabel(appWindow.label);
 const origin = contentOrigin(window.location);
@@ -69,6 +74,7 @@ function apply(next: WidgetState) {
   handle.hidden = next.dragMode === 'all';
   if (reload || sandboxChanged) {
     dragSession.cancel();
+    setPointerTracking(false);
     pendingRevision = next.revision;
     frame.src = widgetUrl(origin, next.id, next.revision, next.token);
   }
@@ -82,6 +88,21 @@ function apply(next: WidgetState) {
   // state push, because a reloaded iframe starts from an empty list.
   postToWidget(permissionsMessage(next.permissions));
   postDragConfig();
+}
+
+function setPointerTracking(enabled: boolean) {
+  if (pointerEnabled === enabled) {
+    return;
+  }
+  pointerEnabled = enabled;
+  pointerToggle = pointerToggle
+    .then(() => invoke<void>('widget_pointer_tracking', { enabled }))
+    .catch((error) => {
+      console.error('pointer tracking failed', error);
+      if (pointerEnabled === enabled) {
+        pointerEnabled = false;
+      }
+    });
 }
 
 function postDragConfig() {
@@ -103,7 +124,10 @@ function showFault(message: string) {
   fault.hidden = false;
 }
 
-frame.addEventListener('error', () => showFault('无法读取小组件文件'));
+frame.addEventListener('error', () => {
+  setPointerTracking(false);
+  showFault('无法读取小组件文件');
+});
 frame.addEventListener('load', () => {
   if (pendingRevision) {
     void invoke('widget_loaded', { revision: pendingRevision }).catch(() => {
@@ -174,6 +198,13 @@ window.addEventListener('message', (event) => {
     }
     return;
   }
+  const pointer = parsePointerSubscription(event.data, event.source, frame.contentWindow);
+  if (pointer) {
+    if (state?.revision === pointer.revision && state.token === pointer.token) {
+      setPointerTracking(pointer.enabled);
+    }
+    return;
+  }
   const ready = parseReady(event.data, event.source, frame.contentWindow);
   if (ready) {
     if (state?.revision === ready.revision) {
@@ -232,6 +263,20 @@ void listen<string>(
   'aidget://fault',
   (event) => {
     showFault(event.payload);
+  },
+  { target: widgetEventTarget(appWindow.label) },
+);
+
+void listen<unknown>(
+  'aidget://pointer',
+  (event) => {
+    if (!pointerEnabled || !state) {
+      return;
+    }
+    const pointer = parsePointerEvent(event.payload);
+    if (pointer) {
+      postToWidget(pointerMessage(pointer, state.revision, state.token));
+    }
   },
   { target: widgetEventTarget(appWindow.label) },
 );

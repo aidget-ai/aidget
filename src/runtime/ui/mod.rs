@@ -56,6 +56,7 @@ pub fn start(app: &AppHandle, store: Store) -> Result<()> {
     let state = UiState::default();
     *state.root.lock().unwrap() = store.root().to_path_buf();
     app.manage(state);
+    crate::runtime::pointer::start(app);
     if let Some(encoded) = geometry::displays(app)
         .ok()
         .and_then(|list| serde_json::to_string(&list).ok())

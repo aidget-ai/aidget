@@ -199,6 +199,32 @@ window.aidget.permissions;
 Read-only array snapshot of the current declaration. It can initially be empty.
 Use it for display or branching, never as the authorization gate.
 
+### `onPointer(handler)`
+
+```js
+const stop = window.aidget.onPointer(({ type, x, y }) => {
+  // type: "enter" | "move" | "leave"
+});
+```
+
+Subscribes to pointer hover for this widget without requiring the desktop
+window to be active. Each call returns an independent, idempotent `stop()`
+function. Multiple listeners share one host subscription.
+
+`x` and `y` are CSS pixels relative to the widget viewport, with the origin at
+the top-left. `leave` carries the last in-window position. A listener that
+throws does not prevent other listeners from running.
+
+The host emits `enter`, `move`, and `leave` only. It does not report clicks,
+buttons, wheel input, touch, or pen. It also does not synthesize CSS `:hover`
+or a DOM `PointerEvent`; use this API to drive styles when the window is
+inactive. Clicking still follows normal window activation behavior.
+
+The tracking region is the full widget window, including transparent areas.
+An occluded widget receives nothing. When a listener subscribes while the
+pointer is already inside, no event is invented immediately; the next pointer
+movement starts with `enter`.
+
 ### `requestLocation()`
 
 ```js
@@ -313,6 +339,7 @@ capture.
 | Screenshot     | WKWebView           | WebView2 DevTools   | WebKitGTK                                                           |
 | Location       | CoreLocation        | WinRT Geolocation   | GeoClue                                                             |
 | Native glass   | AppKit material     | Not available       | Not available                                                       |
+| Pointer hover  | AppKit tracking     | Win32 cursor track  | GTK motion events                                                   |
 | Network bridge | Native HTTPS client | Native HTTPS client | Native HTTPS client                                                 |
 | Placement      | User-controlled     | User-controlled     | Under Wayland, the compositor controls stacking and exact placement |
 

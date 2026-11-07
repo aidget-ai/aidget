@@ -25,6 +25,82 @@ export interface ReadySignal {
   revision: number;
 }
 
+export type PointerEventType = 'enter' | 'move' | 'leave';
+
+export interface PointerEventData {
+  type: PointerEventType;
+  x: number;
+  y: number;
+}
+
+export interface PointerSubscription {
+  enabled: boolean;
+  revision: number;
+  token: string;
+}
+
+/** Parse a widget document's request to receive hover events. */
+export function parsePointerSubscription(
+  data: unknown,
+  source: MessageEventSource | null,
+  frameWindow: Window | null,
+): PointerSubscription | null {
+  if (!frameWindow || source !== frameWindow) {
+    return null;
+  }
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+  const candidate = data as {
+    source?: unknown;
+    type?: unknown;
+    enabled?: unknown;
+    revision?: unknown;
+    token?: unknown;
+  };
+  if (
+    candidate.source !== WIDGET_SOURCE ||
+    candidate.type !== 'pointer-subscription' ||
+    typeof candidate.enabled !== 'boolean' ||
+    typeof candidate.revision !== 'number' ||
+    !Number.isSafeInteger(candidate.revision) ||
+    candidate.revision <= 0 ||
+    typeof candidate.token !== 'string' ||
+    !candidate.token
+  ) {
+    return null;
+  }
+  return {
+    enabled: candidate.enabled,
+    revision: candidate.revision,
+    token: candidate.token,
+  };
+}
+
+/** Validate the trusted host event before it enters the iframe. */
+export function parsePointerEvent(data: unknown): PointerEventData | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+  const candidate = data as { type?: unknown; x?: unknown; y?: unknown };
+  if (candidate.type !== 'enter' && candidate.type !== 'move' && candidate.type !== 'leave') {
+    return null;
+  }
+  if (
+    typeof candidate.x !== 'number' ||
+    !Number.isFinite(candidate.x) ||
+    typeof candidate.y !== 'number' ||
+    !Number.isFinite(candidate.y)
+  ) {
+    return null;
+  }
+  return { type: candidate.type, x: candidate.x, y: candidate.y };
+}
+
+export function pointerMessage(event: PointerEventData, revision: number, token: string) {
+  return { source: HOST_SOURCE, type: 'pointer', revision, token, event };
+}
+
 /** Parse the optional one-way readiness signal sent by a widget document. */
 export function parseReady(
   data: unknown,

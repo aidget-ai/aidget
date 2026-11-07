@@ -7,6 +7,7 @@ pub mod location;
 pub mod main_startup;
 pub mod main_window_state;
 pub mod network;
+pub mod pointer;
 pub mod process;
 pub mod ui;
 pub mod update;

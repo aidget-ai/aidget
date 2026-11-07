@@ -12,6 +12,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         widget_state,
         widget_loaded,
         widget_ready,
+        widget_pointer_tracking,
         persist_window_position,
         begin_widget_drag,
         start_widget_drag,
@@ -73,6 +74,21 @@ fn widget_ready(
     revision: u64,
 ) -> std::result::Result<(), String> {
     ui::mark_ready(&app, &window, revision).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn widget_pointer_tracking(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> std::result::Result<(), String> {
+    if enabled {
+        let id = ui::widget_id(&window).map_err(|error| error.to_string())?;
+        let root = app.state::<ui::UiState>().root.lock().unwrap().clone();
+        crate::runtime::pointer::require_script(&Store::new(root), &id)
+            .map_err(|error| error.to_string())?;
+    }
+    crate::runtime::pointer::set_enabled(&app, &window, enabled).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

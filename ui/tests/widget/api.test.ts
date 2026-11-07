@@ -12,6 +12,7 @@ interface Harness {
     requestLocation: () => Promise<unknown>;
     fetch: (url: unknown, options?: unknown) => Promise<unknown>;
     openUrl: (url: unknown) => Promise<unknown>;
+    onPointer: (handler: (event: { type: string; x: number; y: number }) => void) => () => void;
     storage: {
       getItem: (key: unknown) => Promise<unknown>;
       setItem: (key: unknown, value: unknown) => Promise<unknown>;
@@ -20,7 +21,9 @@ interface Harness {
     };
   } | null;
   posted: Array<Record<string, unknown>>;
+  errors: unknown[];
   send: (data: unknown, source?: unknown) => void;
+  emitWindow: (name: string, event?: unknown) => void;
 }
 
 /** Run the injected script the way the host does: before the page's scripts. */
@@ -29,8 +32,9 @@ function install(
   hostname = 'localhost',
   search = '?v=2-token',
 ): Harness {
-  const listeners: Array<(event: unknown) => void> = [];
+  const listeners = new Map<string, Array<(event: unknown) => void>>();
   const posted: Array<Record<string, unknown>> = [];
+  const errors: unknown[] = [];
   const parent = {
     postMessage: (data: Record<string, unknown>) => posted.push(data),
   };
@@ -40,13 +44,14 @@ function install(
     setTimeout,
     clearTimeout,
     Map,
+    console: { error: (error: unknown) => errors.push(error) },
   };
   sandbox.window = {
     parent,
     addEventListener: (name: string, handler: (event: unknown) => void) => {
-      if (name === 'message') {
-        listeners.push(handler);
-      }
+      const handlers = listeners.get(name) ?? [];
+      handlers.push(handler);
+      listeners.set(name, handlers);
     },
   };
 
@@ -55,9 +60,15 @@ function install(
   return {
     api: (sandbox.window as { aidet?: never; aidget?: Harness['api'] }).aidget ?? null,
     posted,
+    errors,
     send: (data, source: unknown = parent) => {
-      for (const listener of listeners) {
+      for (const listener of listeners.get('message') ?? []) {
         listener({ source, data });
+      }
+    },
+    emitWindow: (name, event) => {
+      for (const listener of listeners.get(name) ?? []) {
+        listener(event);
       }
     },
   };
@@ -76,6 +87,7 @@ describe('widget api installation', () => {
     expect(typeof harness.api?.requestLocation).toBe('function');
     expect(typeof harness.api?.fetch).toBe('function');
     expect(typeof harness.api?.openUrl).toBe('function');
+    expect(typeof harness.api?.onPointer).toBe('function');
     expect(typeof harness.api?.storage.getItem).toBe('function');
   });
 
@@ -177,6 +189,121 @@ describe('permissions', () => {
 
     harness.send({ source: 'aidget-host', type: 'permissions' });
     expect(harness.api?.permissions).toEqual([]);
+  });
+});
+
+describe('pointer hover', () => {
+  it('subscribes once, fans out local events, and unsubscribes idempotently', () => {
+    const harness = install();
+    const first = vi.fn();
+    const second = vi.fn();
+    const stopFirst = harness.api!.onPointer(first);
+    const stopSecond = harness.api!.onPointer(second);
+
+    expect(harness.posted).toEqual([
+      {
+        source: 'aidget-widget',
+        type: 'pointer-subscription',
+        enabled: true,
+        revision: 2,
+        token: 'token',
+      },
+    ]);
+
+    harness.send({
+      source: 'aidget-host',
+      type: 'pointer',
+      revision: 2,
+      token: 'token',
+      event: { type: 'move', x: 12.5, y: 8 },
+    });
+    expect(first).toHaveBeenCalledWith({ type: 'move', x: 12.5, y: 8 });
+    expect(second).toHaveBeenCalledWith({ type: 'move', x: 12.5, y: 8 });
+
+    stopFirst();
+    stopFirst();
+    expect(harness.posted).toHaveLength(1);
+
+    stopSecond();
+    expect(harness.posted[1]).toEqual({
+      source: 'aidget-widget',
+      type: 'pointer-subscription',
+      enabled: false,
+      revision: 2,
+      token: 'token',
+    });
+  });
+
+  it('rejects non-functions and isolates handler failures', () => {
+    const harness = install();
+    expect(() => harness.api!.onPointer(undefined as never)).toThrow(
+      'onPointer requires a function',
+    );
+
+    const failure = new Error('boom');
+    const second = vi.fn();
+    harness.api!.onPointer(() => {
+      throw failure;
+    });
+    harness.api!.onPointer(second);
+    harness.send({
+      source: 'aidget-host',
+      type: 'pointer',
+      revision: 2,
+      token: 'token',
+      event: { type: 'enter', x: 0, y: 0 },
+    });
+
+    expect(harness.errors).toEqual([failure]);
+    expect(second).toHaveBeenCalledOnce();
+  });
+
+  it('ignores stale revisions, stale tokens, and malformed events', () => {
+    const harness = install();
+    const handler = vi.fn();
+    harness.api!.onPointer(handler);
+
+    for (const event of [
+      {
+        source: 'aidget-host',
+        type: 'pointer',
+        revision: 1,
+        token: 'token',
+        event: { type: 'move', x: 1, y: 2 },
+      },
+      {
+        source: 'aidget-host',
+        type: 'pointer',
+        revision: 2,
+        token: 'other',
+        event: { type: 'move', x: 1, y: 2 },
+      },
+      {
+        source: 'aidget-host',
+        type: 'pointer',
+        revision: 2,
+        token: 'token',
+        event: { type: 'move', x: Number.NaN, y: 2 },
+      },
+    ]) {
+      harness.send(event);
+    }
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('disables an active subscription when the document is hidden', () => {
+    const harness = install();
+    harness.api!.onPointer(vi.fn());
+    harness.emitWindow('pagehide');
+
+    expect(harness.posted.at(-1)).toEqual({
+      source: 'aidget-widget',
+      type: 'pointer-subscription',
+      enabled: false,
+      revision: 2,
+      token: 'token',
+    });
   });
 });
 

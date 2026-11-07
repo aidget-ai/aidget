@@ -30,6 +30,12 @@ fn cached_community_catalogues_are_reserved_for_the_main_window() {
 }
 
 #[test]
+fn pointer_tracking_is_a_widget_command() {
+    assert!(WIDGET_COMMANDS.contains(&"widget_pointer_tracking"));
+    assert!(!MAIN_COMMANDS.contains(&"widget_pointer_tracking"));
+}
+
+#[test]
 fn ipc_rejects_other_window_roles_before_host_reads_or_writes() {
     let effects = Arc::new(Mutex::new(Vec::new()));
     let seen = effects.clone();

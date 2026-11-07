@@ -4,9 +4,12 @@ import {
   errorMessage,
   failureOf,
   isServed,
+  parsePointerEvent,
+  parsePointerSubscription,
   parseReady,
   parseRequest,
   permissionsMessage,
+  pointerMessage,
   resultMessage,
   routeRequest,
   HOST_SOURCE,
@@ -32,6 +35,64 @@ describe('parseReady', () => {
     expect(parseReady({ ...ready, type: 'permissions' }, frameWindow, frameWindow)).toBeNull();
     expect(parseReady({ ...ready, revision: 0 }, frameWindow, frameWindow)).toBeNull();
     expect(parseReady({ ...ready, revision: '7' }, frameWindow, frameWindow)).toBeNull();
+  });
+});
+
+describe('pointer messages', () => {
+  it('accepts a subscription from the widget iframe', () => {
+    expect(
+      parsePointerSubscription(
+        {
+          source: WIDGET_SOURCE,
+          type: 'pointer-subscription',
+          enabled: true,
+          revision: 7,
+          token: 'token',
+        },
+        frameWindow,
+        frameWindow,
+      ),
+    ).toEqual({ enabled: true, revision: 7, token: 'token' });
+  });
+
+  it('rejects forged, incomplete, and stale subscriptions', () => {
+    const subscription = {
+      source: WIDGET_SOURCE,
+      type: 'pointer-subscription',
+      enabled: true,
+      revision: 7,
+      token: 'token',
+    };
+    expect(parsePointerSubscription(subscription, otherWindow, frameWindow)).toBeNull();
+    expect(
+      parsePointerSubscription({ ...subscription, source: HOST_SOURCE }, frameWindow, frameWindow),
+    ).toBeNull();
+    expect(
+      parsePointerSubscription({ ...subscription, enabled: 'yes' }, frameWindow, frameWindow),
+    ).toBeNull();
+    expect(
+      parsePointerSubscription({ ...subscription, revision: 0 }, frameWindow, frameWindow),
+    ).toBeNull();
+    expect(
+      parsePointerSubscription({ ...subscription, token: '' }, frameWindow, frameWindow),
+    ).toBeNull();
+  });
+
+  it('validates host events and wraps them for the iframe', () => {
+    expect(parsePointerEvent({ type: 'leave', x: 10, y: 20 })).toEqual({
+      type: 'leave',
+      x: 10,
+      y: 20,
+    });
+    expect(parsePointerEvent({ type: 'move', x: Number.NaN, y: 20 })).toBeNull();
+    expect(parsePointerEvent({ type: 'down', x: 10, y: 20 })).toBeNull();
+    expect(pointerMessage({ type: 'move', x: 10, y: 20 }, 7, 'token')).toEqual({
+      source: HOST_SOURCE,
+      type: 'pointer',
+      revision: 7,
+      token: 'token',
+      event: { type: 'move', x: 10, y: 20 },
+    });
   });
 });
 

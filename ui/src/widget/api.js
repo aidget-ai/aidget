@@ -17,8 +17,10 @@
   var seq = 0;
   var declared = [];
   var readySent = false;
-  var revisionMatch = /(?:^|[?&])v=(\d+)-/.exec(location.search || '');
-  var revision = revisionMatch ? Number(revisionMatch[1]) : 0;
+  var pointerListeners = [];
+  var versionMatch = /(?:^|[?&])v=(\d+)-([^&]+)/.exec(location.search || '');
+  var revision = versionMatch ? Number(versionMatch[1]) : 0;
+  var token = versionMatch ? versionMatch[2] : '';
 
   function call(name, params) {
     return new Promise(function (resolve, reject) {
@@ -53,6 +55,22 @@
     entry.reject(error);
   }
 
+  function pointerSubscription(enabled) {
+    if (!Number.isSafeInteger(revision) || revision <= 0 || !token) {
+      return;
+    }
+    window.parent.postMessage(
+      {
+        source: 'aidget-widget',
+        type: 'pointer-subscription',
+        enabled: enabled,
+        revision: revision,
+        token: token,
+      },
+      '*',
+    );
+  }
+
   window.addEventListener('message', function (event) {
     if (event.source !== window.parent) {
       return;
@@ -65,7 +83,41 @@
       declared = Array.isArray(data.permissions) ? data.permissions.slice() : [];
       return;
     }
+    if (data.type === 'pointer') {
+      if (data.revision !== revision || data.token !== token) {
+        return;
+      }
+      var pointer = data.event;
+      if (
+        !pointer ||
+        (pointer.type !== 'enter' && pointer.type !== 'move' && pointer.type !== 'leave') ||
+        !Number.isFinite(pointer.x) ||
+        !Number.isFinite(pointer.y)
+      ) {
+        return;
+      }
+      var delivered = Object.freeze({ type: pointer.type, x: pointer.x, y: pointer.y });
+      pointerListeners.slice().forEach(function (entry) {
+        if (!entry.active) {
+          return;
+        }
+        try {
+          entry.handler(delivered);
+        } catch (error) {
+          console.error(error);
+        }
+      });
+      return;
+    }
     settle(data);
+  });
+
+  window.addEventListener('pagehide', function () {
+    if (!pointerListeners.length) {
+      return;
+    }
+    pointerListeners = [];
+    pointerSubscription(false);
   });
 
   var api = {
@@ -88,6 +140,29 @@
     },
     openUrl: function (url) {
       return call('open_url', { url: url });
+    },
+    onPointer: function (handler) {
+      if (typeof handler !== 'function') {
+        throw new TypeError('onPointer requires a function');
+      }
+      var entry = { handler: handler, active: true };
+      pointerListeners.push(entry);
+      if (pointerListeners.length === 1) {
+        pointerSubscription(true);
+      }
+      return function () {
+        if (!entry.active) {
+          return;
+        }
+        entry.active = false;
+        var index = pointerListeners.indexOf(entry);
+        if (index >= 0) {
+          pointerListeners.splice(index, 1);
+        }
+        if (!pointerListeners.length) {
+          pointerSubscription(false);
+        }
+      };
     },
     storage: Object.freeze({
       getItem: function (key) {
