@@ -1,6 +1,7 @@
 use crate::common::utils::set_modified;
 use aidget::common::error::Error;
 use aidget::runtime::main_window_state;
+use aidget::settings::{save_preferences, UiPreferences};
 use aidget::widgets::model::{validate_id, WidgetFrame, WidgetPermission, MAX_WIDGETS};
 use aidget::widgets::store::{
     patch_html_region, Store, WidgetEdit, AGENTS_FILE, CONFIG_FILE, HTML_FILE, SETTINGS_FILE,
@@ -14,6 +15,123 @@ fn store() -> (TempDir, Store) {
     let store = Store::new(dir.path());
     store.ensure_layout().unwrap();
     (dir, store)
+}
+
+#[test]
+fn create_rejects_invalid_settings_before_writing_the_widget() {
+    let (_dir, store) = store();
+    fs::write(store.root().join(SETTINGS_FILE), "not = [valid").unwrap();
+
+    assert!(store.create("note", "Note", WidgetEdit::default()).is_err());
+    assert!(!store.widget_dir("note").unwrap().exists());
+}
+
+#[test]
+fn created_widget_starts_on_the_primary_display_by_default() {
+    let (_dir, store) = store();
+
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+
+    assert_eq!(
+        store.load_board().unwrap().widgets["note"].display,
+        "primary"
+    );
+}
+
+#[test]
+fn a_widget_created_on_a_chosen_display_waits_for_the_gui_to_place_it() {
+    let (_dir, store) = store();
+    choose_display(&store, "Monitor #2");
+
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+
+    assert!(store.load_board().unwrap().widgets["note"].unplaced);
+}
+
+#[test]
+fn a_widget_created_without_a_chosen_display_keeps_its_automatic_frame() {
+    let (_dir, store) = store();
+
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+
+    assert!(!store.load_board().unwrap().widgets["note"].unplaced);
+}
+
+#[test]
+fn a_move_before_the_first_opening_is_not_placed_over() {
+    let (_dir, store) = store();
+    choose_display(&store, "Monitor #2");
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+    let board = store.load_board().unwrap();
+    let mut frame = board.widgets["note"].clone();
+    frame.x = 5.0;
+
+    let board = store.move_widget("note", board.revision, frame).unwrap();
+
+    assert!(!board.widgets["note"].unplaced);
+    assert_eq!(board.widgets["note"].x, 5.0);
+}
+
+#[test]
+fn a_frame_stops_waiting_for_placement_once_it_is_moved() {
+    let (_dir, store) = store();
+    choose_display(&store, "Monitor #2");
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+    assert!(store.unplaced_frame("note").unwrap().is_some());
+
+    let board = store.load_board().unwrap();
+    let frame = board.widgets["note"].clone();
+    store.move_widget("note", board.revision, frame).unwrap();
+
+    assert!(store.unplaced_frame("note").unwrap().is_none());
+}
+
+#[test]
+fn a_move_onto_the_same_spot_during_placement_is_not_overwritten() {
+    let (_dir, store) = store();
+    choose_display(&store, "Monitor #2");
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+    let board = store.load_board().unwrap();
+    let pending = board.widgets["note"].clone();
+    store
+        .move_widget("note", board.revision, pending.clone())
+        .unwrap();
+    let computed = WidgetFrame {
+        x: 24.0,
+        y: 24.0,
+        unplaced: false,
+        ..pending.clone()
+    };
+
+    let board = store
+        .set_initial_frame("note", Some(&pending), computed)
+        .unwrap();
+
+    assert_eq!(board.widgets["note"].x, pending.x);
+}
+
+#[test]
+fn created_widget_starts_on_the_chosen_display() {
+    let (_dir, store) = store();
+    choose_display(&store, "Monitor #2");
+
+    store.create("note", "Note", WidgetEdit::default()).unwrap();
+
+    assert_eq!(
+        store.load_board().unwrap().widgets["note"].display,
+        "Monitor #2"
+    );
+}
+
+fn choose_display(store: &Store, display: &str) {
+    save_preferences(
+        store.root(),
+        UiPreferences {
+            default_display: Some(display.to_string()),
+            ..UiPreferences::default()
+        },
+    )
+    .unwrap();
 }
 
 #[test]
@@ -783,6 +901,7 @@ fn deleted_widget_can_be_restored_with_its_saved_frame() {
         y: 220.0,
         w: 420.0,
         h: 260.0,
+        unplaced: false,
     };
     let revision = store.load_board().unwrap().revision;
     store.move_widget("note", revision, frame.clone()).unwrap();

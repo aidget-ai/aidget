@@ -65,6 +65,7 @@ fn main_window_lists_all_widgets_and_marks_enabled_state() {
             y: 20.0,
             w: 420.0,
             h: 260.0,
+            unplaced: false,
         },
     );
     store.save_board(&board).unwrap();
@@ -134,6 +135,28 @@ fn main_state_restores_last_page_from_settings() {
     .unwrap();
 
     assert_eq!(main_widgets(&store).unwrap().last_page, MainPage::About);
+}
+
+#[test]
+fn main_state_reports_the_saved_default_display() {
+    let dir = TempDir::new().unwrap();
+    let store = Store::new(dir.path());
+    store.ensure_layout().unwrap();
+    assert_eq!(main_widgets(&store).unwrap().default_display, None);
+
+    save_preferences(
+        store.root(),
+        UiPreferences {
+            default_display: Some("Monitor #2".to_string()),
+            ..UiPreferences::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        main_widgets(&store).unwrap().default_display.as_deref(),
+        Some("Monitor #2")
+    );
 }
 
 #[test]
@@ -282,10 +305,13 @@ fn main_state_exposes_widget_metadata_in_camel_case() {
             masked: "ghp_…WXYZ".to_string(),
         }),
         auto_download: true,
+        default_display: Some("Monitor #2".to_string()),
+        displays: vec![],
     })
     .unwrap();
 
     let deleted = value.get("deletedWidgets").unwrap();
+    assert_eq!(value["defaultDisplay"], "Monitor #2");
     assert_eq!(value["widgets"][0]["createdAt"], 1_761_158_300_000_u64);
     assert_eq!(deleted[0]["trashName"], "note-20261022T000000");
     assert_eq!(deleted[0]["hasPreview"], true);

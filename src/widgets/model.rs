@@ -137,6 +137,10 @@ pub struct WidgetFrame {
     pub y: f64,
     pub w: f64,
     pub h: f64,
+    /// Set on a frame written without the GUI, which cannot measure displays. The
+    /// GUI places the widget for real before it first opens it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unplaced: bool,
 }
 
 impl WidgetFrame {
@@ -149,6 +153,7 @@ impl WidgetFrame {
             y: 96.0 + row as f64 * 248.0,
             w: 360.0,
             h: 220.0,
+            unplaced: false,
         }
     }
 
@@ -174,6 +179,7 @@ impl WidgetFrame {
             y: self.y,
             w,
             h,
+            unplaced: self.unplaced,
         }
     }
 }
@@ -306,9 +312,10 @@ pub struct WidgetDocument {
     pub frame: Option<WidgetFrame>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct DisplayInfo {
+    /// Stable identifier stored in frames and settings.
     pub name: String,
     pub primary: bool,
     pub x: f64,

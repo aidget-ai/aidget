@@ -1,5 +1,6 @@
 use aidget::runtime::ui::{
     best_display_placement, centered_position, moved_frame, place_frame, place_in_work_area,
+    placement_order,
 };
 use aidget::widgets::model::WidgetFrame;
 use tauri::{
@@ -45,6 +46,7 @@ fn cross_display_frame_is_not_pulled_back() {
         y: -100.0,
         w: 360.0,
         h: 220.0,
+        unplaced: false,
     };
     let (x, y) = place_frame(&frame, (0, 0), (3024, 1786), 2.0, true);
     assert_eq!((x, y), (0, -200));
@@ -58,6 +60,7 @@ fn negative_offsets_are_kept_on_a_live_display() {
         y: -3000.0,
         w: 360.0,
         h: 220.0,
+        unplaced: false,
     };
     let (x, y) = place_frame(&frame, (0, 0), (3024, 1786), 2.0, true);
     assert_eq!((x, y), (-2400, -6000));
@@ -71,6 +74,7 @@ fn missing_display_frame_is_clamped_into_fallback() {
         y: 80.0,
         w: 360.0,
         h: 220.0,
+        unplaced: false,
     };
     let (x, y) = place_frame(&frame, (0, 0), (3024, 1786), 2.0, false);
     assert_eq!((x, y), ((3024.0 - 720.0) as i32, 160));
@@ -84,6 +88,7 @@ fn moving_a_widget_does_not_infer_size_from_stale_native_pixels() {
         y: 50.0,
         w: 360.0,
         h: 220.0,
+        unplaced: false,
     };
 
     let moved = moved_frame(
@@ -149,4 +154,54 @@ fn initial_placement_uses_another_display_before_shrinking() {
 
     assert_eq!(display, 1);
     assert_eq!((placed.size.width, placed.size.height), (1000.0, 1000.0));
+}
+
+const DISPLAYS: [(&str, f64); 3] = [
+    ("Monitor #1", 2_000_000.0),
+    ("Monitor #2", 4_000_000.0),
+    ("Monitor #3", 1_000_000.0),
+];
+
+#[test]
+fn automatic_order_tries_the_primary_display_then_larger_displays() {
+    assert_eq!(placement_order(&DISPLAYS, Some(2), None), [2, 1, 0]);
+}
+
+#[test]
+fn chosen_display_is_tried_before_the_primary_display() {
+    assert_eq!(
+        placement_order(&DISPLAYS, Some(0), Some("Monitor #3")),
+        [2, 0, 1]
+    );
+}
+
+#[test]
+fn chosen_primary_display_keeps_the_automatic_order() {
+    assert_eq!(
+        placement_order(&DISPLAYS, Some(0), Some("Monitor #1")),
+        [0, 1, 2]
+    );
+}
+
+#[test]
+fn disconnected_chosen_display_keeps_the_automatic_order() {
+    assert_eq!(
+        placement_order(&DISPLAYS, Some(0), Some("Monitor #9")),
+        [0, 1, 2]
+    );
+}
+
+#[test]
+fn full_chosen_display_falls_through_to_the_next_display() {
+    let chosen = logical_rect(0.0, 0.0, 800.0, 600.0);
+    let next = logical_rect(0.0, 0.0, 1920.0, 1080.0);
+
+    let (display, _) = best_display_placement(
+        &[chosen, next],
+        LogicalSize::new(360.0, 220.0),
+        &[vec![chosen], Vec::new()],
+    )
+    .unwrap();
+
+    assert_eq!(display, 1);
 }

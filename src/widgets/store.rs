@@ -509,6 +509,7 @@ impl Store {
             )));
         }
 
+        let display = self.load_settings()?.default_display;
         let dir = self.widget_dir(id)?;
 
         let mut meta = WidgetMeta::new(id, title);
@@ -528,18 +529,22 @@ impl Store {
 
         // A recreated id must not inherit state from a previous widget.
         crate::widgets::storage::clear(self, id)?;
-        self.ensure_frame(id, existing.len())?;
+        self.ensure_frame(id, existing.len(), display)?;
         Ok(meta)
     }
 
-    pub fn ensure_frame(&self, id: &str, index: usize) -> Result<()> {
+    fn ensure_frame(&self, id: &str, index: usize, display: Option<String>) -> Result<()> {
         let mut board = self.load_board()?;
         if board.widgets.contains_key(id) {
             return Ok(());
         }
-        board
-            .widgets
-            .insert(id.to_string(), WidgetFrame::default_for(index));
+        let mut frame = WidgetFrame::default_for(index);
+        // CLI writes run without the GUI, which alone can measure this display.
+        if let Some(display) = display {
+            frame.display = display;
+            frame.unplaced = true;
+        }
+        board.widgets.insert(id.to_string(), frame);
         board.revision += 1;
         self.save_board(&board)
     }
@@ -692,7 +697,12 @@ impl Store {
         Ok(target)
     }
 
-    pub fn move_widget(&self, id: &str, base_revision: u64, frame: WidgetFrame) -> Result<Board> {
+    pub fn move_widget(
+        &self,
+        id: &str,
+        base_revision: u64,
+        mut frame: WidgetFrame,
+    ) -> Result<Board> {
         let _lock = self.write_lock()?;
         validate_id(id)?;
         self.load_meta(id)?;
@@ -702,10 +712,18 @@ impl Store {
                 current: Box::new(crate::common::error::ConflictCurrent::Board(board)),
             });
         }
+        // A move is the user's, so the GUI must not place the widget over it.
+        frame.unplaced = false;
         board.widgets.insert(id.to_string(), frame);
         board.revision += 1;
         self.save_board(&board)?;
         Ok(board)
+    }
+
+    /// The frame of a widget still waiting for its first placement.
+    pub fn unplaced_frame(&self, id: &str) -> Result<Option<WidgetFrame>> {
+        let mut board = self.load_board()?;
+        Ok(board.widgets.remove(id).filter(|frame| frame.unplaced))
     }
 
     /// Set the initial frame only while the target frame still matches the
@@ -727,6 +745,8 @@ impl Store {
                     && current.y == expected.y
                     && current.w == expected.w
                     && current.h == expected.h
+                    // A move onto the same spot still clears the mark and must stand.
+                    && current.unplaced == expected.unplaced
             }
             (None, None) => true,
             _ => false,

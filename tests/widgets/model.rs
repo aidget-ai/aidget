@@ -66,6 +66,7 @@ fn clamps_frames_into_the_work_area() {
         y: -80.0,
         w: 900.0,
         h: 100.0,
+        unplaced: false,
     };
     let clamped = frame.clamped((1440.0, 900.0, 1440.0, 900.0));
     assert_eq!(clamped.x, 540.0);
@@ -89,6 +90,7 @@ fn fitting_a_frame_keeps_cross_display_offsets() {
         y: -300.0,
         w: 900.0,
         h: 100.0,
+        unplaced: false,
     };
     let fitted = frame.fitted((1512.0, 893.0, 1512.0, 893.0));
     assert_eq!(fitted.x, -120.0);
@@ -103,4 +105,14 @@ fn enabled_update_state_is_required_host_metadata() {
     assert_eq!(value["enabled"], true);
     value.as_object_mut().unwrap().remove("enabled");
     assert!(serde_json::from_value::<aidget::widgets::model::WidgetMeta>(value).is_err());
+}
+
+#[test]
+fn a_placed_frame_keeps_the_existing_format() {
+    let value = serde_json::to_value(WidgetFrame::default_for(0)).unwrap();
+    assert!(value.get("unplaced").is_none());
+
+    let stored = r#"{"display":"primary","x":1.0,"y":2.0,"w":3.0,"h":4.0}"#;
+    let frame: WidgetFrame = serde_json::from_str(stored).unwrap();
+    assert!(!frame.unplaced);
 }

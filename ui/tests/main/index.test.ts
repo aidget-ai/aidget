@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { IntegrationInfo } from '../../src/main/integration';
 import { translate } from '../../src/main/locale';
 import type { MainState } from '../../src/main/model';
+import type { DisplayInfo } from '../../src/types/rust';
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -69,7 +70,13 @@ function state(lastPage: MainState['lastPage']): MainState {
     lastPage,
     githubToken: null,
     autoDownload: true,
+    defaultDisplay: null,
+    displays: [],
   };
+}
+
+function displayInfo(name: string, primary: boolean): DisplayInfo {
+  return { name, primary, x: 0, y: 0, width: 1920, height: 1080, scale: 1 };
 }
 
 function integrationState(installed: boolean): IntegrationInfo {
@@ -871,4 +878,79 @@ it('keeps the pending auto-download value when a stale main event arrives', asyn
       }),
     ),
   );
+});
+
+it('saves the default display chosen in general settings', async () => {
+  const initial = state('general');
+  initial.displays = [displayInfo('Monitor #1', true), displayInfo('Monitor #2', false)];
+  await loadMain(initial);
+  const select = document.querySelector<HTMLSelectElement>('[data-default-display]')!;
+  expect([...select.options].map((option) => option.value)).toEqual([
+    '',
+    'Monitor #1',
+    'Monitor #2',
+  ]);
+
+  select.value = 'Monitor #2';
+  select.dispatchEvent(new Event('change'));
+
+  await vi.waitFor(() =>
+    expect(mocks.invoke).toHaveBeenLastCalledWith('set_preferences', {
+      preferences: expect.objectContaining({ defaultDisplay: 'Monitor #2' }),
+    }),
+  );
+});
+
+it('saves null when automatic placement is chosen again', async () => {
+  const initial = state('general');
+  initial.displays = [displayInfo('Monitor #1', true), displayInfo('Monitor #2', false)];
+  initial.defaultDisplay = 'Monitor #2';
+  await loadMain(initial);
+  const select = document.querySelector<HTMLSelectElement>('[data-default-display]')!;
+  expect(select.value).toBe('Monitor #2');
+
+  select.value = '';
+  select.dispatchEvent(new Event('change'));
+
+  await vi.waitFor(() =>
+    expect(mocks.invoke).toHaveBeenLastCalledWith('set_preferences', {
+      preferences: expect.objectContaining({ defaultDisplay: null }),
+    }),
+  );
+});
+
+it('restores the saved default display when saving fails', async () => {
+  const initial = state('general');
+  initial.displays = [displayInfo('Monitor #1', true), displayInfo('Monitor #2', false)];
+  await loadMain(initial);
+  mocks.invoke.mockImplementation((command: string) =>
+    command === 'set_preferences'
+      ? Promise.reject(new Error('disk full'))
+      : Promise.resolve({ state: 'idle' }),
+  );
+  const select = document.querySelector<HTMLSelectElement>('[data-default-display]')!;
+
+  select.value = 'Monitor #2';
+  select.dispatchEvent(new Event('change'));
+
+  const fault = document.querySelector<HTMLElement>('[data-fault]')!;
+  await vi.waitFor(() => expect(fault.textContent).toContain('disk full'));
+  expect(select.value).toBe('');
+});
+
+it('refreshes the display options when a main event reports a new display', async () => {
+  const initial = state('general');
+  initial.displays = [displayInfo('Monitor #1', true)];
+  await loadMain(initial);
+  const select = document.querySelector<HTMLSelectElement>('[data-default-display]')!;
+  expect(select.options).toHaveLength(2);
+
+  const render = mocks.listen.mock.calls.find(([event]) => event === 'aidget://main')![1];
+  render({
+    event: 'aidget://main',
+    id: 1,
+    payload: { ...initial, displays: [...initial.displays, displayInfo('Monitor #2', false)] },
+  });
+
+  expect(select.options).toHaveLength(3);
 });

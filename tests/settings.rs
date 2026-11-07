@@ -106,8 +106,9 @@ tray_click_action = \"window\"\n",
         tray_click_action: TrayClickAction::Menu,
         last_page: MainPage::About,
         auto_download: false,
+        default_display: Some("Monitor #2".to_string()),
     };
-    save_preferences(&root, preferences).unwrap();
+    save_preferences(&root, preferences.clone()).unwrap();
 
     let document = fs::read_to_string(&path).unwrap();
     assert!(document.contains("# Captured screenshots are retained briefly."));
@@ -119,8 +120,26 @@ tray_click_action = \"window\"\n",
     assert!(document.contains("tray_click_action = \"menu\""));
     assert!(document.contains("last_page = \"about\""));
     assert!(document.contains("auto_download = false"));
+    assert!(document.contains("default_display = \"Monitor #2\""));
     assert_eq!(load(&root).unwrap().preferences().unwrap(), preferences);
     drop(dir);
+}
+
+#[test]
+fn clearing_the_default_display_returns_to_automatic_placement() {
+    let (_dir, root) = root();
+    assert_eq!(load(&root).unwrap().default_display, None);
+
+    let chosen = UiPreferences {
+        default_display: Some("Monitor #2".to_string()),
+        ..UiPreferences::default()
+    };
+    save_preferences(&root, chosen).unwrap();
+    save_preferences(&root, UiPreferences::default()).unwrap();
+
+    let document = fs::read_to_string(root.join(SETTINGS_FILE)).unwrap();
+    assert!(!document.contains("default_display"));
+    assert_eq!(load(&root).unwrap().default_display, None);
 }
 
 #[test]
@@ -169,6 +188,7 @@ fn settings_writes_use_owner_only_permissions() {
         tray_click_action: TrayClickAction::Menu,
         last_page: MainPage::About,
         auto_download: true,
+        default_display: None,
     };
     fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
     save_preferences(&root, preferences).unwrap();
