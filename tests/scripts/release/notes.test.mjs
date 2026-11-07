@@ -100,6 +100,7 @@ describe('release notes', () => {
     expect(prompt).toContain('preserve links, code spans, product names');
     expect(prompt).toContain('Omit a section entirely when it has no changes');
     expect(prompt).toContain('Do not copy a vague subject verbatim');
+    expect(prompt).toContain('not the mechanism behind it');
     expect(prompt).toContain(INTERNAL_ONLY_MARKER);
     expect(prompt).toContain('This release contains internal maintenance only');
     expect(prompt).toContain('本次更新仅内部维护');

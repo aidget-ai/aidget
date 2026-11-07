@@ -169,9 +169,9 @@ Classify entries as follows:
 - Improvements: enhancements to existing behavior, usability, performance, reliability, or public documentation.
 - Bug Fixes: incorrect behavior that was corrected.
 
-Omit a section entirely when it has no changes. Do not create any other section or heading. Each bullet must describe a concrete user-visible change. Prefer the commit body when the subject is broad. Avoid vague statements such as "improved the workflow", "refined the update process", or "updated documentation" unless the bullet also states what changed. Do not copy a vague subject verbatim.
+Omit a section entirely when it has no changes. Do not create any other section or heading. Each bullet must describe a concrete outcome the user can observe or act on, not the mechanism behind it; keep a technical name only when it is user-facing or the user must use it. Prefer the commit body when the subject is broad. Avoid vague statements such as "improved the workflow", "refined the update process", or "updated documentation" unless the bullet also states what changed. Do not copy a vague subject verbatim.
 
-Merge related commits into one bullet. Omit repository-only, build-only, test-only, CI-only, and internal agent or contributor configuration changes. Do not mention commit hashes, file paths, implementation details, or tests.
+Merge related commits into one bullet. Omit repository-only, build-only, test-only, CI-only, and internal agent or contributor configuration changes. Omit details that only help a maintainer locate, debug, or verify a change, including commit hashes, file paths, implementation details, and tests.
 
 If every commit is internal-only and no user-visible change remains, output exactly:
 ${INTERNAL_ONLY_MARKER}
