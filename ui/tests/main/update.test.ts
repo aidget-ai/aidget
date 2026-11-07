@@ -571,6 +571,7 @@ describe('update actions', () => {
     expect(dialog.textContent).not.toContain('English change.');
 
     dialog.querySelector<HTMLButtonElement>('.community-dialog-close')!.click();
+    await vi.advanceTimersByTimeAsync(240);
     expect(dialog.open).toBe(false);
   });
 

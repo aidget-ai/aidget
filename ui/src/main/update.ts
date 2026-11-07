@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 import type { Language, UpdateNotes, UpdateSnapshot, UpdateState } from '../types/rust';
+import { closeDialog, openDialog, setupDialogAnimation } from '../utils/dialog';
 import { translate, type MessageKey } from './locale';
 import { renderReleaseNotes } from './release-notes';
 
@@ -56,6 +57,7 @@ export function createUpdatePage(
   notesDialog.dataset.updateNotesDialog = '';
   notesDialog.tabIndex = -1;
   notesDialog.setAttribute('aria-labelledby', 'update-notes-title');
+  setupDialogAnimation(notesDialog);
   root.append(notesDialog);
 
   let snapshot: UpdateSnapshot | undefined;
@@ -149,7 +151,7 @@ export function createUpdatePage(
     close.type = 'button';
     close.className = 'community-dialog-close';
     close.textContent = t('close');
-    close.addEventListener('click', () => notesDialog.close());
+    close.addEventListener('click', () => void closeDialog(notesDialog));
     const heading = document.createElement('div');
     heading.className = 'community-dialog-header update-notes-header';
     heading.append(title);
@@ -171,10 +173,7 @@ export function createUpdatePage(
 
   function openNotes(current: UpdateNotes) {
     renderNotesDialog(current);
-    if (!notesDialog.open) {
-      notesDialog.showModal();
-    }
-    notesDialog.focus();
+    openDialog(notesDialog);
   }
 
   async function showNotes() {

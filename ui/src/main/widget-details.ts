@@ -7,6 +7,7 @@ import type {
   WidgetPlatform,
 } from '../types/rust';
 import type { Language } from '../types/rust';
+import { closeDialog, openDialog, setupDialogAnimation } from '../utils/dialog';
 import { translate, type MessageKey } from './locale';
 
 const platformNames: Record<WidgetPlatform, string> = {
@@ -89,6 +90,7 @@ export function createLocalWidgetDetails(root: HTMLElement, locale: () => Langua
   dialog.className = 'community-dialog local-widget-dialog';
   dialog.tabIndex = -1;
   dialog.setAttribute('aria-labelledby', 'local-widget-detail-title');
+  setupDialogAnimation(dialog);
   dialog.addEventListener('close', () => {
     generation++;
     details = undefined;
@@ -127,7 +129,7 @@ export function createLocalWidgetDetails(root: HTMLElement, locale: () => Langua
     close.type = 'button';
     close.className = 'community-dialog-close';
     close.textContent = t('communityClose');
-    close.addEventListener('click', () => dialog.close());
+    close.addEventListener('click', () => void closeDialog(dialog));
     const footer = document.createElement('div');
     footer.className = 'community-dialog-footer';
     footer.append(close);
@@ -143,17 +145,14 @@ export function createLocalWidgetDetails(root: HTMLElement, locale: () => Langua
       }
       details = next;
       render();
-      if (!dialog.open) {
-        dialog.showModal();
-      }
-      dialog.focus();
+      openDialog(dialog);
     },
     /** Dismiss the dialog and cancel pending openings when leaving the local panel. */
     close() {
       generation++;
       details = undefined;
       if (dialog.open) {
-        dialog.close();
+        void closeDialog(dialog);
       }
     },
     /** Update an open dialog after a language change. */

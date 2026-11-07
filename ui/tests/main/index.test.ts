@@ -759,7 +759,7 @@ it('opens local details from the card, preview or title without intercepting car
   expect(dialog.querySelector('.community-dialog-header button')).toBeNull();
   expect(dialog.querySelector('.community-permissions-empty')?.textContent).toBe('无特殊权限');
   dialog.querySelector<HTMLButtonElement>('.community-dialog-close')!.click();
-  expect(dialog.open).toBe(false);
+  await vi.waitFor(() => expect(dialog.open).toBe(false));
   const count = mocks.invoke.mock.calls.filter(
     ([command]) => command === 'main_widget_details',
   ).length;

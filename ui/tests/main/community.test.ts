@@ -218,7 +218,7 @@ describe('community cards', () => {
       }),
     );
     await vi.waitFor(() => expect(installed).toHaveBeenCalled());
-    expect(notify).toHaveBeenCalledWith('Installed in Local Widgets');
+    await vi.waitFor(() => expect(notify).toHaveBeenCalledWith('Installed in Local Widgets'));
     expect(root.querySelector('.community-install')?.textContent).toBe('Installed');
   });
   it('pins install in the dialog header and close as a text action in the footer', async () => {
@@ -263,7 +263,7 @@ describe('community cards', () => {
     const dialog = root.querySelector('dialog')!;
     expect(dialog.open).toBe(true);
     (dialog.querySelector('.community-dialog-close') as HTMLButtonElement).click();
-    expect(dialog.open).toBe(false);
+    await vi.waitFor(() => expect(dialog.open).toBe(false));
   });
   it('places the detail description after the screenshot gallery', async () => {
     const { root } = page();

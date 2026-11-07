@@ -1658,12 +1658,25 @@ body[data-platform='windows'] .navigation {
 .community-dialog[open] {
   display: flex;
 }
+.community-dialog[data-dialog-open] {
+  animation: aidget-dialog-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.community-dialog[data-dialog-closing] {
+  pointer-events: none;
+  animation: aidget-dialog-exit 140ms cubic-bezier(0.4, 0, 1, 1) both;
+}
 .community-dialog:focus,
 .community-dialog:focus-visible {
   outline: none;
 }
 .community-dialog::backdrop {
-  background: rgb(0 0 0 / 0.35);
+  background-color: rgb(0 0 0 / 0.35);
+}
+.community-dialog[data-dialog-open]::backdrop {
+  animation: aidget-dialog-backdrop-enter 180ms ease-out both;
+}
+.community-dialog[data-dialog-closing]::backdrop {
+  animation: aidget-dialog-backdrop-exit 140ms ease-in both;
 }
 .community-dialog-header {
   min-inline-size: 0;
@@ -1684,6 +1697,14 @@ body[data-platform='windows'] .navigation {
   min-height: 30px;
   flex: none;
   padding: 0 13px;
+}
+.community-dialog-header .community-install:not(:disabled) {
+  background: var(--accent);
+  color: var(--surface);
+}
+.community-dialog-header .community-install:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent) 84%, var(--text));
+  color: var(--surface);
 }
 .community-dialog-content {
   min-block-size: 0;
@@ -1719,7 +1740,8 @@ body[data-platform='windows'] .navigation {
   display: grid;
   flex: none;
   gap: 10px;
-  padding: 10px 26px 14px;
+  padding-block: 10px 14px;
+  padding-inline: 26px 14px;
   background: var(--surface);
 }
 .community-dialog h3 {
@@ -1800,4 +1822,58 @@ body[data-platform='windows'] .navigation {
 .community-dialog::backdrop {
   overflow: hidden;
   overscroll-behavior: contain;
+}
+
+@keyframes aidget-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes aidget-dialog-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+@keyframes aidget-dialog-backdrop-enter {
+  from {
+    background-color: rgb(0 0 0 / 0);
+  }
+
+  to {
+    background-color: rgb(0 0 0 / 0.35);
+  }
+}
+
+@keyframes aidget-dialog-backdrop-exit {
+  from {
+    background-color: rgb(0 0 0 / 0.35);
+  }
+
+  to {
+    background-color: rgb(0 0 0 / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .community-dialog[data-dialog-open],
+  .community-dialog[data-dialog-closing],
+  .community-dialog[data-dialog-open]::backdrop,
+  .community-dialog[data-dialog-closing]::backdrop {
+    animation: none;
+    transform: none;
+  }
 }

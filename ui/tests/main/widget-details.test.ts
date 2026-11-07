@@ -77,7 +77,7 @@ it('shows the local preview without community identity or header actions, transl
   controller.render();
   expect(dialog.querySelector('.community-permissions-empty')?.textContent).toBe('无特殊权限');
   root.querySelector<HTMLButtonElement>('.community-dialog-close')!.click();
-  expect(dialog.open).toBe(false);
+  await vi.waitFor(() => expect(dialog.open).toBe(false));
   expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('main_widget_details', { id: 'clock' });
 });
 
@@ -104,7 +104,7 @@ it('does not let an older or canceled read open a dialog, and exposes read failu
   controller.close();
   pending.get('canceled')!(details);
   await canceled;
-  expect(root.querySelector('dialog')!.open).toBe(false);
+  await vi.waitFor(() => expect(root.querySelector('dialog')!.open).toBe(false));
   mocks.invoke.mockRejectedValueOnce(new Error('missing widget'));
   await expect(controller.show('missing')).rejects.toThrow('missing widget');
   expect(root.querySelector('dialog')!.open).toBe(false);
