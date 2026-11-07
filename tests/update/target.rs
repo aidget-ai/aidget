@@ -32,10 +32,13 @@ fn an_apple_architecture_without_a_release_asset_resolves_to_nothing() {
 
 #[test]
 fn windows_installs_the_installer() {
-    let target = target_for("windows", "x86_64", NONE).unwrap();
+    let intel = target_for("windows", "x86_64", NONE).unwrap();
+    let arm = target_for("windows", "aarch64", NONE).unwrap();
 
-    assert_eq!(target.kind, PackageKind::WindowsSetup);
-    assert_eq!(target.arch, "amd64");
+    assert_eq!(intel.kind, PackageKind::WindowsSetup);
+    assert_eq!(intel.arch, "amd64");
+    assert_eq!(arm.kind, PackageKind::WindowsSetup);
+    assert_eq!(arm.arch, "arm64");
 }
 
 #[test]
@@ -51,6 +54,17 @@ fn a_linux_install_without_dpkg_takes_the_rpm() {
     let target = target_for("linux", "x86_64", RPM).unwrap();
 
     assert_eq!(target.kind, PackageKind::Rpm);
+}
+
+#[test]
+fn linux_arm_installs_the_package_for_its_package_manager() {
+    let deb = target_for("linux", "aarch64", DPKG).unwrap();
+    let rpm = target_for("linux", "aarch64", RPM).unwrap();
+
+    assert_eq!(deb.kind, PackageKind::Deb);
+    assert_eq!(deb.arch, "arm64");
+    assert_eq!(rpm.kind, PackageKind::Rpm);
+    assert_eq!(rpm.arch, "arm64");
 }
 
 #[test]
@@ -73,6 +87,12 @@ fn a_linux_install_with_neither_package_manager_resolves_to_nothing() {
         target_for("linux", "x86_64", NONE).is_none(),
         "there is no package to install on a machine with neither tool"
     );
+}
+
+#[test]
+fn an_unsupported_architecture_resolves_to_nothing() {
+    assert!(target_for("windows", "riscv64", NONE).is_none());
+    assert!(target_for("linux", "riscv64", DPKG).is_none());
 }
 
 #[test]

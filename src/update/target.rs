@@ -62,19 +62,19 @@ pub fn target_for(os: &str, arch: &str, managers: PackageManagers) -> Option<Tar
     match os {
         "macos" => Some(Target {
             kind: PackageKind::MacApp,
-            arch: apple_arch(arch)?,
+            arch: release_arch(arch)?,
         }),
         "windows" => Some(Target {
             kind: PackageKind::WindowsSetup,
-            arch: "amd64",
+            arch: release_arch(arch)?,
         }),
         "linux" => linux_target(arch, managers),
         _ => None,
     }
 }
 
-/// Public asset architecture tokens for Apple Silicon and Intel.
-fn apple_arch(arch: &str) -> Option<&'static str> {
+/// Public asset architecture tokens for the released ARM64 and x64 targets.
+fn release_arch(arch: &str) -> Option<&'static str> {
     match arch {
         "aarch64" => Some("arm64"),
         "x86_64" => Some("amd64"),
@@ -83,9 +83,7 @@ fn apple_arch(arch: &str) -> Option<&'static str> {
 }
 
 fn linux_target(arch: &str, managers: PackageManagers) -> Option<Target> {
-    if arch != "x86_64" {
-        return None;
-    }
+    let arch = release_arch(arch)?;
     // `dpkg` first: it is what a Debian-family system installs with, and where
     // `rpm` is also present it is normally only the tool used to read `.rpm`
     // files. A Fedora or openSUSE machine has no `dpkg` at all.
@@ -94,10 +92,7 @@ fn linux_target(arch: &str, managers: PackageManagers) -> Option<Target> {
         (false, true) => PackageKind::Rpm,
         (false, false) => return None,
     };
-    Some(Target {
-        kind,
-        arch: "amd64",
-    })
+    Some(Target { kind, arch })
 }
 
 /// The first `name` on `PATH`, as an absolute path.

@@ -137,8 +137,18 @@ jobs:
             os: windows-2022
             target: ''
             bundles: nsis
+            pe_machine: '8664'
+          - name: windows-arm64
+            os: windows-11-arm
+            target: ''
+            bundles: nsis
+            pe_machine: 'aa64'
           - name: linux-x64
             os: ubuntu-22.04
+            target: ''
+            bundles: deb
+          - name: linux-arm64
+            os: ubuntu-22.04-arm
             target: ''
             bundles: deb
     runs-on: ${{ matrix.os }}
@@ -187,7 +197,25 @@ jobs:
         if: matrix.target == ''
         run: pnpm tauri build --ci --bundles "${{ matrix.bundles }}"
 
-      - name: Bundle and verify RPM
+      - name: Verify Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          EXPECTED_MACHINE: ${{ matrix.pe_machine }}
+        run: |
+          $exe = "target/release/aidget.exe"
+          $image = [IO.File]::ReadAllBytes($exe)
+          $peOffset = [BitConverter]::ToInt32($image, 0x3c)
+          $machine = [BitConverter]::ToUInt16($image, $peOffset + 4).ToString("x4")
+          if ($machine -ne $env:EXPECTED_MACHINE) {
+            throw "unexpected PE machine 0x$machine in $exe; expected 0x$env:EXPECTED_MACHINE"
+          }
+          $process = Start-Process -FilePath $exe -ArgumentList "--version" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "$exe --version exited with $($process.ExitCode)"
+          }
+
+      - name: Bundle and verify Linux packages
         if: runner.os == 'Linux'
         env:
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
@@ -198,6 +226,8 @@ jobs:
           EXPECTED=$(jq -r '.version + "-" + .bundle.linux.rpm.release' <<< "$RPM_CONFIG")
           test "$(rpm -qp --queryformat '%{VERSION}-%{RELEASE}' target/release/bundle/rpm/*.rpm)" = "$EXPECTED"
           test "$(target/release/aidget --version)" = "aidget ${RELEASE_TAG#v}"
+          test "$(dpkg-deb --field target/release/bundle/deb/*.deb Architecture)" = "$(dpkg --print-architecture)"
+          test "$(rpm -qp --queryformat '%{ARCH}' target/release/bundle/rpm/*.rpm)" = "$(uname -m)"
 
       # Requesting both app and dmg keeps the .app available for the updater ZIP.
       - name: Zip the macOS app for the updater
@@ -302,7 +332,7 @@ jobs:
             --title "aidget $TAG" \
             --notes-file notes/release-notes.md
 
-          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 8
+          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 11
 
       - name: Check before publishing
         id: before-publish

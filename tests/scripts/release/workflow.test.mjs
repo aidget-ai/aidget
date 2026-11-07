@@ -70,6 +70,37 @@ describe('release workflows', () => {
     expect(release.jobs.publish.needs).toEqual(['metadata', 'verify', 'build', 'notes']);
   });
 
+  test('release builds all six native targets and publishes eleven files', async () => {
+    const release = await workflow('../../../.github/workflows/release.yml');
+    const targets = release.jobs.build.strategy.matrix.include;
+
+    expect(targets.map(({ name }) => name)).toEqual([
+      'macos-arm64',
+      'macos-x64',
+      'windows-x64',
+      'windows-arm64',
+      'linux-x64',
+      'linux-arm64',
+    ]);
+    expect(targets.find(({ name }) => name === 'windows-arm64')).toMatchObject({
+      os: 'windows-11-arm',
+      target: '',
+      bundles: 'nsis',
+      pe_machine: 'aa64',
+    });
+    expect(targets.find(({ name }) => name === 'windows-x64')).toMatchObject({
+      pe_machine: '8664',
+    });
+    expect(targets.find(({ name }) => name === 'linux-arm64')).toMatchObject({
+      os: 'ubuntu-22.04-arm',
+      target: '',
+      bundles: 'deb',
+    });
+    expect(release.jobs.publish.steps.find((step) => step.name === 'Stage release').run).toContain(
+      '-eq 11',
+    );
+  });
+
   test('release notes use a separate artifact directory', async () => {
     const release = await workflow('../../../.github/workflows/release.yml');
     const buildUploads = release.jobs.build.steps.filter((step) =>
@@ -117,7 +148,16 @@ describe('release workflows', () => {
       'macos-arm64',
       'macos-x64',
       'windows-x64',
+      'windows-arm64',
       'linux-x64',
+      'linux-arm64',
+    ]);
+    expect(check.jobs['cross-platform'].strategy.matrix.os).toEqual([
+      'macos-latest',
+      'windows-2022',
+      'windows-11-arm',
+      'ubuntu-22.04',
+      'ubuntu-22.04-arm',
     ]);
     expect(verifyCache.with).toEqual({
       'save-if': "${{ github.ref == 'refs/heads/main' }}",

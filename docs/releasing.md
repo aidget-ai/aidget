@@ -117,12 +117,13 @@ the same checks, packaging, bilingual notes and asset uploads as a stable releas
 ## Pipeline caching
 
 The Check workflow warms release dependency caches on every push to `main`.
-It covers macOS Apple Silicon, macOS Intel, Windows x64 and Linux x64 with the
-same `release-deps` cache key used by the Release build. A cache hit skips the
-warm-up compile; a miss runs a release build without packaging and saves its
-dependencies. Each matrix job first performs a `lookup-only` probe. On an exact
-hit it also skips cache restoration, pnpm setup/install, Linux package installation
-and compilation; only a miss performs those steps.
+It covers macOS Apple Silicon, macOS Intel, Windows x64, Windows ARM64, Linux
+x64 and Linux ARM64 with the same `release-deps` cache key used by the Release
+build. A cache hit skips the warm-up compile; a miss runs a release build without
+packaging and saves its dependencies. Each matrix job first performs a
+`lookup-only` probe. On an exact hit it also skips cache restoration, pnpm
+setup/install, Linux package installation and compilation; only a miss performs
+those steps.
 
 Release builds and verification restore the `main` cache but do not save
 tag-scoped caches. A cold first run still needs a full compile. Use per-job
@@ -131,7 +132,10 @@ checks or assets.
 
 Verification, packaging and bilingual notes start together after tag metadata
 is validated. The publish job waits for all three and only creates the draft
-after the four build artifacts and `release-notes` artifact exist.
+after the six build artifacts and `release-notes` artifact exist.
+Windows and Linux packages are built on native architecture runners; upload
+requires the Windows PE machine type and the DEB/RPM architectures to match the
+runner before an artifact is accepted.
 
 ## Release assets
 
@@ -142,8 +146,11 @@ A release is complete only when the workflow has published all of these assets:
 - `aidget-darwin-arm64.zip`
 - `aidget-darwin-amd64.zip`
 - `aidget-windows-amd64.exe`
+- `aidget-windows-arm64.exe`
 - `aidget-linux-amd64.deb`
 - `aidget-linux-amd64.rpm`
+- `aidget-linux-arm64.deb`
+- `aidget-linux-arm64.rpm`
 - `SHA256SUMS`
 
 DeepSeek's `deepseek-flash` model generates the English and Simplified Chinese

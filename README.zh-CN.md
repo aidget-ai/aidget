@@ -50,11 +50,10 @@
 
 ## 跨平台支持
 
-| 平台 | 窗口 / 桥接 | 能力与说明 |
-| --- | --- | --- |
-| macOS 12+ | WKWebView / Unix socket | 支持截图、CoreLocation 和原生 glass 材质。 |
-| Windows x64 | WebView2 / 命名管道 | 支持截图和 WinRT 定位；脚本发起网络请求时使用 HTTPS。 |
-| Linux x64 | WebKitGTK / Unix socket | 支持截图和 GeoClue；Wayland 下位置由合成器控制。 |
+- **macOS 12+**：Apple Silicon（arm64）和 Intel（x64）
+- **Windows 10（1803 及更高版本）**：x64
+- **Windows 11**：x64 和 ARM64
+- **Linux**：Ubuntu 22.04+、Debian 12+、Fedora 37+、openSUSE Tumbleweed（x64 和 ARM64）
 
 ## 快速开始
 

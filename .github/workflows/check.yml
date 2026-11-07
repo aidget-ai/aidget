@@ -37,8 +37,14 @@ jobs:
           - name: windows-x64
             os: windows-2022
             target: ''
+          - name: windows-arm64
+            os: windows-11-arm
+            target: ''
           - name: linux-x64
             os: ubuntu-22.04
+            target: ''
+          - name: linux-arm64
+            os: ubuntu-22.04-arm
             target: ''
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -96,7 +102,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-2022, ubuntu-22.04]
+        os: [macos-latest, windows-2022, windows-11-arm, ubuntu-22.04, ubuntu-22.04-arm]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:

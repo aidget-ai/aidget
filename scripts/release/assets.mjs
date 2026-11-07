@@ -12,8 +12,11 @@ export const RELEASE_ASSETS = [
   'aidget-darwin-arm64.zip',
   'aidget-darwin-amd64.zip',
   'aidget-windows-amd64.exe',
+  'aidget-windows-arm64.exe',
   'aidget-linux-amd64.deb',
   'aidget-linux-amd64.rpm',
+  'aidget-linux-arm64.deb',
+  'aidget-linux-arm64.rpm',
 ];
 
 /** Normalize build output names to the public platform/architecture contract. */
@@ -34,14 +37,23 @@ export function assetName(source) {
       return 'aidget-darwin-amd64.dmg';
     }
   }
-  if (/_(x64|amd64)-setup\.exe$/.test(name)) {
+  if (/_(x64|x86_64|amd64)-setup\.exe$/.test(name)) {
     return 'aidget-windows-amd64.exe';
   }
-  if (name.endsWith('_amd64.deb')) {
+  if (/_(aarch64|arm64)-setup\.exe$/.test(name)) {
+    return 'aidget-windows-arm64.exe';
+  }
+  if (/_(x86_64|amd64)\.deb$/.test(name)) {
     return 'aidget-linux-amd64.deb';
   }
-  if (name.endsWith('.x86_64.rpm')) {
+  if (/_(aarch64|arm64)\.deb$/.test(name)) {
+    return 'aidget-linux-arm64.deb';
+  }
+  if (/\.(x86_64|amd64)\.rpm$/.test(name)) {
     return 'aidget-linux-amd64.rpm';
+  }
+  if (/\.(aarch64|arm64)\.rpm$/.test(name)) {
+    return 'aidget-linux-arm64.rpm';
   }
 
   throw new Error(`unsupported release asset ${name}`);

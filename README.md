@@ -50,11 +50,10 @@ More ideas are waiting to be discovered!
 
 ## Cross-platform support
 
-| Platform | Window / bridge | Capabilities and notes |
-| --- | --- | --- |
-| macOS 12+ | WKWebView / Unix socket | Screenshot, CoreLocation, and native glass material. |
-| Windows x64 | WebView2 / named pipe | Screenshot and WinRT geolocation; use HTTPS for network requests made by scripts. |
-| Linux x64 | WebKitGTK / Unix socket | Screenshot and GeoClue; under Wayland, positioning is controlled by the compositor. |
+- **macOS 12+**: Apple Silicon (arm64) and Intel (x64)
+- **Windows 10 (1803+)**: x64
+- **Windows 11**: x64 and ARM64
+- **Linux**: Ubuntu 22.04+, Debian 12+, Fedora 37+, and openSUSE Tumbleweed (x64 and ARM64)
 
 ## Quick start
 

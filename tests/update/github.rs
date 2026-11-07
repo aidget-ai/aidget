@@ -126,25 +126,36 @@ fn a_different_product_with_the_same_suffix_is_not_selected() {
 
 #[test]
 fn selects_the_windows_installer() {
-    let release = release(&["aidget-windows-amd64.exe"]);
+    let release = release(&["aidget-windows-amd64.exe", "aidget-windows-arm64.exe"]);
 
-    let asset = release
+    let intel = release
         .asset_for(target(PackageKind::WindowsSetup, "amd64"))
         .unwrap();
+    let arm = release
+        .asset_for(target(PackageKind::WindowsSetup, "arm64"))
+        .unwrap();
 
-    assert_eq!(asset.name, "aidget-windows-amd64.exe");
+    assert_eq!(intel.name, "aidget-windows-amd64.exe");
+    assert_eq!(arm.name, "aidget-windows-arm64.exe");
 }
 
 #[test]
 fn selects_the_linux_packages_by_suffix() {
-    let release = release(&["aidget-linux-amd64.deb", "aidget-linux-amd64.rpm"]);
+    let release = release(&[
+        "aidget-linux-amd64.deb",
+        "aidget-linux-amd64.rpm",
+        "aidget-linux-arm64.deb",
+        "aidget-linux-arm64.rpm",
+    ]);
 
-    for (kind, expected) in [
-        (PackageKind::Deb, "aidget-linux-amd64.deb"),
-        (PackageKind::Rpm, "aidget-linux-amd64.rpm"),
+    for (kind, arch, expected) in [
+        (PackageKind::Deb, "amd64", "aidget-linux-amd64.deb"),
+        (PackageKind::Rpm, "amd64", "aidget-linux-amd64.rpm"),
+        (PackageKind::Deb, "arm64", "aidget-linux-arm64.deb"),
+        (PackageKind::Rpm, "arm64", "aidget-linux-arm64.rpm"),
     ] {
         assert_eq!(
-            release.asset_for(target(kind, "amd64")).unwrap().name,
+            release.asset_for(target(kind, arch)).unwrap().name,
             expected
         );
     }
