@@ -73,18 +73,18 @@ impl Installation {
         }
     }
 
-    /// Schedule restart using only paths saved before replacement.
-    pub fn relaunch(&self) -> Result<()> {
+    /// Schedule restart using the saved executable and log to the selected home.
+    pub fn relaunch(&self, home: &Path) -> Result<()> {
         match self {
             Self::Mac { executable, .. } | Self::Linux { executable, .. } => {
-                linux::relaunch(executable)
+                linux::relaunch(executable, home)
             }
             Self::Windows => Ok(()),
         }
     }
 }
 
-/// Wait for the old PID to release IPC, then exec the saved binary with its
+/// Wait for the old process to release IPC, then exec the saved binary with its
 /// arguments and append output to the log.
 pub fn relaunch_script(exe: &Path, pid: u32, log: &Path, args: &[std::ffi::OsString]) -> String {
     let arguments = args
@@ -97,8 +97,9 @@ pub fn relaunch_script(exe: &Path, pid: u32, log: &Path, args: &[std::ffi::OsStr
     } else {
         format!(" {arguments}")
     };
+    // kill -0 still succeeds for zombies until their parent reaps them.
     format!(
-        "while kill -0 {pid} 2>/dev/null; do sleep 0.2; done; exec {}{arguments} >>{} 2>&1",
+        "while kill -0 {pid} 2>/dev/null; do case \"$(ps -p {pid} -o stat=)\" in *Z*) break;; esac; sleep 0.2; done; exec {}{arguments} >>{} 2>&1",
         sh_quote(exe),
         sh_quote(log)
     )

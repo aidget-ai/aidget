@@ -149,3 +149,56 @@ fn a_gui_child_receives_the_explicit_home_as_an_argument() {
         ]
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_long_lived_parent_reaps_its_exited_gui_child() {
+    const WORKER: &str = "AIDGET_TEST_GUI_REAPER";
+    if let Some(home) = std::env::var_os(WORKER) {
+        // The test executable rejects the GUI arguments and exits immediately.
+        aidget::runtime::process::spawn_ui(std::path::Path::new(&home)).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
+            // Observe exit without reaping; production code must consume the status.
+            let result = unsafe {
+                libc::waitid(
+                    libc::P_ALL,
+                    0,
+                    info.as_mut_ptr(),
+                    libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+                )
+            };
+            if result == -1 {
+                assert_eq!(
+                    std::io::Error::last_os_error().raw_os_error(),
+                    Some(libc::ECHILD)
+                );
+                break;
+            }
+            assert_eq!(result, 0);
+            assert!(
+                std::time::Instant::now() < deadline,
+                "GUI child was not reaped"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        return;
+    }
+    let temp = root();
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "runtime::process::a_long_lived_parent_reaps_its_exited_gui_child",
+            "--nocapture",
+        ])
+        .env(WORKER, temp.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

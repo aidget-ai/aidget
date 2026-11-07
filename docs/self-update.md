@@ -306,11 +306,15 @@ replacement, so the saved install path remains the launch path.
 
 ### Restart
 
-For macOS and Linux manual updates, Aidget launches `/bin/sh` with a command that
-waits for the old PID, then `exec`s the saved executable with the original
-arguments and appends output to `aidget-relaunch.log` in the temporary
-directory. It does not use `open -a`, so another copy with the same bundle
-identifier cannot be activated instead.
+For macOS and Linux manual updates, a `/bin/sh` helper waits for the old process
+to exit, then `exec`s the saved executable with its original arguments. Output
+is appended to `<home>/logs/relaunch.log` under the current instance's data
+directory, including a custom `--home`; `logs/` is created automatically. Starting
+the saved executable directly avoids activating another bundle with the same
+identifier.
+
+Zombies count as exited because they have released IPC. CLI/MCP parents reap GUI
+children on a background thread.
 
 On Windows the NSIS installer performs the restart. If scheduling the
 macOS/Linux replacement fails, Aidget reports that the update is in place but

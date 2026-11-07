@@ -84,9 +84,8 @@ fn native_linux_os_probe_current_exe_after_replacement_has_deleted_suffix() {
         .success());
 }
 
-/// Exercises the production captured Installation and relaunch in a process whose
-/// executable is actually replaced. On Linux the same test covers deleted-exe
-/// semantics; on macOS it verifies saved-path use and owned-process exit ordering.
+/// Check saved-path relaunch after replacing the running executable.
+/// Linux also verifies deleted-executable path semantics.
 #[cfg(unix)]
 #[test]
 fn production_relaunch_uses_prepared_path_after_running_executable_replacement() {
@@ -95,18 +94,17 @@ fn production_relaunch_uses_prepared_path_after_running_executable_replacement()
     use std::process::{Command, Stdio};
 
     const WORKER: &str = "AIDGET_TEST_REPLACED_EXECUTABLE";
-    if std::env::var_os(WORKER).is_some() {
+    if let Some(home) = std::env::var_os(WORKER) {
         let executable = std::env::current_exe().unwrap();
         let installation = prepare(&executable, PackageKind::Deb).unwrap();
-        // Simulate the package manager unlinking the running executable without
-        // invoking elevation or replacing any real installation.
+        // Replace the running image without invoking a package manager.
         std::fs::rename(executable.with_extension("new"), &executable).unwrap();
         #[cfg(target_os = "linux")]
         assert!(std::env::current_exe()
             .unwrap()
             .to_string_lossy()
             .ends_with(" (deleted)"));
-        installation.relaunch().unwrap();
+        installation.relaunch(Path::new(&home)).unwrap();
         println!("production restart scheduled");
         std::io::stdout().flush().unwrap();
         let mut release = String::new();
@@ -115,19 +113,24 @@ fn production_relaunch_uses_prepared_path_after_running_executable_replacement()
     }
 
     let root = TempDir::new().unwrap();
+    let home = root.path().join("custom home '中文");
+    std::fs::create_dir(&home).unwrap();
+    let logs = home.join("logs");
+    let log = logs.join("relaunch.log");
+    assert!(!logs.exists());
     let executable = root.path().join("it's a running executable");
     let marker = root.path().join("new executable starts");
     std::fs::copy(std::env::current_exe().unwrap(), &executable).unwrap();
     let new_program = format!(
-        "#!/bin/sh\nprintf 'started\\n' >>{}\n",
+        "#!/bin/sh\nprintf 'relaunch stdout\\n'\nprintf 'relaunch stderr\\n' >&2\nprintf 'started\\n' >>{}\n",
         aidget::update::install::sh_quote(&marker)
     );
     std::fs::write(executable.with_extension("new"), new_program).unwrap();
     make_executable(&executable.with_extension("new"));
     let mut worker = Command::new(&executable)
         .args(["--exact", "update::install::linux::production_relaunch_uses_prepared_path_after_running_executable_replacement", "--nocapture"])
-        .env(WORKER, "package")
-        // The production relaunch log stays inside this owned temporary root.
+        .env(WORKER, &home)
+        // Keep the system temp directory separate from the selected home.
         .env("TMPDIR", root.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -145,6 +148,8 @@ fn production_relaunch_uses_prepared_path_after_running_executable_replacement()
         }
         line.clear();
     }
+    assert!(logs.is_dir());
+    std::fs::write(&log, "previous launch\n").unwrap();
     let started_before_exit = marker.exists();
     drop(worker.stdin.take());
     assert!(worker.wait().unwrap().success());
@@ -162,9 +167,15 @@ fn production_relaunch_uses_prepared_path_after_running_executable_replacement()
         assert!(
             std::time::Instant::now() < deadline,
             "prepared executable did not restart; production log: {:?}",
-            std::fs::read_to_string(root.path().join("aidget-relaunch.log"))
+            std::fs::read_to_string(&log)
         );
         std::thread::yield_now();
     }
     assert_eq!(std::fs::read_to_string(marker).unwrap(), "started\n");
+    assert_eq!(
+        std::fs::read_to_string(log).unwrap(),
+        "previous launch\nrelaunch stdout\nrelaunch stderr\n"
+    );
+    assert!(!home.join("aidget-relaunch.log").exists());
+    assert!(!root.path().join("logs").exists());
 }

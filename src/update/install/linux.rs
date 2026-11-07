@@ -26,14 +26,12 @@ pub fn install(staged: &Path, kind: PackageKind) -> Result<()> {
     }
 }
 
-/// Start the replaced install again.
-///
-/// A distribution package puts the new binary at the path the old one had.
-pub fn relaunch(exe: &Path) -> Result<()> {
-    // Started only once this process is gone: until then the old instance still
-    // owns the IPC endpoint, and the new one would find it, ask it to reopen, and
-    // exit — leaving nothing running.
-    let log = std::env::temp_dir().join("aidget-relaunch.log");
+/// Schedule the replaced executable, appending output to `<home>/logs/relaunch.log`.
+pub fn relaunch(exe: &Path, home: &Path) -> Result<()> {
+    // Wait for IPC to close so the new instance cannot reopen the old one and exit.
+    let logs = home.join("logs");
+    std::fs::create_dir_all(&logs)?;
+    let log = logs.join("relaunch.log");
     let args = std::env::args_os().skip(1).collect::<Vec<_>>();
     let script = super::relaunch_script(exe, std::process::id(), &log, &args);
     Command::new("/bin/sh").arg("-c").arg(script).spawn()?;

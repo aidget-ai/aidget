@@ -113,9 +113,17 @@ pub fn spawn_ui(root: &Path) -> Result<()> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    command
+    let mut child = command
         .spawn()
         .map_err(|error| Error::Other(format!("cannot start aidget ui: {error}")))?;
+    // Reap asynchronously so a long-lived MCP parent never leaves GUI zombies.
+    std::thread::Builder::new()
+        .name("aidget-ui-reaper".into())
+        .spawn(move || {
+            if let Err(error) = child.wait() {
+                eprintln!("aidget: cannot reap the GUI process: {error}");
+            }
+        })?;
     Ok(())
 }
 

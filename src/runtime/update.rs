@@ -242,16 +242,15 @@ pub fn install_on_quit(handle: &tauri::AppHandle) {
     }
 }
 
-/// Start the version that was just swapped in, then leave.
+/// Schedule the updated executable and exit only if scheduling succeeds.
 ///
-/// A failure here would leave the app running the old binary while the bundle on
-/// disk is the new one, so it is reported instead of swallowed: the install itself
-/// is done, and the only thing left for the user to do is start aidget again.
+/// On failure, keep the old process running and report that the installed update
+/// needs a manual launch.
 pub fn relaunch_and_exit(
     app: &tauri::AppHandle,
     installation: &crate::update::install::Installation,
 ) -> crate::common::error::Result<()> {
-    match installation.relaunch() {
+    match installation.relaunch(&root_of(app)) {
         Ok(()) => {
             app.exit(0);
             Ok(())
