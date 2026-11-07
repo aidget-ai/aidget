@@ -1,8 +1,35 @@
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
+use crate::common::error::Result;
+
 const REVEAL_PENDING: u8 = 0;
 const REVEAL_IN_PROGRESS: u8 = 1;
 const REVEAL_COMPLETE: u8 = 2;
+
+/// Window operations needed to stage the main window without exposing its
+/// startup frame.
+pub trait StartupWindow {
+    fn show_for_startup(&self) -> Result<()>;
+    fn ignore_cursor_events(&self, ignore: bool) -> Result<()>;
+}
+
+/// Stage cursor passthrough before the first paint. GTK cannot receive this
+/// operation until its native window has been mapped, so Linux defers it.
+pub fn prepare_startup_cursor(window: &impl StartupWindow) -> Result<()> {
+    #[cfg(not(target_os = "linux"))]
+    window.ignore_cursor_events(true)?;
+    Ok(())
+}
+
+/// Show the staging frame and complete platform-specific cursor setup.
+pub fn prime_startup_window(window: &impl StartupWindow) -> Result<()> {
+    window.show_for_startup()?;
+    // GTK only realizes its GdkWindow after it is shown. tao 0.37 unwraps the
+    // missing GdkWindow when cursor passthrough is enabled before this point.
+    #[cfg(target_os = "linux")]
+    window.ignore_cursor_events(true)?;
+    Ok(())
+}
 
 /// One-shot state shared by the main window and the background widget host.
 #[derive(Default)]

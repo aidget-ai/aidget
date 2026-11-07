@@ -1,4 +1,46 @@
-use aidget::runtime::main_startup::MainStartup;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use aidget::common::error::Result;
+use aidget::runtime::main_startup::{
+    prepare_startup_cursor, prime_startup_window, MainStartup, StartupWindow,
+};
+
+#[derive(Clone, Default)]
+struct TestWindow(Rc<RefCell<Vec<&'static str>>>);
+
+impl StartupWindow for TestWindow {
+    fn show_for_startup(&self) -> Result<()> {
+        self.0.borrow_mut().push("show");
+        Ok(())
+    }
+
+    fn ignore_cursor_events(&self, ignore: bool) -> Result<()> {
+        assert!(ignore);
+        self.0.borrow_mut().push("ignore");
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn gtk_is_shown_before_cursor_passthrough_is_enabled() {
+    let calls = TestWindow::default();
+    prepare_startup_cursor(&calls).unwrap();
+    prime_startup_window(&calls).unwrap();
+
+    assert_eq!(*calls.0.borrow(), ["show", "ignore"]);
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn staged_window_ignores_cursor_before_it_is_shown() {
+    let calls = TestWindow::default();
+    prepare_startup_cursor(&calls).unwrap();
+    prime_startup_window(&calls).unwrap();
+
+    assert_eq!(*calls.0.borrow(), ["ignore", "show"]);
+}
 
 #[test]
 fn main_window_reveal_is_a_one_shot_gate() {

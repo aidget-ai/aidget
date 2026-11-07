@@ -7,6 +7,7 @@ use tauri::{
 };
 
 use crate::common::error::{Error, Result};
+use crate::runtime::main_startup::{prepare_startup_cursor, prime_startup_window, StartupWindow};
 use crate::transport::origin;
 
 use super::main_page::main_payload;
@@ -14,6 +15,18 @@ use super::state::{require_main_window_label, UiState, MAIN_LABEL};
 
 #[cfg(not(target_os = "macos"))]
 const MAIN_STARTUP_POSITION: f64 = -10_000.0;
+
+impl StartupWindow for WebviewWindow {
+    fn show_for_startup(&self) -> Result<()> {
+        self.show()
+            .map_err(|error| Error::Other(format!("cannot prime main window: {error}")))
+    }
+
+    fn ignore_cursor_events(&self, ignore: bool) -> Result<()> {
+        self.set_ignore_cursor_events(ignore)
+            .map_err(|error| Error::Other(format!("cannot ignore main window cursor: {error}")))
+    }
+}
 
 /// Queue creation or focus of the main window on the Tauri main thread.
 pub fn show_main(app: &AppHandle) -> Result<()> {
@@ -119,9 +132,7 @@ fn set_main_alpha(window: &WebviewWindow, alpha: f64) -> Result<()> {
 fn prepare_main(window: &WebviewWindow) -> Result<()> {
     // A hidden WebView does not run animation frames. Prime it without visible
     // content: transparent in place on macOS, offscreen where opacity is absent.
-    window
-        .set_ignore_cursor_events(true)
-        .map_err(|error| Error::Other(format!("cannot ignore main window cursor: {error}")))?;
+    prepare_startup_cursor(window)?;
     #[cfg(target_os = "macos")]
     set_main_alpha(window, 0.0)?;
     #[cfg(not(target_os = "macos"))]
@@ -135,9 +146,7 @@ fn prepare_main(window: &WebviewWindow) -> Result<()> {
 }
 
 fn prime_main(window: &WebviewWindow) -> Result<()> {
-    window
-        .show()
-        .map_err(|error| Error::Other(format!("cannot prime main window: {error}")))
+    prime_startup_window(window)
 }
 
 fn reveal_main_if_ready(app: &AppHandle, window: &WebviewWindow) -> Result<()> {
