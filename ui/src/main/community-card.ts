@@ -77,7 +77,13 @@ export function createCommunityCard(
     verified.textContent = t('communityVerified');
     by.title = typeof pkg.author === 'string' ? pkg.author : (pkg.author?.name ?? '');
     install.textContent = label;
-    install.disabled = installing || entry.installed || entry.idConflict || !entry.supported;
+    install.disabled =
+      installing ||
+      entry.installed ||
+      entry.idConflict ||
+      !entry.supported ||
+      (entry.hostCompatibility.state !== 'compatible' &&
+        !entry.hostCompatibility.allowedByOverride);
     preview.disabled = installing;
     preview.setAttribute('aria-label', `${t('communityDetails')}: ${config.title}`);
     screenshot.update(entry, config.screenshots[0], commit);

@@ -33,6 +33,11 @@ const messages = {
     communityNetwork: 'Network access',
     communityNoNetwork: 'No network access',
     communityPlatforms: 'Operating systems',
+    communityHostVersion: 'Minimum Aidget version',
+    communityHostUndeclared: 'Not declared',
+    communityHostUnsupportedBefore: 'This widget does not support the current aidget version. ',
+    communityHostUpdate: 'Update',
+    communityHostUnsupportedAfter: ' first.',
     communityClose: 'Close',
     communityLoadFailed: 'Could not load community widgets',
     communityGithubTokenHint:
@@ -198,6 +203,11 @@ const messages = {
     communityNetwork: '网络权限',
     communityNoNetwork: '无网络权限',
     communityPlatforms: '支持系统',
+    communityHostVersion: '最低 Aidget 版本',
+    communityHostUndeclared: '未声明',
+    communityHostUnsupportedBefore: '不支持当前 aidget 版本，请先',
+    communityHostUpdate: '更新',
+    communityHostUnsupportedAfter: '。',
     communityClose: '关闭',
     communityLoadFailed: '无法加载社区组件',
     communityGithubTokenHint:

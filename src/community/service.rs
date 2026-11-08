@@ -16,7 +16,7 @@ use crate::{
     settings::{self, GithubToken},
     widgets::{
         model::WidgetMeta,
-        package::{validate_package_name, WidgetPlatform},
+        package::{validate_package_name, WidgetConfig, WidgetPlatform},
         store::Store,
     },
 };
@@ -133,17 +133,30 @@ impl Community {
     }
     /// Discover a reviewed main snapshot that is immediately installable from Git.
     pub fn list(&self, store: &Store) -> Result<CommunitySnapshot> {
+        self.list_with_override(store, false)
+    }
+    /// Discover the catalogue using the running build's debug compatibility mode.
+    pub fn list_with_override(
+        &self,
+        store: &Store,
+        allow_incompatible: bool,
+    ) -> Result<CommunitySnapshot> {
         let requested_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| Error::Other(e.to_string()))?
             .as_nanos();
         let commit = self.branch("main")?;
         let registry = self.registry(store, &commit)?;
-        let snapshot = Self::snapshot(store, commit.clone(), &registry)?;
+        let snapshot = Self::snapshot(store, commit.clone(), &registry, allow_incompatible)?;
         self.remember_latest(store, &commit, requested_at, &registry)?;
         Ok(snapshot)
     }
-    fn snapshot(store: &Store, commit: String, registry: &Registry) -> Result<CommunitySnapshot> {
+    fn snapshot(
+        store: &Store,
+        commit: String,
+        registry: &Registry,
+        allow_incompatible: bool,
+    ) -> Result<CommunitySnapshot> {
         let ids = store.widget_ids()?;
         let mut names = std::collections::BTreeSet::new();
         for valid in store.list()?.widgets {
@@ -155,27 +168,58 @@ impl Community {
             .widgets
             .iter()
             .cloned()
-            .map(|entry| CommunityEntry {
-                installed: names.contains(&entry.package.name),
-                id_conflict: ids.contains(&entry.config.id),
-                supported: entry.config.platforms.contains(&WidgetPlatform::current()),
-                entry,
+            .map(|entry| {
+                Ok(CommunityEntry {
+                    installed: names.contains(&entry.package.name),
+                    id_conflict: ids.contains(&entry.config.id),
+                    supported: entry.config.platforms.contains(&WidgetPlatform::current()),
+                    host_compatibility: crate::widgets::package::HostCompatibility::evaluate(
+                        &entry.config,
+                        env!("CARGO_PKG_VERSION"),
+                        cfg!(debug_assertions) && allow_incompatible,
+                    )?,
+                    entry,
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         Ok(CommunitySnapshot { commit, widgets })
     }
     /// Install the snapshot selected by the main window; never trust caller metadata.
     pub fn install_reviewed(&self, store: &Store, commit: &str, name: &str) -> Result<WidgetMeta> {
+        self.install_reviewed_with_override(store, commit, name, false)
+    }
+    pub fn install_reviewed_with_override(
+        &self,
+        store: &Store,
+        commit: &str,
+        name: &str,
+        allow_incompatible: bool,
+    ) -> Result<WidgetMeta> {
         let registry = self.registry(store, commit)?;
         let entry = registry
             .widgets
             .iter()
             .find(|e| e.package.name == name)
             .ok_or_else(|| Error::NotFound(name.into()))?;
-        self.install_version(store, name, &entry.package.version, Some((commit, entry)))
+        validate_install_compatibility(&entry.config, allow_incompatible)?;
+        self.install_version(
+            store,
+            name,
+            &entry.package.version,
+            Some((commit, entry)),
+            allow_incompatible,
+        )
     }
     /// Install a full npm name with an optional exact version. Community defaults use main.
     pub fn install(&self, store: &Store, spec: &str) -> Result<WidgetMeta> {
+        self.install_with_override(store, spec, false)
+    }
+    pub fn install_with_override(
+        &self,
+        store: &Store,
+        spec: &str,
+        allow_incompatible: bool,
+    ) -> Result<WidgetMeta> {
         let (name, version) = split_spec(spec)?;
         if name.starts_with("@aidget-community/") {
             let main = self.branch("main")?;
@@ -183,11 +227,13 @@ impl Community {
             if let Some(entry) = registry.widgets.iter().find(|e| {
                 e.package.name == name && version.as_ref().is_none_or(|v| v == &e.package.version)
             }) {
+                validate_install_compatibility(&entry.config, allow_incompatible)?;
                 return self.install_version(
                     store,
                     &name,
                     &entry.package.version,
                     Some((&main, entry)),
+                    allow_incompatible,
                 );
             }
             return Err(Error::NotFound(format!(
@@ -207,7 +253,7 @@ impl Community {
             }
         };
         semver::Version::parse(&version).map_err(|e| Error::InvalidParams(e.to_string()))?;
-        self.install_version(store, &name, &version, None)
+        self.install_version(store, &name, &version, None, allow_incompatible)
     }
     fn npm_tarball(
         &self,
@@ -258,6 +304,7 @@ impl Community {
         name: &str,
         version: &str,
         expected: Option<(&str, &RegistryEntry)>,
+        allow_incompatible: bool,
     ) -> Result<WidgetMeta> {
         let staged = tempfile::tempdir_in(store.state_dir())?;
         let (config, package) = match self.npm_tarball(name, version) {
@@ -289,8 +336,37 @@ impl Community {
                 "widget does not support this operating system".into(),
             ));
         }
+        validate_install_compatibility(&config, allow_incompatible)?;
         let id = config.id.clone();
         crate::widgets::install::commit(store, staged.path(), config, &package, &id)
+    }
+}
+
+fn validate_install_compatibility(config: &WidgetConfig, allow_incompatible: bool) -> Result<()> {
+    let compatibility = crate::widgets::package::HostCompatibility::evaluate(
+        config,
+        env!("CARGO_PKG_VERSION"),
+        cfg!(debug_assertions) && allow_incompatible,
+    )?;
+    match compatibility.state {
+        crate::widgets::package::HostCompatibilityState::Compatible => Ok(()),
+        crate::widgets::package::HostCompatibilityState::HostTooOld
+            if compatibility.allowed_by_override =>
+        {
+            Ok(())
+        }
+        crate::widgets::package::HostCompatibilityState::HostTooOld => {
+            Err(Error::HostVersionIncompatible {
+                widget: config.id.clone(),
+                current: compatibility.current_version,
+                minimum: compatibility.min_host_version.unwrap_or_default(),
+            })
+        }
+        crate::widgets::package::HostCompatibilityState::Undeclared => {
+            Err(Error::HostVersionRequired {
+                widget: config.id.clone(),
+            })
+        }
     }
 }
 /// Encode an entire npm name, retaining the scope/name distinction in one path segment.

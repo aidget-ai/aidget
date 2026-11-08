@@ -21,6 +21,7 @@ pub struct Response {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ErrorBodyValue {
     pub code: String,
     /// Payload only: the receiver rebuilds the error from `code` + `detail`, so
@@ -28,6 +29,12 @@ pub struct ErrorBodyValue {
     pub detail: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current: Option<ConflictCurrent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub widget: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_host_version: Option<String>,
 }
 
 impl Response {
@@ -50,6 +57,9 @@ impl Response {
                 code: body.code.to_string(),
                 detail: body.detail,
                 current: body.current,
+                widget: body.widget,
+                current_version: body.current_version,
+                min_host_version: body.min_host_version,
             }),
         }
     }
@@ -72,6 +82,22 @@ impl Response {
                 "invalid_params" => Error::InvalidParams(body.detail),
                 "region_not_found" => Error::RegionNotFound(body.detail),
                 "region_ambiguous" => Error::RegionAmbiguous(body.detail),
+                "host_version_incompatible" => Error::HostVersionIncompatible {
+                    widget: body.widget.ok_or_else(|| {
+                        Error::Other("incompatible version error without widget".into())
+                    })?,
+                    current: body.current_version.ok_or_else(|| {
+                        Error::Other("incompatible version error without current version".into())
+                    })?,
+                    minimum: body.min_host_version.ok_or_else(|| {
+                        Error::Other("incompatible version error without minimum version".into())
+                    })?,
+                },
+                "host_version_required" => Error::HostVersionRequired {
+                    widget: body.widget.ok_or_else(|| {
+                        Error::Other("missing version declaration error without widget".into())
+                    })?,
+                },
                 "ui_not_running" => Error::UiNotRunning,
                 "timeout" => Error::Timeout,
                 _ => Error::Other(body.detail),

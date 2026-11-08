@@ -28,6 +28,9 @@ export function weeklyDownloads(value: number | null, locale: string) {
     new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value / divisor) + suffix
   );
 }
+export function hostPermitsInstall(compatibility: CommunityEntry['hostCompatibility']) {
+  return compatibility.state === 'compatible' || compatibility.allowedByOverride;
+}
 function authorName(author: PackageAuthor | null) {
   return typeof author === 'string' ? author : (author?.name ?? '');
 }
@@ -38,6 +41,7 @@ export function createCommunityPage(
   installed: () => Promise<void>,
   hasGithubToken: () => boolean,
   notify: (message: string) => void,
+  onUpdate: () => void,
 ) {
   let snapshot: CommunitySnapshot | undefined;
   let loading = false;
@@ -143,7 +147,12 @@ export function createCommunityPage(
     button.type = 'button';
     button.className = 'community-install secondary-button';
     button.textContent = actionLabel(entry);
-    button.disabled = !!installing || entry.installed || entry.idConflict || !entry.supported;
+    button.disabled =
+      !!installing ||
+      entry.installed ||
+      entry.idConflict ||
+      !entry.supported ||
+      !hostPermitsInstall(entry.hostCompatibility);
     button.addEventListener('click', () => {
       void install(entry, commit);
     });
@@ -198,7 +207,8 @@ export function createCommunityPage(
         !!installing ||
         selected.entry.installed ||
         selected.entry.idConflict ||
-        !selected.entry.supported;
+        !selected.entry.supported ||
+        !hostPermitsInstall(selected.entry.hostCompatibility);
       dialog.querySelector('.community-install-error')!.textContent = installError;
     }
   }
@@ -267,7 +277,18 @@ export function createCommunityPage(
     identity.textContent = `${authorName(pkg.author)} · ${pkg.name} · v${pkg.version}`;
     detailLocale = locale();
     const previousMedia = detailMedia.splice(0);
-    const content = renderWidgetDetailsContent(config, pkg.description, [], locale());
+    const content = renderWidgetDetailsContent(
+      config,
+      entry.hostCompatibility,
+      pkg.description,
+      [],
+      locale(),
+      async () => {
+        selected = undefined;
+        await closeDialog(dialog);
+        onUpdate();
+      },
+    );
     for (const [index, path] of config.screenshots.entries()) {
       let view = previousMedia[index];
       if (view) {

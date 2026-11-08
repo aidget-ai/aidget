@@ -7,8 +7,8 @@ use serde_json::{json, Value};
 use crate::common::error::{Error, Result};
 use crate::transport::client::Client;
 use crate::widgets::model::{
-    validate_id, DeleteResult, DoctorReport, ScreenshotResult, WidgetDragMode, WidgetFrame,
-    WidgetListing, WidgetPermission,
+    validate_id, DeleteResult, DiagnosticsReport, DoctorReport, ScreenshotResult, WidgetDragMode,
+    WidgetFrame, WidgetListing, WidgetPermission,
 };
 use crate::widgets::store::{Store, WidgetEdit, CONFIG_FILE, CSS_FILE, HTML_FILE};
 
@@ -21,6 +21,9 @@ pub struct Cli {
     /// Emit machine-readable JSON for commands and errors.
     #[arg(long, global = true)]
     pub json: bool,
+    /// Debug-only escape hatch for widgets whose declared host version is newer.
+    #[arg(long, global = true)]
+    pub allow_incompatible_widgets: bool,
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -93,6 +96,16 @@ pub enum WidgetCommand {
     Patch(PatchArgs),
     /// Move a widget directory into the trash.
     Delete { widget: String },
+    /// Read runtime errors collected from the running widget.
+    Diagnostics {
+        widget: String,
+        #[arg(long)]
+        revision: Option<u64>,
+        #[arg(long, default_value_t = 0)]
+        after: u64,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+    },
 }
 
 #[derive(Args)]
@@ -117,6 +130,9 @@ pub struct CreateArgs {
     /// Comma-separated host capabilities.
     #[arg(long)]
     pub permissions: Option<String>,
+    /// Minimum Aidget SemVer required by this widget; defaults to this build.
+    #[arg(long)]
+    pub min_host_version: Option<String>,
     #[arg(long)]
     pub agents_file: Option<PathBuf>,
 }
@@ -142,6 +158,9 @@ pub struct UpdateArgs {
     /// Comma-separated host capabilities; `none` clears them.
     #[arg(long)]
     pub permissions: Option<String>,
+    /// Replace the minimum Aidget SemVer required by this widget.
+    #[arg(long)]
+    pub min_host_version: Option<String>,
     #[arg(long)]
     pub agents_file: Option<PathBuf>,
     /// Current widget revision from `widget show`.
@@ -211,7 +230,11 @@ pub fn run(cli: Cli) -> Result<()> {
         Command::Displays => displays_command(&store, json),
         Command::Community { command } => {
             let client = Client::new(store.socket_path());
-            crate::runtime::process::ensure_ui(&client, store.root())?;
+            crate::runtime::process::ensure_ui_with_override(
+                &client,
+                store.root(),
+                cfg!(debug_assertions) && cli.allow_incompatible_widgets,
+            )?;
             let result = match command {
                 CommunityCommand::List => client.call_with_timeout(
                     "community_list",
@@ -291,6 +314,15 @@ fn widget_command(store: &Store, command: WidgetCommand, json: bool) -> Result<(
                         ))
                         .unwrap_or_else(|| "-".to_string())
                 );
+                println!(
+                    "minHostVersion={} compatibility={:?}",
+                    document
+                        .meta
+                        .min_host_version
+                        .as_deref()
+                        .unwrap_or("undeclared"),
+                    document.compatibility.state
+                );
                 println!("\n--- index.html ---\n{}", document.html);
                 if !document.css.is_empty() {
                     println!("\n--- style.css ---\n{}", document.css);
@@ -321,6 +353,7 @@ fn widget_command(store: &Store, command: WidgetCommand, json: bool) -> Result<(
                     network: Some(&parse_network(args.network.as_deref())),
                     drag_mode: args.drag_mode,
                     permissions: Some(&permissions),
+                    min_host_version: args.min_host_version.as_deref().map(Some),
                     agents: agents.as_deref(),
                     ..WidgetEdit::default()
                 },
@@ -352,6 +385,7 @@ fn widget_command(store: &Store, command: WidgetCommand, json: bool) -> Result<(
                     network: args.network.as_deref().map(parse_network_value).as_deref(),
                     drag_mode: args.drag_mode,
                     permissions: permissions.as_deref(),
+                    min_host_version: args.min_host_version.as_deref().map(Some),
                     agents: agents.as_deref(),
                 },
             )?;
@@ -388,6 +422,44 @@ fn widget_command(store: &Store, command: WidgetCommand, json: bool) -> Result<(
                 })?;
             } else {
                 println!("moved {widget} to {}", trash.display());
+            }
+            Ok(())
+        }
+        WidgetCommand::Diagnostics {
+            widget,
+            revision,
+            after,
+            limit,
+        } => {
+            validate_id(&widget)?;
+            if !(1..=100).contains(&limit) {
+                return Err(Error::InvalidParams(
+                    "diagnostic limit must be between 1 and 100".into(),
+                ));
+            }
+            let mut params = json!({ "widget": widget, "after": after, "limit": limit });
+            if let Some(revision) = revision {
+                params["revision"] = json!(revision);
+            }
+            let report: DiagnosticsReport = serde_json::from_value(
+                Client::new(store.socket_path()).call("diagnostics", params)?,
+            )?;
+            if json {
+                print_json(&report)?;
+            } else {
+                println!(
+                    "{} revision {}: {} diagnostic(s), {} dropped",
+                    report.widget,
+                    report.revision.unwrap_or_default(),
+                    report.diagnostics.len(),
+                    report.dropped
+                );
+                for event in report.diagnostics {
+                    println!(
+                        "  {} {:?} {}",
+                        event.received_at, event.source, event.message
+                    );
+                }
             }
             Ok(())
         }
@@ -513,24 +585,28 @@ fn doctor_command(store: &Store, json: bool) -> Result<()> {
     let client = Client::new(store.socket_path());
     let responsive = client.ping(std::time::Duration::from_millis(800));
     let ids = store.widget_ids()?;
+    let runtime_report = if responsive {
+        Some(serde_json::from_value::<DoctorReport>(
+            client.call("doctor", json!({}))?,
+        )?)
+    } else {
+        None
+    };
     if json {
-        let report = if responsive {
-            serde_json::from_value::<DoctorReport>(client.call("doctor", json!({}))?)?
-        } else {
-            DoctorReport {
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                root: store.root().to_string_lossy().to_string(),
-                bridge: client.address(),
-                ui_running: false,
-                widgets: ids.len(),
-                displays: Vec::new(),
-                files: vec![
-                    CONFIG_FILE.to_string(),
-                    HTML_FILE.to_string(),
-                    CSS_FILE.to_string(),
-                ],
-            }
-        };
+        let report = runtime_report.unwrap_or_else(|| DoctorReport {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            root: store.root().to_string_lossy().to_string(),
+            bridge: client.address(),
+            ui_running: false,
+            widgets: ids.len(),
+            displays: Vec::new(),
+            files: vec![
+                CONFIG_FILE.to_string(),
+                HTML_FILE.to_string(),
+                CSS_FILE.to_string(),
+            ],
+            diagnostics: Vec::new(),
+        });
         print_json(&report)?;
         return Ok(());
     }
@@ -557,6 +633,14 @@ fn doctor_command(store: &Store, json: bool) -> Result<()> {
                 meta.grants(WidgetPermission::Script)
             ),
             Err(error) => println!("  broken   {:<24} {error}", id),
+        }
+    }
+    if let Some(report) = runtime_report {
+        for diagnostic in report.diagnostics {
+            println!(
+                "  diagnostics {:<24} {} events, {} dropped, ready={}",
+                diagnostic.widget, diagnostic.count, diagnostic.dropped, diagnostic.collector_ready
+            );
         }
     }
     let board = store.load_board()?;

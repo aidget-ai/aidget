@@ -1,5 +1,7 @@
 use aidget::{
-    transport::server::protocol::{embedded_cache_control, serve_widget, widget_csp_for},
+    transport::server::protocol::{
+        embedded_cache_control, serve_widget, serve_widget_with_override, widget_csp_for,
+    },
     widgets::{
         model::WidgetPermission,
         package::WidgetConfig,
@@ -104,5 +106,28 @@ fn embedded_html_revalidates_while_hashed_assets_are_immutable() {
     assert_eq!(
         embedded_cache_control("assets/main-abc.js"),
         "public, max-age=31536000, immutable"
+    );
+}
+
+#[test]
+fn widget_content_is_blocked_when_the_declared_host_version_is_newer() {
+    let root = tempfile::tempdir().unwrap();
+    let store = Store::new(root.path());
+    store.ensure_layout().unwrap();
+    store
+        .create("future", "Future", WidgetEdit::default())
+        .unwrap();
+    let mut meta = store.load_meta("future").unwrap();
+    meta.min_host_version = Some("99.0.0".into());
+    std::fs::write(
+        store.widget_dir("future").unwrap().join("config.json"),
+        serde_json::to_vec_pretty(&meta).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(serve_widget(&store, "future/index.html").status(), 404);
+    assert_eq!(
+        serve_widget_with_override(&store, "future/index.html", true).status(),
+        200
     );
 }

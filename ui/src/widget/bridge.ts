@@ -39,6 +39,174 @@ export interface PointerSubscription {
   token: string;
 }
 
+export interface WidgetDiagnosticSignal {
+  revision: number;
+  token: string;
+  event: {
+    source:
+      | 'error'
+      | 'unhandled_rejection'
+      | 'console_error'
+      | 'resource_error'
+      | 'csp_violation'
+      | 'host_api';
+    revision: number;
+    message: string;
+    stack: string | null;
+    filename: string | null;
+    line: number | null;
+    column: number | null;
+  };
+}
+
+export interface WidgetDiagnosticReadySignal {
+  revision: number;
+  token: string;
+}
+
+export interface WidgetDiagnosticDroppedSignal {
+  revision: number;
+  token: string;
+  dropped: number;
+}
+
+/** Validate the injected collector handshake from this widget document. */
+export function parseDiagnosticReady(
+  data: unknown,
+  source: MessageEventSource | null,
+  frameWindow: Window | null,
+): WidgetDiagnosticReadySignal | null {
+  if (!frameWindow || source !== frameWindow || !data || typeof data !== 'object') {
+    return null;
+  }
+  const candidate = data as {
+    source?: unknown;
+    type?: unknown;
+    revision?: unknown;
+    token?: unknown;
+  };
+  if (
+    candidate.source !== WIDGET_SOURCE ||
+    candidate.type !== 'diagnostic-ready' ||
+    typeof candidate.revision !== 'number' ||
+    !Number.isSafeInteger(candidate.revision) ||
+    candidate.revision <= 0 ||
+    typeof candidate.token !== 'string' ||
+    !candidate.token
+  ) {
+    return null;
+  }
+  return { revision: candidate.revision, token: candidate.token };
+}
+
+/** Validate the frontend's aggregated count of diagnostics it had to drop. */
+export function parseDiagnosticDropped(
+  data: unknown,
+  source: MessageEventSource | null,
+  frameWindow: Window | null,
+): WidgetDiagnosticDroppedSignal | null {
+  if (!frameWindow || source !== frameWindow || !data || typeof data !== 'object') {
+    return null;
+  }
+  const candidate = data as {
+    source?: unknown;
+    type?: unknown;
+    revision?: unknown;
+    token?: unknown;
+    dropped?: unknown;
+  };
+  if (
+    candidate.source !== WIDGET_SOURCE ||
+    candidate.type !== 'diagnostic-dropped' ||
+    typeof candidate.revision !== 'number' ||
+    !Number.isSafeInteger(candidate.revision) ||
+    candidate.revision <= 0 ||
+    typeof candidate.token !== 'string' ||
+    !candidate.token ||
+    typeof candidate.dropped !== 'number' ||
+    !Number.isSafeInteger(candidate.dropped) ||
+    candidate.dropped <= 0 ||
+    candidate.dropped > 1_000_000
+  ) {
+    return null;
+  }
+  return {
+    revision: candidate.revision,
+    token: candidate.token,
+    dropped: candidate.dropped,
+  };
+}
+
+/** Validate a diagnostic produced by this widget document before sending it to Rust. */
+export function parseDiagnostic(
+  data: unknown,
+  source: MessageEventSource | null,
+  frameWindow: Window | null,
+): WidgetDiagnosticSignal | null {
+  if (!frameWindow || source !== frameWindow || !data || typeof data !== 'object') {
+    return null;
+  }
+  const candidate = data as {
+    source?: unknown;
+    type?: unknown;
+    revision?: unknown;
+    token?: unknown;
+    event?: unknown;
+  };
+  if (
+    candidate.source !== WIDGET_SOURCE ||
+    candidate.type !== 'diagnostic' ||
+    typeof candidate.revision !== 'number' ||
+    !Number.isSafeInteger(candidate.revision) ||
+    candidate.revision <= 0 ||
+    typeof candidate.token !== 'string' ||
+    !candidate.token ||
+    !candidate.event ||
+    typeof candidate.event !== 'object'
+  ) {
+    return null;
+  }
+  const event = candidate.event as Record<string, unknown>;
+  const sources = new Set([
+    'error',
+    'unhandled_rejection',
+    'console_error',
+    'resource_error',
+    'csp_violation',
+    'host_api',
+  ]);
+  if (
+    typeof event.source !== 'string' ||
+    !sources.has(event.source) ||
+    event.revision !== candidate.revision ||
+    typeof event.message !== 'string' ||
+    !event.message ||
+    event.message.length > 8 * 1024 ||
+    (event.stack !== null && (typeof event.stack !== 'string' || event.stack.length > 8 * 1024)) ||
+    (event.filename !== null &&
+      (typeof event.filename !== 'string' || event.filename.length > 8 * 1024)) ||
+    (event.line !== null &&
+      (typeof event.line !== 'number' || !Number.isSafeInteger(event.line) || event.line < 0)) ||
+    (event.column !== null &&
+      (typeof event.column !== 'number' || !Number.isSafeInteger(event.column) || event.column < 0))
+  ) {
+    return null;
+  }
+  return {
+    revision: candidate.revision,
+    token: candidate.token,
+    event: {
+      source: event.source as WidgetDiagnosticSignal['event']['source'],
+      revision: event.revision,
+      message: event.message,
+      stack: event.stack as string | null,
+      filename: event.filename as string | null,
+      line: event.line as number | null,
+      column: event.column as number | null,
+    },
+  };
+}
+
 /** Parse a widget document's request to receive hover events. */
 export function parsePointerSubscription(
   data: unknown,

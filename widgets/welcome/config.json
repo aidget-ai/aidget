@@ -1,6 +1,7 @@
 {
   "id": "welcome",
   "title": "欢迎使用 AIDGET",
+  "minHostVersion": "0.1.1",
   "logo": null,
   "screenshots": ["assets/screenshot.png"],
   "platforms": ["macos", "windows", "linux"],

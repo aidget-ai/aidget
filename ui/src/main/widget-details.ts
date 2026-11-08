@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import type {
+  HostCompatibility,
   LocalWidgetDetails,
   WidgetConfig,
   WidgetPermission,
@@ -24,9 +25,11 @@ const permissionNames: Record<WidgetPermission, MessageKey> = {
 /** Render the shared preview, description and declared capabilities for widget details. */
 export function renderWidgetDetailsContent(
   config: WidgetConfig,
+  compatibility: HostCompatibility,
   description: string | null,
   previews: HTMLElement[],
   locale: Language,
+  onUpdate?: () => void,
 ) {
   const t = (key: MessageKey) => translate(locale, key);
   const content = document.createElement('div');
@@ -35,6 +38,26 @@ export function renderWidgetDetailsContent(
   images.className = 'community-detail-images';
   images.append(...previews);
   content.append(images);
+  const hostTitle = document.createElement('h3');
+  hostTitle.textContent = t('communityHostVersion');
+  const hostVersion = document.createElement('p');
+  hostVersion.className = 'community-host-version';
+  hostVersion.textContent =
+    compatibility.minHostVersion === null
+      ? t('communityHostUndeclared')
+      : compatibility.minHostVersion;
+  if (compatibility.state === 'host_too_old') {
+    const warning = document.createElement('p');
+    warning.className = 'community-host-incompatible';
+    warning.append(document.createTextNode(t('communityHostUnsupportedBefore')));
+    const update = document.createElement('button');
+    update.type = 'button';
+    update.className = 'text-button';
+    update.textContent = t('communityHostUpdate');
+    update.addEventListener('click', () => onUpdate?.());
+    warning.append(update, document.createTextNode(t('communityHostUnsupportedAfter')));
+    hostVersion.append(' · ', warning);
+  }
   if (description) {
     const text = document.createElement('p');
     text.className = 'community-detail-description';
@@ -78,12 +101,25 @@ export function renderWidgetDetailsContent(
   } else {
     network.textContent = t('communityNoNetwork');
   }
-  content.append(platformsTitle, platforms, permissionsTitle, permissions, networkTitle, network);
+  content.append(
+    platformsTitle,
+    platforms,
+    permissionsTitle,
+    permissions,
+    networkTitle,
+    network,
+    hostTitle,
+    hostVersion,
+  );
   return content;
 }
 
 /** Display installed metadata without community identity or an installation action. */
-export function createLocalWidgetDetails(root: HTMLElement, locale: () => Language) {
+export function createLocalWidgetDetails(
+  root: HTMLElement,
+  locale: () => Language,
+  onUpdate: () => void,
+) {
   let details: LocalWidgetDetails | undefined;
   let generation = 0;
   const dialog = document.createElement('dialog');
@@ -121,9 +157,14 @@ export function createLocalWidgetDetails(root: HTMLElement, locale: () => Langua
     }
     const content = renderWidgetDetailsContent(
       details.config,
+      details.compatibility,
       details.description,
       [preview],
       locale(),
+      async () => {
+        await closeDialog(dialog);
+        onUpdate();
+      },
     );
     const close = document.createElement('button');
     close.type = 'button';

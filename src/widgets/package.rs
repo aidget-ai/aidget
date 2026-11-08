@@ -47,6 +47,9 @@ impl Default for WidgetSize {
 pub struct WidgetConfig {
     pub id: String,
     pub title: String,
+    /// Minimum Aidget release required by this widget.
+    #[serde(default)]
+    pub min_host_version: Option<String>,
     pub logo: Option<String>,
     pub screenshots: Vec<String>,
     pub platforms: Vec<WidgetPlatform>,
@@ -61,6 +64,7 @@ impl WidgetConfig {
         Self {
             id: id.into(),
             title: title.into(),
+            min_host_version: Some(env!("CARGO_PKG_VERSION").to_string()),
             logo: None,
             screenshots: vec![],
             platforms: vec![WidgetPlatform::current()],
@@ -73,6 +77,9 @@ impl WidgetConfig {
     /// Reject malformed metadata, sizes outside 160×120–8192×8192 and invalid origins.
     pub fn validate(&self) -> Result<()> {
         validate_id(&self.id)?;
+        if let Some(version) = &self.min_host_version {
+            validate_host_version(version)?;
+        }
         if self.title.trim().is_empty()
             || self.platforms.is_empty()
             || !self.size.width.is_finite()
@@ -108,6 +115,75 @@ impl WidgetConfig {
             }
         }
         Ok(())
+    }
+}
+
+/// Parse a concrete host version without allowing npm tags, ranges, or a `v` prefix.
+pub fn validate_host_version(version: &str) -> Result<semver::Version> {
+    if version.starts_with('v') {
+        return Err(Error::InvalidParams(
+            "minHostVersion must be a concrete SemVer version without a v prefix".into(),
+        ));
+    }
+    semver::Version::parse(version)
+        .map_err(|error| Error::InvalidParams(format!("invalid minHostVersion: {error}")))
+}
+
+/// Runtime compatibility of a widget with the current Aidget release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum HostCompatibilityState {
+    Compatible,
+    HostTooOld,
+    Undeclared,
+}
+
+/// Version requirement details shared by installation, runtime, CLI and MCP.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct HostCompatibility {
+    pub state: HostCompatibilityState,
+    pub current_version: String,
+    pub min_host_version: Option<String>,
+    /// True only when a debug build explicitly bypassed an incompatible version.
+    pub allowed_by_override: bool,
+}
+
+impl HostCompatibility {
+    pub fn evaluate(
+        config: &WidgetConfig,
+        current: &str,
+        allow_incompatible: bool,
+    ) -> Result<Self> {
+        let current_version = validate_host_version(current)?;
+        let Some(min) = &config.min_host_version else {
+            return Ok(Self {
+                state: HostCompatibilityState::Undeclared,
+                current_version: current.to_string(),
+                min_host_version: None,
+                allowed_by_override: false,
+            });
+        };
+        let minimum = validate_host_version(min)?;
+        let too_old = current_version.cmp_precedence(&minimum).is_lt();
+        Ok(Self {
+            state: if too_old {
+                HostCompatibilityState::HostTooOld
+            } else {
+                HostCompatibilityState::Compatible
+            },
+            current_version: current.to_string(),
+            min_host_version: Some(min.clone()),
+            allowed_by_override: too_old && allow_incompatible,
+        })
+    }
+
+    pub fn permits_current_install(&self) -> bool {
+        self.state == HostCompatibilityState::Compatible
+    }
+
+    pub fn permits_runtime(&self) -> bool {
+        self.state != HostCompatibilityState::HostTooOld || self.allowed_by_override
     }
 }
 /// npm's author value, retaining its standard string and object forms.

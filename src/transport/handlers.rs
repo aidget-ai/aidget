@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::common::error::{Error, Result};
 use crate::runtime::ui;
@@ -33,6 +33,8 @@ struct CreateWidget {
     #[serde(default)]
     network: Vec<String>,
     #[serde(default)]
+    min_host_version: Option<String>,
+    #[serde(default)]
     agents: Option<String>,
 }
 
@@ -55,6 +57,8 @@ struct UpdateWidget {
     permissions: Option<Vec<WidgetPermission>>,
     #[serde(default)]
     network: Option<Vec<String>>,
+    #[serde(default)]
+    min_host_version: Option<String>,
     #[serde(default)]
     agents: Option<String>,
 }
@@ -104,8 +108,10 @@ pub async fn dispatch(
 ) -> Result<Value> {
     match method {
         "community_list" => {
+            let allow_incompatible = app.state::<ui::UiState>().allow_incompatible_widgets;
             let snapshot = tauri::async_runtime::spawn_blocking(move || {
-                crate::community::service::Community::for_store(store.root())?.list(&store)
+                crate::community::service::Community::for_store(store.root())?
+                    .list_with_override(&store, allow_incompatible)
             })
             .await
             .map_err(|e| Error::Other(e.to_string()))??;
@@ -117,9 +123,10 @@ pub async fn dispatch(
                 .ok_or_else(|| Error::InvalidParams("missing package".into()))?
                 .to_owned();
             let cloned = store.clone();
+            let allow_incompatible = app.state::<ui::UiState>().allow_incompatible_widgets;
             let meta = tauri::async_runtime::spawn_blocking(move || {
                 crate::community::service::Community::for_store(cloned.root())?
-                    .install(&cloned, &spec)
+                    .install_with_override(&cloned, &spec, allow_incompatible)
             })
             .await
             .map_err(|e| Error::Other(e.to_string()))??;
@@ -129,7 +136,7 @@ pub async fn dispatch(
         }
         "ping" => Ok(json!({ "pong": true, "version": env!("CARGO_PKG_VERSION") })),
         "list" => list(&app, &store),
-        "get" => get(&store, params),
+        "get" => get(&app, &store, params),
         "create" => create(app, &store, params),
         "update" => update(app, &store, params),
         "patch" => patch(app, &store, params),
@@ -137,6 +144,7 @@ pub async fn dispatch(
         "move" => r#move(app, &store, params),
         "screenshot" => screenshot(app, &store, params).await,
         "doctor" => doctor(&app, &store),
+        "diagnostics" => diagnostics(&app, &store, params),
         "show_main" => {
             ui::show_main(&app)?;
             Ok(json!({ "shown": true }))
@@ -148,12 +156,57 @@ pub async fn dispatch(
 fn list(app: &AppHandle, store: &Store) -> Result<Value> {
     let mut listing = store.list()?;
     listing.displays = Some(ui::displays(app)?);
+    let state = app.state::<ui::UiState>();
+    let diagnostics = state.diagnostics.lock().unwrap();
+    for widget in &mut listing.widgets {
+        let meta = store.load_meta(&widget.id)?;
+        widget.diagnostics = diagnostics.summary(&widget.id, meta.revision);
+        widget.compatibility = crate::widgets::package::HostCompatibility::evaluate(
+            &meta.config,
+            env!("CARGO_PKG_VERSION"),
+            state.allow_incompatible_widgets,
+        )?;
+    }
     Ok(serde_json::to_value(listing)?)
 }
 
-fn get(store: &Store, params: Value) -> Result<Value> {
+fn diagnostics(app: &AppHandle, store: &Store, params: Value) -> Result<Value> {
+    let widget = params["widget"]
+        .as_str()
+        .ok_or_else(|| Error::InvalidParams("missing widget".into()))?;
+    let after = params["after"].as_u64().unwrap_or(0);
+    let limit = params["limit"].as_u64().unwrap_or(50);
+    let limit = usize::try_from(limit)
+        .map_err(|_| Error::InvalidParams("diagnostic limit is out of range".into()))?;
+    let revision = params["revision"].as_u64();
+    let meta = store.load_meta(widget)?;
+    let state = app.state::<ui::UiState>();
+    let allow = state.allow_incompatible_widgets;
+    let compatibility = crate::widgets::package::HostCompatibility::evaluate(
+        &meta.config,
+        env!("CARGO_PKG_VERSION"),
+        allow,
+    )?;
+    let running = state.windows.lock().unwrap().contains_key(widget);
+    let report = state.diagnostics.lock().unwrap().report(
+        &meta,
+        revision,
+        after,
+        limit,
+        running,
+        compatibility,
+    )?;
+    Ok(serde_json::to_value(report)?)
+}
+
+fn get(app: &AppHandle, store: &Store, params: Value) -> Result<Value> {
     let request: WidgetRef = serde_json::from_value(params)?;
-    let document = store.load_document(&request.widget)?;
+    let mut document = store.load_document(&request.widget)?;
+    document.compatibility = crate::widgets::package::HostCompatibility::evaluate(
+        &document.meta.config,
+        env!("CARGO_PKG_VERSION"),
+        app.state::<ui::UiState>().allow_incompatible_widgets,
+    )?;
     Ok(serde_json::to_value(document)?)
 }
 
@@ -177,6 +230,7 @@ fn create(app: AppHandle, store: &Store, params: Value) -> Result<Value> {
             drag_mode: Some(request.drag_mode),
             permissions: Some(&request.permissions),
             network: Some(&request.network),
+            min_host_version: request.min_host_version.as_deref().map(Some),
             agents: request.agents.as_deref(),
             ..WidgetEdit::default()
         },
@@ -204,6 +258,7 @@ fn update(app: AppHandle, store: &Store, params: Value) -> Result<Value> {
             css: request.css.as_deref(),
             title: request.title.as_deref(),
             network: request.network.as_deref(),
+            min_host_version: request.min_host_version.as_deref().map(Some),
             drag_mode: request.drag_mode,
             permissions: request.permissions.as_deref(),
             agents: request.agents.as_deref(),
@@ -326,5 +381,11 @@ fn doctor(app: &AppHandle, store: &Store) -> Result<Value> {
             HTML_FILE.to_string(),
             CSS_FILE.to_string(),
         ],
+        diagnostics: app
+            .state::<ui::UiState>()
+            .diagnostics
+            .lock()
+            .unwrap()
+            .summaries(),
     })?)
 }

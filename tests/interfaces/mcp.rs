@@ -171,6 +171,50 @@ fn widget_conflict_keeps_the_plain_retry_hint() {
     assert_eq!(hint, "retry with baseRevision from current.revision");
 }
 
+#[test]
+fn host_version_errors_expose_structured_agent_fields() {
+    let error = mcp_error(Error::HostVersionIncompatible {
+        widget: "note".into(),
+        current: "0.1.11".into(),
+        minimum: "0.1.12".into(),
+    });
+    let data = error.data.as_ref().unwrap();
+    assert_eq!(data["code"], "host_version_incompatible");
+    assert_eq!(data["widget"], "note");
+    assert_eq!(data["currentVersion"], "0.1.11");
+    assert_eq!(data["minHostVersion"], "0.1.12");
+    assert!(data["detail"]
+        .as_str()
+        .unwrap()
+        .contains("requires Aidget 0.1.12"));
+}
+
+#[tokio::test]
+async fn diagnostics_do_not_start_a_missing_gui() {
+    use aidget::interfaces::mcp::{AidgetMcp, DiagnosticsArgs};
+    use aidget::widgets::store::Store;
+    use rmcp::handler::server::wrapper::Parameters;
+
+    let directory = tempfile::tempdir().unwrap();
+    let store = Store::new(directory.path());
+    store.ensure_layout().unwrap();
+    let mcp = AidgetMcp::new(store).unwrap();
+    let error = match mcp
+        .diagnostics(Parameters(DiagnosticsArgs {
+            widget: "note".into(),
+            revision: None,
+            after: None,
+            limit: None,
+        }))
+        .await
+    {
+        Ok(_) => panic!("diagnostics unexpectedly started a GUI"),
+        Err(error) => error,
+    };
+    assert_eq!(error.data.as_ref().unwrap()["code"], "ui_not_running");
+    assert!(!directory.path().join("run/ui.sock").exists());
+}
+
 /// A real platform IPC peer, without a Tauri app or a process-wide environment.
 /// It waits for a sibling MCP-runtime task before answering list, so an inline
 /// blocking bridge call fails within two seconds rather than hanging the test.

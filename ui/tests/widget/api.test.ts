@@ -26,6 +26,7 @@ interface Harness {
   errors: unknown[];
   send: (data: unknown, source?: unknown) => void;
   emitWindow: (name: string, event?: unknown) => void;
+  consoleError: (...values: unknown[]) => void;
 }
 
 /** Run the injected script the way the host does: before the page's scripts. */
@@ -76,6 +77,8 @@ function install(
         listener(event);
       }
     },
+    consoleError: (...values) =>
+      (sandbox.console as { error: (...args: unknown[]) => void }).error(...values),
   };
 }
 
@@ -194,6 +197,142 @@ describe('permissions', () => {
 
     harness.send({ source: 'aidget-host', type: 'permissions' });
     expect(harness.api?.permissions).toEqual([]);
+  });
+});
+
+describe('runtime diagnostics', () => {
+  it('queues startup failures until the shell connects, then forwards bounded events', () => {
+    const harness = install();
+    harness.emitWindow('error', {
+      message: 'startup failed',
+      filename: 'index.html?v=secret#frame',
+      lineno: 12,
+      colno: 4,
+    });
+    expect(harness.posted.filter((message) => message.type === 'diagnostic')).toHaveLength(0);
+    harness.send({
+      source: 'aidget-host',
+      type: 'diagnostics-enabled',
+      revision: 2,
+      token: 'token',
+    });
+    expect(harness.posted[0]).toMatchObject({
+      source: 'aidget-widget',
+      type: 'diagnostic-ready',
+      revision: 2,
+      token: 'token',
+    });
+    const diagnostic = harness.posted.find((message) => message.type === 'diagnostic');
+    expect(diagnostic).toMatchObject({
+      source: 'aidget-widget',
+      revision: 2,
+      token: 'token',
+      event: {
+        source: 'error',
+        revision: 2,
+        message: 'startup failed',
+        filename: 'index.html',
+        line: 12,
+        column: 4,
+      },
+    });
+  });
+
+  it('captures console errors while preserving the original console call', async () => {
+    const harness = install();
+    harness.send({
+      source: 'aidget-host',
+      type: 'diagnostics-enabled',
+      revision: 2,
+      token: 'token',
+    });
+    harness.consoleError('network failed');
+    expect(harness.errors).toEqual(['network failed']);
+    await vi.waitFor(() =>
+      expect(harness.posted).toContainEqual(
+        expect.objectContaining({
+          type: 'diagnostic',
+          event: expect.objectContaining({
+            source: 'console_error',
+            message: 'network failed',
+          }),
+        }),
+      ),
+    );
+  });
+
+  it('records failed host API requests', async () => {
+    const harness = install();
+    harness.send({
+      source: 'aidget-host',
+      type: 'diagnostics-enabled',
+      revision: 2,
+      token: 'token',
+    });
+    const pending = harness.api!.openUrl('https://example.com');
+    const request = harness.posted.find((message) => message.id);
+    harness.send({
+      source: 'aidget-host',
+      id: request!.id,
+      ok: false,
+      error: { code: 'permission_denied', message: 'script permission required' },
+    });
+    await expect(pending).rejects.toThrow('script permission required');
+    await vi.waitFor(() =>
+      expect(harness.posted).toContainEqual(
+        expect.objectContaining({
+          type: 'diagnostic',
+          event: expect.objectContaining({
+            source: 'host_api',
+            message: 'script permission required',
+            filename: 'window.aidget.open_url',
+          }),
+        }),
+      ),
+    );
+  });
+
+  it('paces startup batches instead of silently letting the shell drop them', async () => {
+    const harness = install();
+    for (let index = 0; index < 25; index += 1) {
+      harness.consoleError(`startup ${index}`);
+    }
+    harness.send({
+      source: 'aidget-host',
+      type: 'diagnostics-enabled',
+      revision: 2,
+      token: 'token',
+    });
+    expect(harness.posted.filter((message) => message.type === 'diagnostic')).toHaveLength(20);
+    await vi.waitFor(
+      () =>
+        expect(harness.posted.filter((message) => message.type === 'diagnostic')).toHaveLength(25),
+      { timeout: 2_000 },
+    );
+    expect(harness.posted.some((message) => message.type === 'diagnostic-dropped')).toBe(false);
+  });
+
+  it('reports records dropped when the pre-connect queue is full', async () => {
+    const harness = install();
+    for (let index = 0; index < 101; index += 1) {
+      harness.consoleError(`startup ${index}`);
+    }
+    harness.send({
+      source: 'aidget-host',
+      type: 'diagnostics-enabled',
+      revision: 2,
+      token: 'token',
+    });
+    await vi.waitFor(
+      () =>
+        expect(harness.posted).toContainEqual(
+          expect.objectContaining({
+            type: 'diagnostic-dropped',
+            dropped: 1,
+          }),
+        ),
+      { timeout: 2_000 },
+    );
   });
 });
 

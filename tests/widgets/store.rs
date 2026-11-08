@@ -496,6 +496,49 @@ fn create_assigns_frame_and_revision() {
 }
 
 #[test]
+fn minimum_host_version_is_created_updated_and_preserved_by_patch() {
+    let (_dir, store) = store();
+    let created = store
+        .create(
+            "note",
+            "Note",
+            WidgetEdit {
+                min_host_version: Some(Some("2.0.0")),
+                html: Some("<p data-aidget-region=\"value\">one</p>"),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(created.min_host_version.as_deref(), Some("2.0.0"));
+    let patched = store
+        .patch_region("note", created.revision, "value", "two")
+        .unwrap();
+    assert_eq!(patched.min_host_version.as_deref(), Some("2.0.0"));
+    let updated = store
+        .update(
+            "note",
+            patched.revision,
+            WidgetEdit {
+                min_host_version: Some(Some("2.1.0")),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(updated.min_host_version.as_deref(), Some("2.1.0"));
+    let preserved = store
+        .update(
+            "note",
+            updated.revision,
+            WidgetEdit {
+                title: Some("Renamed"),
+                ..WidgetEdit::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(preserved.min_host_version.as_deref(), Some("2.1.0"));
+}
+
+#[test]
 fn initial_placement_does_not_overwrite_a_concurrent_user_move() {
     let (_dir, store) = store();
     store.create("note", "Note", WidgetEdit::default()).unwrap();

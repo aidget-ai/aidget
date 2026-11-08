@@ -4,6 +4,9 @@ import {
   errorMessage,
   failureOf,
   isServed,
+  parseDiagnostic,
+  parseDiagnosticDropped,
+  parseDiagnosticReady,
   parsePointerEvent,
   parsePointerSubscription,
   parseReady,
@@ -35,6 +38,108 @@ describe('parseReady', () => {
     expect(parseReady({ ...ready, type: 'permissions' }, frameWindow, frameWindow)).toBeNull();
     expect(parseReady({ ...ready, revision: 0 }, frameWindow, frameWindow)).toBeNull();
     expect(parseReady({ ...ready, revision: '7' }, frameWindow, frameWindow)).toBeNull();
+  });
+});
+
+describe('parseDiagnostic', () => {
+  const diagnostic = {
+    source: WIDGET_SOURCE,
+    type: 'diagnostic',
+    revision: 7,
+    token: 'token',
+    event: {
+      source: 'error',
+      revision: 7,
+      message: 'boom',
+      stack: 'at app.js:1:2',
+      filename: 'app.js',
+      line: 1,
+      column: 2,
+    },
+  };
+
+  it('accepts a bounded diagnostic from the current widget window', () => {
+    expect(parseDiagnostic(diagnostic, frameWindow, frameWindow)).toEqual({
+      revision: 7,
+      token: 'token',
+      event: diagnostic.event,
+    });
+  });
+
+  it('rejects forged, malformed, oversized, and stale diagnostics', () => {
+    expect(parseDiagnostic(diagnostic, otherWindow, frameWindow)).toBeNull();
+    expect(
+      parseDiagnostic(
+        { ...diagnostic, event: { ...diagnostic.event, revision: 6 } },
+        frameWindow,
+        frameWindow,
+      ),
+    ).toBeNull();
+    expect(
+      parseDiagnostic(
+        { ...diagnostic, event: { ...diagnostic.event, message: 'x'.repeat(8193) } },
+        frameWindow,
+        frameWindow,
+      ),
+    ).toBeNull();
+    expect(
+      parseDiagnostic(
+        { ...diagnostic, event: { ...diagnostic.event, source: 'invented' } },
+        frameWindow,
+        frameWindow,
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('parseDiagnosticReady', () => {
+  const ready = {
+    source: WIDGET_SOURCE,
+    type: 'diagnostic-ready',
+    revision: 7,
+    token: 'token',
+  };
+
+  it('accepts the injected collector handshake from the current iframe', () => {
+    expect(parseDiagnosticReady(ready, frameWindow, frameWindow)).toEqual({
+      revision: 7,
+      token: 'token',
+    });
+  });
+
+  it('rejects forged and incomplete handshakes', () => {
+    expect(parseDiagnosticReady(ready, otherWindow, frameWindow)).toBeNull();
+    expect(
+      parseDiagnosticReady({ ...ready, source: HOST_SOURCE }, frameWindow, frameWindow),
+    ).toBeNull();
+    expect(parseDiagnosticReady({ ...ready, revision: 0 }, frameWindow, frameWindow)).toBeNull();
+    expect(parseDiagnosticReady({ ...ready, token: '' }, frameWindow, frameWindow)).toBeNull();
+  });
+});
+
+describe('parseDiagnosticDropped', () => {
+  const dropped = {
+    source: WIDGET_SOURCE,
+    type: 'diagnostic-dropped',
+    revision: 7,
+    token: 'token',
+    dropped: 12,
+  };
+
+  it('accepts an aggregated frontend drop count from the current iframe', () => {
+    expect(parseDiagnosticDropped(dropped, frameWindow, frameWindow)).toEqual({
+      revision: 7,
+      token: 'token',
+      dropped: 12,
+    });
+  });
+
+  it('rejects forged, zero, and oversized drop counts', () => {
+    expect(parseDiagnosticDropped(dropped, otherWindow, frameWindow)).toBeNull();
+    expect(parseDiagnosticDropped({ ...dropped, dropped: 0 }, frameWindow, frameWindow)).toBeNull();
+    expect(
+      parseDiagnosticDropped({ ...dropped, dropped: 1_000_001 }, frameWindow, frameWindow),
+    ).toBeNull();
   });
 });
 

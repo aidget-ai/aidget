@@ -5,6 +5,7 @@
 
 mod capture;
 mod content;
+mod diagnostics;
 mod display_labels;
 mod drag;
 mod geometry;
@@ -19,11 +20,12 @@ mod widget_windows;
 
 use tauri::{AppHandle, Manager};
 
-use crate::common::error::Result;
+use crate::common::error::{Error, Result};
 use crate::widgets::store::Store;
 
 pub use capture::{mark_loaded, mark_ready, screenshot, screenshot_mode, ScreenshotMode};
 pub use content::{content_token, html_paints_own_surface, html_widget_surface, WidgetState};
+pub use diagnostics::{DiagnosticInput, Diagnostics};
 pub use display_labels::{display_name, distinct_names};
 #[cfg(target_os = "macos")]
 pub use drag::set_dragging_cursor;
@@ -47,13 +49,92 @@ pub use state::{
     record_revision, require_main_window_label, retain_widget_revisions, widget_id, DragGesture,
     UiState, MAIN_LABEL,
 };
+
+/// Record one diagnostic from a validated widget shell.
+pub fn record_diagnostic(
+    app: &AppHandle,
+    window: &tauri::WebviewWindow,
+    event: DiagnosticInput,
+) -> Result<()> {
+    let id = widget_id(window)?;
+    let root = app.state::<UiState>().root.lock().unwrap().clone();
+    let meta = Store::new(root).load_meta(&id)?;
+    if event.revision != meta.revision {
+        return Err(Error::InvalidParams(
+            "diagnostic revision does not match the current widget".into(),
+        ));
+    }
+    let allow_incompatible = app.state::<UiState>().allow_incompatible_widgets;
+    if !crate::widgets::package::HostCompatibility::evaluate(
+        &meta.config,
+        env!("CARGO_PKG_VERSION"),
+        allow_incompatible,
+    )?
+    .permits_runtime()
+    {
+        return Err(Error::PermissionDenied(
+            "widget is not running under the current host version".into(),
+        ));
+    }
+    app.state::<UiState>()
+        .diagnostics
+        .lock()
+        .unwrap()
+        .push(&id, event);
+    Ok(())
+}
+
+/// Mark the widget document collector as connected for this revision.
+pub fn mark_diagnostics_ready(
+    app: &AppHandle,
+    window: &tauri::WebviewWindow,
+    revision: u64,
+) -> Result<()> {
+    let id = widget_id(window)?;
+    let root = app.state::<UiState>().root.lock().unwrap().clone();
+    let meta = Store::new(root).load_meta(&id)?;
+    if revision != meta.revision {
+        return Err(Error::InvalidParams(
+            "diagnostic revision does not match the current widget".into(),
+        ));
+    }
+    app.state::<UiState>()
+        .diagnostics
+        .lock()
+        .unwrap()
+        .mark_ready(&id, revision);
+    Ok(())
+}
+
+/// Account for diagnostics dropped by the widget collector or shell limiter.
+pub fn record_diagnostics_dropped(
+    app: &AppHandle,
+    window: &tauri::WebviewWindow,
+    dropped: u64,
+) -> Result<()> {
+    if dropped == 0 || dropped > 1_000_000 {
+        return Err(Error::InvalidParams(
+            "diagnostic dropped count must be between 1 and 1000000".into(),
+        ));
+    }
+    let id = widget_id(window)?;
+    app.state::<UiState>()
+        .diagnostics
+        .lock()
+        .unwrap()
+        .add_dropped(&id, dropped);
+    Ok(())
+}
 pub use watcher::is_relevant;
 pub use widget_windows::{apply_board, start_initial_widgets, sync_widgets, widget_payload};
 
 /// Initialize UI state and start the watchers that keep windows synchronized
 /// with the widget store and displays.
-pub fn start(app: &AppHandle, store: Store) -> Result<()> {
-    let state = UiState::default();
+pub fn start(app: &AppHandle, store: Store, allow_incompatible_widgets: bool) -> Result<()> {
+    let state = UiState {
+        allow_incompatible_widgets: cfg!(debug_assertions) && allow_incompatible_widgets,
+        ..UiState::default()
+    };
     *state.root.lock().unwrap() = store.root().to_path_buf();
     app.manage(state);
     crate::runtime::pointer::start(app);

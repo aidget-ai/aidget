@@ -36,6 +36,18 @@ fn pointer_tracking_is_a_widget_command() {
 }
 
 #[test]
+fn diagnostic_collection_is_a_widget_command() {
+    for command in [
+        "widget_diagnostic",
+        "widget_diagnostic_dropped",
+        "widget_diagnostic_ready",
+    ] {
+        assert!(WIDGET_COMMANDS.contains(&command));
+        assert!(!MAIN_COMMANDS.contains(&command));
+    }
+}
+
+#[test]
 fn ipc_rejects_other_window_roles_before_host_reads_or_writes() {
     let effects = Arc::new(Mutex::new(Vec::new()));
     let seen = effects.clone();

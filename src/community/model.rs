@@ -1,5 +1,5 @@
 //! Wire formats shared by the repository, native installer and community panel.
-use crate::widgets::package::{PackageManifest, WidgetConfig};
+use crate::widgets::package::{HostCompatibility, PackageManifest, WidgetConfig};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -37,6 +37,7 @@ pub struct CommunityEntry {
     pub installed: bool,
     pub id_conflict: bool,
     pub supported: bool,
+    pub host_compatibility: HostCompatibility,
 }
 /// Catalogue metadata, media and installation share one reviewed main revision.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

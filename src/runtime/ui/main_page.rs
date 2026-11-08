@@ -37,17 +37,28 @@ pub struct WidgetSummary {
 #[serde(rename_all = "camelCase")]
 pub struct LocalWidgetDetails {
     pub config: crate::widgets::package::WidgetConfig,
+    pub compatibility: crate::widgets::package::HostCompatibility,
     pub description: Option<String>,
     pub preview: Option<String>,
 }
 
 /// Read installed widget details, including disabled widgets, without opening a WebView.
-pub fn local_widget_details(store: &Store, id: &str) -> Result<LocalWidgetDetails> {
+pub fn local_widget_details(
+    store: &Store,
+    id: &str,
+    allow_incompatible: bool,
+) -> Result<LocalWidgetDetails> {
     let config = store.load_meta(id)?.config;
+    let compatibility = crate::widgets::package::HostCompatibility::evaluate(
+        &config,
+        env!("CARGO_PKG_VERSION"),
+        allow_incompatible,
+    )?;
     let description = store.load_package(id)?.map(|package| package.description);
     let preview = main_window_state::load_preview(store.root(), id)?.map(preview_data_url);
     Ok(LocalWidgetDetails {
         config,
+        compatibility,
         description,
         preview,
     })
@@ -273,7 +284,12 @@ pub async fn main_widget_preview(app: &AppHandle, id: &str) -> Result<Option<Str
     let store = Store::new(state.root.lock().unwrap().clone());
     let meta = store.load_meta(id)?;
     let board = store.load_board()?;
-    let png = if board.widgets.contains_key(id) && meta.enabled {
+    let compatibility = crate::widgets::package::HostCompatibility::evaluate(
+        &meta.config,
+        env!("CARGO_PKG_VERSION"),
+        app.state::<UiState>().allow_incompatible_widgets,
+    )?;
+    let png = if board.widgets.contains_key(id) && meta.enabled && compatibility.permits_runtime() {
         let mode = screenshot_mode(true, MAIN_PREVIEW_SCALE);
         let png = capture_widget(app, id, mode).await?;
         main_window_state::save_preview(store.root(), id, &png)?;

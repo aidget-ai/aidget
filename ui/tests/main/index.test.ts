@@ -773,6 +773,7 @@ it('opens local details from the card, preview or title without intercepting car
     config: {
       id: 'clock',
       title: 'Clock',
+      minHostVersion: '0.1.1',
       logo: null,
       screenshots: [],
       platforms: ['macos'],
@@ -780,6 +781,12 @@ it('opens local details from the card, preview or title without intercepting car
       dragMode: 'all',
       permissions: [],
       network: [],
+    },
+    compatibility: {
+      state: 'compatible',
+      currentVersion: '0.1.12',
+      minHostVersion: '0.1.1',
+      allowedByOverride: false,
     },
     description: null,
     preview: null,
@@ -817,6 +824,56 @@ it('opens local details from the card, preview or title without intercepting car
   card.querySelector<HTMLButtonElement>('.widget-title')!.click();
   await vi.waitFor(() => expect(dialog.open).toBe(true));
   dialog.querySelector<HTMLButtonElement>('.community-dialog-close')!.click();
+});
+
+it('navigates from an incompatible widget detail to the About update action', async () => {
+  const initial = state('local-widgets');
+  initial.widgets = [
+    {
+      id: 'clock',
+      title: 'Clock',
+      packageName: null,
+      revision: 1,
+      token: 'token',
+      width: 360,
+      height: 220,
+      enabled: false,
+      createdAt: 1,
+    },
+  ];
+  await loadMain(initial);
+  const details = {
+    config: {
+      id: 'clock',
+      title: 'Clock',
+      minHostVersion: '99.0.0',
+      logo: null,
+      screenshots: [],
+      platforms: ['macos'],
+      size: { width: 360, height: 220 },
+      dragMode: 'all',
+      permissions: [],
+      network: [],
+    },
+    compatibility: {
+      state: 'host_too_old',
+      currentVersion: '0.1.12',
+      minHostVersion: '99.0.0',
+      allowedByOverride: false,
+    },
+    description: null,
+    preview: null,
+  };
+  mocks.invoke.mockImplementation((command: string) =>
+    Promise.resolve(command === 'main_widget_details' ? details : null),
+  );
+  document.querySelector<HTMLElement>('[data-widget="clock"]')!.click();
+  const dialog = document.querySelector<HTMLDialogElement>('.local-widget-dialog')!;
+  await vi.waitFor(() => expect(dialog.open).toBe(true));
+  dialog.querySelector<HTMLButtonElement>('.community-host-incompatible button')!.click();
+  await vi.waitFor(() => expect(pageButton('about').getAttribute('aria-current')).toBe('page'));
+  expect(document.activeElement).toBe(document.querySelector<HTMLElement>('[data-update-action]'));
+  expect(mocks.invoke.mock.calls.filter(([command]) => command === 'update_check')).toHaveLength(0);
 });
 
 describe('automatic download preference ownership', () => {

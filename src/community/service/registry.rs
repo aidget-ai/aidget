@@ -181,6 +181,14 @@ impl Community {
 
     /// Read the last successful catalogue without HTTP, recomputing local availability.
     pub fn cached(&self, store: &Store) -> Result<Option<CachedCommunitySnapshot>> {
+        self.cached_with_override(store, false)
+    }
+
+    pub fn cached_with_override(
+        &self,
+        store: &Store,
+        allow_incompatible: bool,
+    ) -> Result<Option<CachedCommunitySnapshot>> {
         let latest;
         let registry;
         {
@@ -203,7 +211,7 @@ impl Community {
             validate(&registry)?;
         }
         Ok(Some(CachedCommunitySnapshot {
-            snapshot: Self::snapshot(store, latest.commit, &registry)?,
+            snapshot: Self::snapshot(store, latest.commit, &registry, allow_incompatible)?,
             checked_at: latest.checked_at,
         }))
     }

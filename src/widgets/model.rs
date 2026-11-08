@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::common::error::{Error, Result};
+use crate::widgets::package::HostCompatibility;
 use schemars::JsonSchema;
+use ts_rs::TS;
 
 pub const MAX_WIDGETS: usize = 50;
 pub const MAX_PAYLOAD: usize = 256 * 1024;
@@ -212,6 +214,8 @@ pub struct WidgetSummary {
     pub drag_mode: WidgetDragMode,
     pub permissions: Vec<WidgetPermission>,
     pub network: Vec<String>,
+    pub compatibility: HostCompatibility,
+    pub diagnostics: DiagnosticSummary,
     pub frame: Option<WidgetFrame>,
 }
 
@@ -259,6 +263,7 @@ pub struct WidgetAck {
     pub drag_mode: WidgetDragMode,
     pub permissions: Vec<WidgetPermission>,
     pub network: Vec<String>,
+    pub compatibility: HostCompatibility,
     pub updated_at: String,
     /// Frame placed by `create`/`move`. Content and enabled-state edits omit it
     /// so concurrent user drags are not attributed to those edits.
@@ -299,6 +304,71 @@ pub struct DoctorReport {
     pub widgets: usize,
     pub displays: Vec<DisplayInfo>,
     pub files: Vec<String>,
+    #[serde(default)]
+    pub diagnostics: Vec<WidgetDiagnosticSummary>,
+}
+
+/// Compact session diagnostic state attached to widget inventories and doctor.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticSummary {
+    pub count: usize,
+    pub dropped: u64,
+    pub collector_ready: bool,
+}
+
+/// Per-widget summary returned by doctor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetDiagnosticSummary {
+    pub widget: String,
+    pub count: usize,
+    pub dropped: u64,
+    pub collector_ready: bool,
+    pub latest_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum DiagnosticSource {
+    Error,
+    UnhandledRejection,
+    ConsoleError,
+    ResourceError,
+    CspViolation,
+    HostApi,
+}
+
+/// One bounded runtime diagnostic. All string fields are untrusted content.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetDiagnostic {
+    pub sequence: u64,
+    pub received_at: String,
+    pub widget: String,
+    pub revision: u64,
+    pub source: DiagnosticSource,
+    pub message: String,
+    pub stack: Option<String>,
+    pub filename: Option<String>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticsReport {
+    pub session_id: String,
+    pub widget: String,
+    pub revision: Option<u64>,
+    pub after: u64,
+    pub next_after: u64,
+    pub dropped: u64,
+    pub collector_ready: bool,
+    pub enabled: bool,
+    pub running: bool,
+    pub compatibility: HostCompatibility,
+    pub diagnostics: Vec<WidgetDiagnostic>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -306,6 +376,7 @@ pub struct DoctorReport {
 pub struct WidgetDocument {
     pub meta: WidgetMeta,
     pub package: Option<super::package::PackageManifest>,
+    pub compatibility: HostCompatibility,
     pub html: String,
     pub css: String,
     pub agents: Option<String>,

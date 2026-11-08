@@ -17,6 +17,7 @@ export function communityEntry(index = 0): CommunityEntry {
       config: {
         id: `widget-${index}`,
         title: `Widget ${index}`,
+        minHostVersion: '0.1.1',
         logo: null,
         screenshots: ['screen.png'],
         platforms: ['macos', 'windows', 'linux'],
@@ -30,5 +31,11 @@ export function communityEntry(index = 0): CommunityEntry {
     installed: false,
     idConflict: false,
     supported: true,
+    hostCompatibility: {
+      state: 'compatible',
+      currentVersion: '0.1.12',
+      minHostVersion: '0.1.1',
+      allowedByOverride: false,
+    },
   };
 }

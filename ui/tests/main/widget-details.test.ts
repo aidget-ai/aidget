@@ -13,6 +13,7 @@ const details: LocalWidgetDetails = {
   config: {
     id: 'clock',
     title: 'Clock',
+    minHostVersion: '0.1.1',
     logo: null,
     screenshots: [],
     platforms: ['macos', 'windows', 'linux'],
@@ -20,6 +21,12 @@ const details: LocalWidgetDetails = {
     dragMode: 'all',
     permissions: [],
     network: [],
+  },
+  compatibility: {
+    state: 'compatible',
+    currentVersion: '0.1.12',
+    minHostVersion: '0.1.1',
+    allowedByOverride: false,
   },
   description: 'A local clock',
   preview: 'data:image/png;base64,cG5n',
@@ -41,7 +48,13 @@ beforeEach(() => {
 });
 
 it('renders empty permissions as plain text, and declared permissions and origins as lists', () => {
-  const empty = renderWidgetDetailsContent(details.config, null, [], 'zh-CN');
+  const empty = renderWidgetDetailsContent(
+    details.config,
+    details.compatibility,
+    null,
+    [],
+    'zh-CN',
+  );
   expect(empty.querySelector('.community-permissions-empty')?.tagName).toBe('P');
   expect(empty.querySelector('.community-permissions-empty')?.textContent).toBe('无特殊权限');
   expect(empty.querySelector('.community-permissions')).toBeNull();
@@ -49,7 +62,13 @@ it('renders empty permissions as plain text, and declared permissions and origin
   const configured = structuredClone(details.config);
   configured.permissions = ['script', 'storage'];
   configured.network = ['https://api.example.com'];
-  const content = renderWidgetDetailsContent(configured, details.description, [], 'en-US');
+  const content = renderWidgetDetailsContent(
+    configured,
+    details.compatibility,
+    details.description,
+    [],
+    'en-US',
+  );
   expect(
     [...content.querySelectorAll('.community-permissions li')].map((item) => item.textContent),
   ).toEqual(['JavaScript', 'Local storage']);
@@ -57,13 +76,45 @@ it('renders empty permissions as plain text, and declared permissions and origin
   expect(content.querySelector('.community-network li')?.textContent).toBe(
     'https://api.example.com',
   );
+  const networkTitle = [...content.querySelectorAll('h3')].find(
+    (heading) => heading.textContent === 'Network access',
+  )!;
+  const hostTitle = [...content.querySelectorAll('h3')].find(
+    (heading) => heading.textContent === 'Minimum Aidget version',
+  )!;
+  expect(networkTitle.compareDocumentPosition(hostTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+});
+
+it('shows the declared host version and sends incompatible widgets to update navigation', () => {
+  const onUpdate = vi.fn();
+  const compatibility = {
+    ...details.compatibility,
+    state: 'host_too_old' as const,
+    minHostVersion: '0.2.0',
+  };
+  const content = renderWidgetDetailsContent(
+    details.config,
+    compatibility,
+    null,
+    [],
+    'zh-CN',
+    onUpdate,
+  );
+  expect(content.querySelector('.community-host-version')?.textContent).toContain('0.2.0');
+  expect(content.querySelector('.community-host-incompatible')?.textContent).toBe(
+    '不支持当前 aidget 版本，请先更新。',
+  );
+  content.querySelector<HTMLButtonElement>('.community-host-incompatible button')!.click();
+  expect(onUpdate).toHaveBeenCalledOnce();
 });
 
 it('shows the local preview without community identity or header actions, translates and closes', async () => {
   let locale: 'en-US' | 'zh-CN' = 'en-US';
   const root = document.createElement('section');
   document.body.append(root);
-  const controller = createLocalWidgetDetails(root, () => locale);
+  const controller = createLocalWidgetDetails(root, () => locale, vi.fn());
   await controller.show('clock');
   const dialog = root.querySelector('dialog')!;
   expect(dialog.open).toBe(true);
@@ -81,6 +132,26 @@ it('shows the local preview without community identity or header actions, transl
   expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('main_widget_details', { id: 'clock' });
 });
 
+it('closes local details before navigating to the update page', async () => {
+  const incompatible = structuredClone(details);
+  incompatible.compatibility = {
+    state: 'host_too_old',
+    currentVersion: '0.1.11',
+    minHostVersion: '0.1.12',
+    allowedByOverride: false,
+  };
+  mocks.invoke.mockResolvedValueOnce(incompatible);
+  const onUpdate = vi.fn();
+  const root = document.createElement('section');
+  document.body.append(root);
+  const controller = createLocalWidgetDetails(root, () => 'zh-CN', onUpdate);
+  await controller.show('clock');
+  const dialog = root.querySelector('dialog')!;
+  dialog.querySelector<HTMLButtonElement>('.community-host-incompatible button')!.click();
+  await vi.waitFor(() => expect(dialog.open).toBe(false));
+  expect(onUpdate).toHaveBeenCalledOnce();
+});
+
 it('does not let an older or canceled read open a dialog, and exposes read failures', async () => {
   const pending = new Map<string, (value: LocalWidgetDetails) => void>();
   mocks.invoke.mockImplementation(
@@ -89,7 +160,7 @@ it('does not let an older or canceled read open a dialog, and exposes read failu
   );
   const root = document.createElement('section');
   document.body.append(root);
-  const controller = createLocalWidgetDetails(root, () => 'en-US');
+  const controller = createLocalWidgetDetails(root, () => 'en-US', vi.fn());
   const older = controller.show('old');
   const newer = controller.show('new');
   const latest = structuredClone(details);

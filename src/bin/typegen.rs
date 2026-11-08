@@ -6,7 +6,10 @@ use aidget::{
     settings::Language,
     update::{ReleaseNote, UpdateNotes, UpdateSnapshot, UpdateState},
     widgets::{
-        model::{DisplayInfo, WidgetDragMode, WidgetPermission},
+        model::{
+            DiagnosticSource, DiagnosticSummary, DiagnosticsReport, DisplayInfo, WidgetDiagnostic,
+            WidgetDiagnosticSummary, WidgetDragMode, WidgetPermission,
+        },
         package::*,
     },
 };
@@ -41,6 +44,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         WidgetPlatform::decl(&cfg),
         WidgetSize::decl(&cfg),
         WidgetConfig::decl(&cfg),
+        aidget::widgets::package::HostCompatibility::decl(&cfg),
+        aidget::widgets::package::HostCompatibilityState::decl(&cfg),
         PackageAuthor::decl(&cfg),
         PackageRepository::decl(&cfg),
         PackageManifest::decl(&cfg),
@@ -52,6 +57,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         CachedCommunitySnapshot::decl(&cfg),
         DownloadCount::decl(&cfg),
         LocalWidgetDetails::decl(&cfg),
+        DiagnosticSource::decl(&cfg),
+        WidgetDiagnostic::decl(&cfg),
+        DiagnosticsReport::decl(&cfg),
+        DiagnosticSummary::decl(&cfg),
+        WidgetDiagnosticSummary::decl(&cfg),
         DisplayInfo::decl(&cfg),
     ];
     let ts = format!(

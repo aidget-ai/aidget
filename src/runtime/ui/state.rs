@@ -24,6 +24,7 @@ pub struct DragGesture {
 /// Runtime state shared by every Tauri window and UI command.
 #[derive(Default)]
 pub struct UiState {
+    pub allow_incompatible_widgets: bool,
     pub windows: Mutex<HashMap<String, ()>>,
     pub signatures: Mutex<HashMap<String, String>>,
     /// Last revision whose iframe reported `load`, so a screenshot can wait
@@ -40,6 +41,7 @@ pub struct UiState {
     pub preferences: Mutex<()>,
     pub storage_lock: Mutex<()>,
     pub startup: MainStartup,
+    pub(crate) diagnostics: Mutex<super::diagnostics::Diagnostics>,
 }
 
 pub(super) fn label(id: &str) -> String {

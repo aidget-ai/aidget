@@ -1,5 +1,6 @@
 mod capture;
 mod content;
+mod diagnostics;
 mod display_labels;
 mod drag;
 mod geometry;

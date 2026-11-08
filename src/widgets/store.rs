@@ -36,6 +36,8 @@ pub struct WidgetEdit<'a> {
     pub html: Option<&'a str>,
     pub css: Option<&'a str>,
     pub title: Option<&'a str>,
+    /// `Some(None)` clears the declaration; `None` preserves it.
+    pub min_host_version: Option<Option<&'a str>>,
     pub network: Option<&'a [String]>,
     /// Omitted updates preserve the current window drag policy.
     pub drag_mode: Option<WidgetDragMode>,
@@ -240,9 +242,15 @@ impl Store {
         let css = read_optional(&dir.join(CSS_FILE))?.unwrap_or_default();
         let agents = read_optional(&dir.join(AGENTS_FILE))?;
         let board = self.load_board()?;
+        let compatibility = crate::widgets::package::HostCompatibility::evaluate(
+            &meta.config,
+            env!("CARGO_PKG_VERSION"),
+            false,
+        )?;
         Ok(WidgetDocument {
             package: self.load_package(id)?,
             meta,
+            compatibility,
             html,
             css,
             agents,
@@ -258,12 +266,19 @@ impl Store {
             match self.load_meta(&id) {
                 Ok(meta) => {
                     let frame = board.widgets.get(&id).cloned();
+                    let compatibility = crate::widgets::package::HostCompatibility::evaluate(
+                        &meta.config,
+                        env!("CARGO_PKG_VERSION"),
+                        false,
+                    )?;
                     widgets.push(WidgetSummary {
                         id: meta.id.clone(),
                         title: meta.title.clone(),
                         revision: meta.revision,
                         enabled: meta.enabled,
                         network: meta.network.clone(),
+                        compatibility,
+                        diagnostics: crate::widgets::model::DiagnosticSummary::default(),
                         drag_mode: meta.drag_mode,
                         permissions: meta.permissions.clone(),
                         frame,
@@ -485,6 +500,11 @@ impl Store {
             network: meta.network.clone(),
             drag_mode: meta.drag_mode,
             permissions: meta.permissions.clone(),
+            compatibility: crate::widgets::package::HostCompatibility::evaluate(
+                &meta.config,
+                env!("CARGO_PKG_VERSION"),
+                false,
+            )?,
             updated_at: meta.updated_at.clone(),
             frame: include_frame
                 .then(|| board.widgets.get(&meta.id).cloned())
@@ -513,6 +533,9 @@ impl Store {
         let dir = self.widget_dir(id)?;
 
         let mut meta = WidgetMeta::new(id, title);
+        if let Some(min_host_version) = edit.min_host_version {
+            meta.min_host_version = min_host_version.map(str::to_string);
+        }
         meta.drag_mode = edit.drag_mode.unwrap_or_default();
         meta.set_permissions(edit.permissions.unwrap_or(&[]));
         meta.network = edit.network.unwrap_or(&[]).to_vec();
@@ -564,6 +587,9 @@ impl Store {
         if let Some(title) = edit.title {
             meta.title = title.to_string();
         }
+        if let Some(min_host_version) = edit.min_host_version {
+            meta.min_host_version = min_host_version.map(str::to_string);
+        }
         if let Some(network) = edit.network {
             meta.network = network.to_vec();
         }
@@ -577,6 +603,7 @@ impl Store {
         let content_edit = edit.html.is_some()
             || edit.css.is_some()
             || edit.title.is_some()
+            || edit.min_host_version.is_some()
             || edit.network.is_some()
             || edit.drag_mode.is_some()
             || edit.permissions.is_some()

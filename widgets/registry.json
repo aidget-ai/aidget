@@ -3,7 +3,7 @@
     {
       "package": {
         "name": "@aidget-community/welcome",
-        "version": "0.1.1",
+        "version": "0.1.2",
         "description": "AIDGET 欢迎卡片：将桌面交给 Agent。",
         "author": {
           "name": "aidget community",
@@ -27,6 +27,7 @@
       "config": {
         "id": "welcome",
         "title": "欢迎使用 AIDGET",
+        "minHostVersion": "0.1.1",
         "logo": null,
         "screenshots": [
           "assets/screenshot.png"
@@ -57,8 +58,8 @@
         },
         {
           "path": "config.json",
-          "size": 264,
-          "sha256": "5c2de928a6c7f7a277fad6191df72d6d8ee92b422216641cb5c4951639e29785"
+          "size": 293,
+          "sha256": "4333296966463a52cbb3f51c93b36f14d85b61651042e84993c9389980982c65"
         },
         {
           "path": "index.html",
@@ -68,7 +69,7 @@
         {
           "path": "package.json",
           "size": 489,
-          "sha256": "e74d02ed9f05ea938c6f6fa899fc545337161832f403b379079dde37756fd4a5"
+          "sha256": "4eaa26210bc169b62b0f8a2d5803b32567d1f4b645bacc9f19676b60df31b97e"
         },
         {
           "path": "style.css",

@@ -6,6 +6,9 @@ import { createAnimationHost, parseAnimationRequest } from './animation-host';
 import {
   errorMessage,
   failureOf,
+  parseDiagnostic,
+  parseDiagnosticDropped,
+  parseDiagnosticReady,
   parsePointerEvent,
   parsePointerSubscription,
   parseReady,
@@ -39,6 +42,9 @@ let state: WidgetState | null = null;
 let pendingRevision = 0;
 let pointerEnabled = false;
 let pointerToggle = Promise.resolve();
+let diagnosticTimes: number[] = [];
+let diagnosticDropped = 0;
+let diagnosticDroppedTimer: number | undefined;
 const appWindow = getCurrentWindow();
 const ownId = widgetIdFromLabel(appWindow.label);
 const origin = contentOrigin(window.location);
@@ -82,6 +88,7 @@ function apply(next: WidgetState) {
     animationHost.reset();
     setPointerTracking(false);
     pendingRevision = next.revision;
+    diagnosticTimes = [];
     frame.src = widgetUrl(origin, next.id, next.revision, next.token);
   }
   document.title = next.title || 'aidget';
@@ -111,6 +118,24 @@ function setPointerTracking(enabled: boolean) {
     });
 }
 
+function recordDiagnosticDropped(count: number) {
+  diagnosticDropped = Math.min(1_000_000, diagnosticDropped + count);
+  if (diagnosticDroppedTimer !== undefined) {
+    return;
+  }
+  diagnosticDroppedTimer = window.setTimeout(() => {
+    diagnosticDroppedTimer = undefined;
+    const dropped = diagnosticDropped;
+    diagnosticDropped = 0;
+    if (!dropped) {
+      return;
+    }
+    void invoke('widget_diagnostic_dropped', { dropped }).catch(() => {
+      // Diagnostics are optional and cannot take down a widget.
+    });
+  }, 0);
+}
+
 function postDragConfig() {
   if (state) {
     postToWidget({
@@ -134,6 +159,19 @@ frame.addEventListener('error', () => {
   animationHost.reset();
   setPointerTracking(false);
   showFault('无法读取小组件文件');
+  if (state) {
+    void invoke('widget_diagnostic', {
+      event: {
+        source: 'resource_error',
+        revision: state.revision,
+        message: 'widget document failed to load',
+        stack: null,
+        filename: 'index.html',
+        line: null,
+        column: null,
+      },
+    }).catch(() => {});
+  }
 });
 frame.addEventListener('load', () => {
   if (pendingRevision) {
@@ -146,6 +184,12 @@ frame.addEventListener('load', () => {
   // push it on each load rather than only the ones this page triggered.
   if (state) {
     postToWidget(permissionsMessage(state.permissions));
+    postToWidget({
+      source: 'aidget-host',
+      type: 'diagnostics-enabled',
+      revision: state.revision,
+      token: state.token,
+    });
   }
   postDragConfig();
 });
@@ -194,6 +238,46 @@ window.addEventListener('pagehide', () => dragSession.cancel());
 // Host side of the widget bridge: only the iframe this window owns may ask,
 // and only for methods the host actually implements.
 window.addEventListener('message', (event) => {
+  const diagnosticReady = parseDiagnosticReady(event.data, event.source, frame.contentWindow);
+  if (diagnosticReady) {
+    if (state?.revision === diagnosticReady.revision && state.token === diagnosticReady.token) {
+      void invoke('widget_diagnostic_ready', {
+        revision: diagnosticReady.revision,
+      }).catch(() => {});
+    }
+    return;
+  }
+  const diagnosticDroppedSignal = parseDiagnosticDropped(
+    event.data,
+    event.source,
+    frame.contentWindow,
+  );
+  if (diagnosticDroppedSignal) {
+    if (
+      state?.revision === diagnosticDroppedSignal.revision &&
+      state.token === diagnosticDroppedSignal.token
+    ) {
+      recordDiagnosticDropped(diagnosticDroppedSignal.dropped);
+    }
+    return;
+  }
+  const diagnostic = parseDiagnostic(event.data, event.source, frame.contentWindow);
+  if (diagnostic) {
+    if (state?.revision !== diagnostic.revision || state.token !== diagnostic.token) {
+      return;
+    }
+    const now = performance.now();
+    diagnosticTimes = diagnosticTimes.filter((time) => now - time < 1_000);
+    if (diagnosticTimes.length >= 20) {
+      recordDiagnosticDropped(1);
+      return;
+    }
+    diagnosticTimes.push(now);
+    void invoke('widget_diagnostic', { event: diagnostic.event }).catch(() => {
+      // Diagnostics are optional and cannot take down a widget request.
+    });
+    return;
+  }
   const animation = parseAnimationRequest(event, frame.contentWindow, state);
   if (animation) {
     animationHost.accept(animation);

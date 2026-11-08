@@ -34,3 +34,40 @@ fn rebuilt_errors_do_not_repeat_the_display_prefix() {
         "invalid params: bad input"
     );
 }
+
+#[test]
+fn host_version_errors_preserve_structured_details_across_the_bridge() {
+    let incompatible = Error::HostVersionIncompatible {
+        widget: "clock".into(),
+        current: "0.1.11".into(),
+        minimum: "0.1.12".into(),
+    };
+    let response = Response::err("r5", &incompatible);
+    let value = serde_json::to_value(&response).unwrap();
+    assert_eq!(value["error"]["code"], "host_version_incompatible");
+    assert_eq!(value["error"]["widget"], "clock");
+    assert_eq!(value["error"]["currentVersion"], "0.1.11");
+    assert_eq!(value["error"]["minHostVersion"], "0.1.12");
+    let back = response.into_result().unwrap_err();
+    assert!(matches!(
+        back,
+        Error::HostVersionIncompatible {
+            widget,
+            current,
+            minimum
+        } if widget == "clock" && current == "0.1.11" && minimum == "0.1.12"
+    ));
+
+    let response = Response::err(
+        "r6",
+        &Error::HostVersionRequired {
+            widget: "clock".into(),
+        },
+    );
+    let value = serde_json::to_value(&response).unwrap();
+    assert_eq!(value["error"]["widget"], "clock");
+    assert_eq!(
+        response.into_result().unwrap_err().code(),
+        "host_version_required"
+    );
+}

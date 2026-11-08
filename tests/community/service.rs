@@ -289,6 +289,38 @@ fn installs_the_reviewed_npm_version_and_rejects_a_second_copy() {
 }
 
 #[test]
+fn version_incompatible_and_undeclared_community_packages_fail_before_download() {
+    for (minimum, expected_code) in [
+        (Some("99.0.0".to_string()), "host_version_incompatible"),
+        (None, "host_version_required"),
+    ] {
+        let server = Server::new();
+        let (mut entry, _, _) = fixture(&server);
+        entry.config.min_host_version = minimum;
+        server.put(
+            &format!("/{MAIN}/registry.json"),
+            200,
+            json!(Registry {
+                widgets: vec![entry]
+            }),
+        );
+        let (_root, store) = store();
+        let error = server
+            .client()
+            .install_reviewed(&store, MAIN, NAME)
+            .unwrap_err();
+        assert_eq!(error.code(), expected_code);
+        assert!(store.widget_ids().unwrap().is_empty());
+        assert!(server
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|path| !path.contains("npm")));
+    }
+}
+
+#[test]
 fn official_versions_outside_the_current_review_are_rejected_before_npm() {
     for listed in [false, true] {
         let server = Server::new();

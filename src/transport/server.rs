@@ -196,6 +196,15 @@ pub mod protocol {
         request: Request<Vec<u8>>,
         store: &Store,
     ) -> Response<Vec<u8>> {
+        handle_with_override(_ctx, request, store, false)
+    }
+
+    pub fn handle_with_override<R: tauri::Runtime>(
+        _ctx: &UriSchemeContext<'_, R>,
+        request: Request<Vec<u8>>,
+        store: &Store,
+        allow_incompatible: bool,
+    ) -> Response<Vec<u8>> {
         let host = request.uri().host().unwrap_or_default();
         if !origin::is_scheme_host(host) {
             return not_found();
@@ -208,7 +217,7 @@ pub mod protocol {
             return serve_embedded("widget.html");
         }
         if let Some(rest) = path.strip_prefix("/content/") {
-            return serve_widget(store, rest);
+            return serve_widget_with_override(store, rest, allow_incompatible);
         }
         let asset = path.trim_start_matches('/');
         if asset.ends_with(".html") {
@@ -240,6 +249,14 @@ pub mod protocol {
 
     /// Serve assets with the widget's CSP, including non-HTML document types such as SVG.
     pub fn serve_widget(store: &Store, rest: &str) -> Response<Vec<u8>> {
+        serve_widget_with_override(store, rest, false)
+    }
+
+    pub fn serve_widget_with_override(
+        store: &Store,
+        rest: &str,
+        allow_incompatible: bool,
+    ) -> Response<Vec<u8>> {
         let Ok(decoded) = percent_encoding::percent_decode_str(rest).decode_utf8() else {
             return not_found();
         };
@@ -277,6 +294,16 @@ pub mod protocol {
         let Ok(meta) = store.load_meta(id) else {
             return not_found();
         };
+        let Ok(compatibility) = crate::widgets::package::HostCompatibility::evaluate(
+            &meta.config,
+            env!("CARGO_PKG_VERSION"),
+            allow_incompatible,
+        ) else {
+            return not_found();
+        };
+        if !compatibility.permits_runtime() {
+            return not_found();
+        }
         let html = if content_type(name).starts_with("text/html") {
             Some(bytes.as_slice())
         } else {

@@ -1786,6 +1786,31 @@ body[data-platform='windows'] .navigation {
   display: none;
 }
 
+.community-host-version {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: baseline;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.community-host-incompatible {
+  margin: 0;
+  color: var(--danger);
+}
+
+.community-host-incompatible .text-button {
+  min-height: auto;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 @container (max-width: 650px) {
   .community-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

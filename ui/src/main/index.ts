@@ -206,6 +206,7 @@ const community = createCommunityPage(
   refreshState,
   () => Boolean(state?.githubToken),
   (message) => toast.show(message),
+  navigateToAbout,
 );
 
 const previewRefresh = createPreviewRefresh(
@@ -233,6 +234,7 @@ widgetSortButton.prepend(createSortIcon());
 const localDetails = createLocalWidgetDetails(
   document.querySelector<HTMLElement>('[data-view="local-widgets"]')!,
   () => locale,
+  navigateToAbout,
 );
 
 function t(key: MessageKey) {
@@ -304,6 +306,16 @@ function renderPage() {
   renderPreferences();
   renderGithubToken();
   updatePage.setAboutActive(page === 'about');
+}
+
+function navigateToAbout() {
+  resetPurgeConfirmation();
+  page = 'about';
+  fault.hidden = true;
+  renderPage();
+  syncPreviewRefresh(true);
+  void rememberPage();
+  document.querySelector<HTMLElement>('[data-update-action]')?.focus();
 }
 
 function renderDescription() {

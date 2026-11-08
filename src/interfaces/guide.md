@@ -59,6 +59,7 @@ notify the resident UI. A direct file write can race the watcher.
 {
   "id": "note",
   "title": "Note",
+  "minHostVersion": "0.1.1",
   "logo": null,
   "screenshots": [],
   "platforms": ["macos", "windows", "linux"],
@@ -70,6 +71,13 @@ notify the resident UI. A direct file write can race the watcher.
 ```
 
 - `platforms` lists the operating systems on which the widget was checked.
+- `minHostVersion` is a concrete SemVer release required by the widget. New
+  local widgets default to the version that created them. Community packages
+  must declare it. Version ranges, npm tags and a leading `v` are invalid.
+- If the running Aidget version is older than `minHostVersion`, the widget is
+  blocked from install and from running. Its files, storage and frame remain.
+- Historical local widgets without this field continue to run and show as
+  undeclared. Community installs without a declaration are rejected.
 - `size` is the initial logical size and must be between 160x120 and
   8192x8192.
 - `permissions` accepts `script`, `location` and `storage`.
@@ -80,6 +88,9 @@ notify the resident UI. A direct file write can race the watcher.
   and `enabled`; do not put these fields in community packages.
 - Unused fields are ignored. Missing required fields and invalid current values
   are rejected; unused fields never grant permissions or supply missing values.
+
+`aidget_create` and `aidget_update` accept `minHostVersion`. Update omits the
+field to preserve it. A patch never changes it.
 
 ## Enable and disable widgets
 
@@ -357,6 +368,28 @@ Capture waits for the current iframe load and then up to 500ms for
 `window.aidget.ready()`. Slow initialization intentionally produces an early
 capture.
 
+## Runtime diagnostics
+
+As an optional final verification step after taking a screenshot, query the
+session diagnostics for the widget's current revision:
+
+```sh
+aidget widget diagnostics note --json
+```
+
+Use `aidget_diagnostics` from MCP. Records cover uncaught JavaScript errors,
+unhandled Promise rejections, calls to `console.error`, resource and CSP
+failures, and failed `window.aidget` requests. Each widget retains at most 100
+records per host session. Errors are cleared when Aidget exits or the widget is
+deleted.
+
+The result reports its session, revision, next cursor, dropped count and whether
+the collector is connected. No records means no observable error was collected;
+it does not prove that the widget is healthy. Errors caught by widget code and
+never logged cannot be detected automatically.
+Diagnostics are available through CLI and MCP only; the management window does
+not expose a diagnostics view.
+
 ## Platform capabilities
 
 | Capability     | macOS               | Windows             | Linux                                                               |
@@ -400,5 +433,6 @@ package file is an error. Local cards do not display provenance badges.
 
 `ui_not_running`, `not_found`, `invalid_id`, `invalid_params`,
 `revision_conflict`, `region_not_found`, `region_ambiguous`,
-`permission_denied`, `denied`, `io_error`, `timeout`, `http_error`,
-`invalid_response`, `unavailable`.
+`host_version_incompatible`, `host_version_required`, `permission_denied`,
+`denied`, `io_error`, `timeout`, `http_error`, `invalid_response`,
+`unavailable`.

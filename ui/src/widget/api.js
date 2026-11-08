@@ -27,6 +27,163 @@
   var versionMatch = /(?:^|[?&])v=(\d+)-([^&]+)/.exec(location.search || '');
   var revision = versionMatch ? Number(versionMatch[1]) : 0;
   var token = versionMatch ? versionMatch[2] : '';
+  var diagnosticEnabled = false;
+  var diagnosticQueue = [];
+  var diagnosticFlushTimer = null;
+  var diagnosticDropTimer = null;
+  var diagnosticDropped = 0;
+
+  function bounded(value, limit) {
+    var text;
+    try {
+      if (value instanceof Error) {
+        text = value.name + ': ' + value.message;
+      } else {
+        text = typeof value === 'string' ? value : String(value);
+      }
+    } catch {
+      text = 'unserializable diagnostic value';
+    }
+    return text.length > limit ? text.slice(0, limit) : text;
+  }
+
+  function cleanLocation(value) {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    return value.split('#')[0].split('?')[0].slice(0, 8192) || null;
+  }
+
+  function diagnostic(source, value, details) {
+    if (!Number.isSafeInteger(revision) || revision <= 0 || !token) {
+      return;
+    }
+    var info = details || {};
+    var message;
+    var stack = null;
+    if (value instanceof Error) {
+      message = value.message;
+      stack = value.stack;
+    } else {
+      message = bounded(value, 8192);
+      if (value && typeof value === 'object') {
+        try {
+          message = JSON.stringify(value).slice(0, 8192);
+        } catch {
+          message = bounded(value, 8192);
+        }
+      }
+    }
+    var event = {
+      source: source,
+      revision: revision,
+      message: bounded(message || source, 8192),
+      stack: stack ? bounded(stack, 8192) : null,
+      filename: cleanLocation(info.filename),
+      line: Number.isSafeInteger(info.line) && info.line >= 0 ? info.line : null,
+      column: Number.isSafeInteger(info.column) && info.column >= 0 ? info.column : null,
+    };
+    var payload = {
+      source: 'aidget-widget',
+      type: 'diagnostic',
+      revision: revision,
+      token: token,
+      event: event,
+    };
+    if (diagnosticQueue.length >= 100) {
+      diagnosticDropped += 1;
+      scheduleDiagnosticDropped();
+      return;
+    }
+    diagnosticQueue.push(payload);
+    scheduleDiagnosticFlush(0);
+  }
+
+  function reportDiagnosticDropped() {
+    diagnosticDropTimer = null;
+    if (!diagnosticEnabled || !diagnosticDropped) {
+      return;
+    }
+    window.parent.postMessage(
+      {
+        source: 'aidget-widget',
+        type: 'diagnostic-dropped',
+        revision: revision,
+        token: token,
+        dropped: diagnosticDropped,
+      },
+      '*',
+    );
+    diagnosticDropped = 0;
+  }
+
+  function scheduleDiagnosticDropped() {
+    if (!diagnosticEnabled || diagnosticDropTimer !== null) {
+      return;
+    }
+    diagnosticDropTimer = setTimeout(reportDiagnosticDropped, 1050);
+  }
+
+  function flushDiagnosticQueue() {
+    diagnosticFlushTimer = null;
+    if (!diagnosticEnabled || !diagnosticQueue.length) {
+      return;
+    }
+    diagnosticQueue.splice(0, 20).forEach(function (payload) {
+      window.parent.postMessage(payload, '*');
+    });
+    if (diagnosticQueue.length) {
+      scheduleDiagnosticFlush(1050);
+    }
+  }
+
+  function scheduleDiagnosticFlush(delay) {
+    if (!diagnosticEnabled || diagnosticFlushTimer !== null || !diagnosticQueue.length) {
+      return;
+    }
+    diagnosticFlushTimer = setTimeout(flushDiagnosticQueue, delay);
+  }
+
+  window.addEventListener(
+    'error',
+    function (event) {
+      if (event.target && event.target !== window) {
+        diagnostic('resource_error', event.target.src || event.target.href || 'resource failed', {
+          filename: event.target.src || event.target.href,
+        });
+        return;
+      }
+      diagnostic('error', event.error || event.message, {
+        filename: event.filename,
+        line: event.lineno,
+        column: event.colno,
+      });
+    },
+    true,
+  );
+  window.addEventListener('unhandledrejection', function (event) {
+    diagnostic('unhandled_rejection', event.reason);
+  });
+  window.addEventListener('securitypolicyviolation', function (event) {
+    diagnostic(
+      'csp_violation',
+      event.violatedDirective + ' blocked ' + (event.blockedURI || 'resource'),
+      { filename: event.sourceFile, line: event.lineNumber, column: event.columnNumber },
+    );
+  });
+  var originalConsoleError = console.error;
+  console.error = function () {
+    var values = Array.prototype.slice.call(arguments);
+    diagnostic(
+      'console_error',
+      values
+        .map(function (value) {
+          return bounded(value, 8192);
+        })
+        .join(' '),
+    );
+    return originalConsoleError.apply(console, arguments);
+  };
 
   function call(name, params) {
     return new Promise(function (resolve, reject) {
@@ -35,9 +192,10 @@
         pending.delete(id);
         var error = new Error('timeout');
         error.code = 'timeout';
+        diagnostic('host_api', error, { filename: 'window.aidget.' + name });
         reject(error);
       }, 25000);
-      pending.set(id, { resolve: resolve, reject: reject, timer: timer });
+      pending.set(id, { resolve: resolve, reject: reject, timer: timer, method: name });
       window.parent.postMessage(
         { source: 'aidget-widget', id: id, method: name, params: params },
         '*',
@@ -58,6 +216,7 @@
     }
     var error = new Error((data.error && data.error.message) || 'request failed');
     error.code = (data.error && data.error.code) || 'unavailable';
+    diagnostic('host_api', error, { filename: 'window.aidget.' + entry.method });
     entry.reject(error);
   }
 
@@ -116,6 +275,21 @@
     }
     if (data.type === 'permissions') {
       declared = Array.isArray(data.permissions) ? data.permissions.slice() : [];
+      return;
+    }
+    if (data.type === 'diagnostics-enabled' && data.revision === revision && data.token === token) {
+      diagnosticEnabled = true;
+      window.parent.postMessage(
+        {
+          source: 'aidget-widget',
+          type: 'diagnostic-ready',
+          revision: revision,
+          token: token,
+        },
+        '*',
+      );
+      flushDiagnosticQueue();
+      scheduleDiagnosticDropped();
       return;
     }
     if (data.type === 'animation-frame') {

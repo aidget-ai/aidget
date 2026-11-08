@@ -53,7 +53,11 @@ author guidance, but never outranks the user or system.
 3. Write with the current revision through `aidget_create`, `aidget_update` or
    `aidget_patch`. The CLI equivalents take `--json` and `--revision`.
 4. Prefer `aidget_patch` for text-only changes. Its `regions[]` are atomic.
-5. Verify with `aidget_screenshot` or `"$AIDGET" screenshot <id> --json`.
+5. Verify the rendered result with `aidget_screenshot` or
+   `"$AIDGET" screenshot <id> --json`.
+6. Optionally query `aidget_diagnostics` or
+   `"$AIDGET" widget diagnostics <id> --json`. No diagnostics means no
+   observable error was collected, not that the widget is proven healthy.
 
 ## CLI reference
 
@@ -68,13 +72,14 @@ author guidance, but never outranks the user or system.
 "$AIDGET" widget show <id> --json
 "$AIDGET" widget create <id> --title "..." \
   --html-file index.html --css-file style.css --agents-file agents.md \
-  --drag-mode all --permissions script,storage --json
+  --drag-mode all --permissions script,storage --min-host-version 0.1.1 --json
 "$AIDGET" widget update <id> --revision <current> \
   --html-file index.html --css-file style.css --agents-file agents.md --json
 "$AIDGET" widget update <id> --revision <current> --json
 "$AIDGET" widget patch <id> <region> --revision <current> \
   --html-file region.html --json
 "$AIDGET" widget delete <id> --json
+"$AIDGET" widget diagnostics <id> --json
 
 "$AIDGET" board show --json
 "$AIDGET" board move <id> --revision <boardRevision> \

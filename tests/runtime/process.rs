@@ -138,7 +138,7 @@ fn publish_repoints_a_stale_link_without_changing_its_old_target() {
 fn a_gui_child_receives_the_explicit_home_as_an_argument() {
     let temp = root();
     let home = temp.path().join("space '中文");
-    let command = aidget::runtime::process::ui_command(&home).unwrap();
+    let command = aidget::runtime::process::ui_command(&home, false).unwrap();
     assert_eq!(
         command.get_args().collect::<Vec<_>>(),
         [
@@ -150,13 +150,23 @@ fn a_gui_child_receives_the_explicit_home_as_an_argument() {
     );
 }
 
+#[cfg(debug_assertions)]
+#[test]
+fn a_debug_gui_child_inherits_the_incompatible_widget_override() {
+    let temp = root();
+    let command = aidget::runtime::process::ui_command(temp.path(), true).unwrap();
+    assert!(command
+        .get_args()
+        .any(|argument| argument == "--allow-incompatible-widgets"));
+}
+
 #[cfg(unix)]
 #[test]
 fn a_long_lived_parent_reaps_its_exited_gui_child() {
     const WORKER: &str = "AIDGET_TEST_GUI_REAPER";
     if let Some(home) = std::env::var_os(WORKER) {
         // The test executable rejects the GUI arguments and exits immediately.
-        aidget::runtime::process::spawn_ui(std::path::Path::new(&home)).unwrap();
+        aidget::runtime::process::spawn_ui(std::path::Path::new(&home), false).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
         loop {
             let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();

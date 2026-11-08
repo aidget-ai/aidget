@@ -43,6 +43,14 @@ pub enum Error {
     InvalidParams(String),
     #[error("permission denied: {0}")]
     PermissionDenied(String),
+    #[error("widget requires Aidget {minimum} or newer; current version is {current}")]
+    HostVersionIncompatible {
+        widget: String,
+        current: String,
+        minimum: String,
+    },
+    #[error("widget `{widget}` does not declare a minimum Aidget version")]
+    HostVersionRequired { widget: String },
     #[error("location: {}", .0.code())]
     Location(crate::runtime::location::LocationError),
     #[error("ui is not running")]
@@ -67,6 +75,8 @@ impl Error {
             Error::RegionAmbiguous(_) => "region_ambiguous",
             Error::InvalidParams(_) => "invalid_params",
             Error::PermissionDenied(_) => "permission_denied",
+            Error::HostVersionIncompatible { .. } => "host_version_incompatible",
+            Error::HostVersionRequired { .. } => "host_version_required",
             Error::Location(error) => error.code(),
             Error::UiNotRunning => "ui_not_running",
             Error::Timeout => "timeout",
@@ -76,6 +86,7 @@ impl Error {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ErrorBody {
     pub code: &'static str,
     /// Payload only, never the rendered message: the receiver rebuilds the
@@ -83,6 +94,12 @@ pub struct ErrorBody {
     pub detail: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current: Option<ConflictCurrent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub widget: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_host_version: Option<String>,
 }
 
 impl From<&Error> for ErrorBody {
@@ -94,6 +111,18 @@ impl From<&Error> for ErrorBody {
             Error::RegionAmbiguous(detail) => (detail.clone(), None),
             Error::InvalidParams(detail) => (detail.clone(), None),
             Error::PermissionDenied(detail) => (detail.clone(), None),
+            Error::HostVersionIncompatible {
+                widget,
+                current,
+                minimum,
+            } => (
+                format!("widget `{widget}` requires Aidget {minimum} or newer; current version is {current}"),
+                None,
+            ),
+            Error::HostVersionRequired { widget } => (
+                format!("widget `{widget}` does not declare a minimum Aidget version"),
+                None,
+            ),
             Error::Location(_) => (String::new(), None),
             Error::RevisionConflict { current } => {
                 let current = (**current).clone();
@@ -108,6 +137,19 @@ impl From<&Error> for ErrorBody {
             code: error.code(),
             detail,
             current,
+            widget: match error {
+                Error::HostVersionIncompatible { widget, .. }
+                | Error::HostVersionRequired { widget } => Some(widget.clone()),
+                _ => None,
+            },
+            current_version: match error {
+                Error::HostVersionIncompatible { current, .. } => Some(current.clone()),
+                _ => None,
+            },
+            min_host_version: match error {
+                Error::HostVersionIncompatible { minimum, .. } => Some(minimum.clone()),
+                _ => None,
+            },
         }
     }
 }

@@ -1,4 +1,6 @@
-use aidget::widgets::package::{PackageManifest, WidgetConfig};
+use aidget::widgets::package::{
+    HostCompatibility, HostCompatibilityState, PackageManifest, WidgetConfig,
+};
 
 #[test]
 fn config_ignores_unused_fields_without_changing_current_values() {
@@ -13,6 +15,49 @@ fn config_ignores_unused_fields_without_changing_current_values() {
     let config: WidgetConfig = serde_json::from_value(value).unwrap();
     config.validate().unwrap();
     assert_eq!(config, expected);
+}
+
+#[test]
+fn new_widgets_declare_the_current_host_and_version_comparison_uses_semver_precedence() {
+    let mut config = WidgetConfig::new("clock", "Clock");
+    assert_eq!(
+        config.min_host_version.as_deref(),
+        Some(env!("CARGO_PKG_VERSION"))
+    );
+    config.min_host_version = Some("1.2.0+build.7".into());
+    let compatible = HostCompatibility::evaluate(&config, "1.2.0+other", false).unwrap();
+    assert_eq!(compatible.state, HostCompatibilityState::Compatible);
+    assert!(!compatible.allowed_by_override);
+
+    config.min_host_version = Some("1.2.0".into());
+    let prerelease = HostCompatibility::evaluate(&config, "1.2.0-beta.2", false).unwrap();
+    assert_eq!(prerelease.state, HostCompatibilityState::HostTooOld);
+    assert!(!prerelease.permits_runtime());
+    let bypassed = HostCompatibility::evaluate(&config, "1.2.0-beta.2", true).unwrap();
+    assert!(bypassed.allowed_by_override);
+    assert!(bypassed.permits_runtime());
+
+    config.min_host_version = None;
+    assert_eq!(
+        HostCompatibility::evaluate(&config, "1.2.0", false)
+            .unwrap()
+            .state,
+        HostCompatibilityState::Undeclared
+    );
+}
+
+#[test]
+fn minimum_host_versions_reject_tags_ranges_and_invalid_semver() {
+    for value in ["v1.0.0", "^1.0.0", "latest", "1.0", ""] {
+        let mut config = WidgetConfig::new("clock", "Clock");
+        config.min_host_version = Some(value.into());
+        assert!(config.validate().is_err(), "{value}");
+    }
+    for value in ["0.0.1", "1.2.3-beta.1", "1.2.3+sha.abc"] {
+        let mut config = WidgetConfig::new("clock", "Clock");
+        config.min_host_version = Some(value.into());
+        assert!(config.validate().is_ok(), "{value}");
+    }
 }
 
 #[test]

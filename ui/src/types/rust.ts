@@ -89,7 +89,17 @@ export type WidgetPermission = "script" | "location" | "storage";
 export type WidgetDragMode = "all" | "handle";
 export type WidgetPlatform = "macos" | "windows" | "linux";
 export type WidgetSize = { width: number, height: number, };
-export type WidgetConfig = { id: string, title: string, logo: string | null, screenshots: Array<string>, platforms: Array<WidgetPlatform>, size: WidgetSize, dragMode: WidgetDragMode, permissions: Array<WidgetPermission>, network: Array<string>, };
+export type WidgetConfig = { id: string, title: string,
+/**
+ * Minimum Aidget release required by this widget.
+ */
+minHostVersion: string | null, logo: string | null, screenshots: Array<string>, platforms: Array<WidgetPlatform>, size: WidgetSize, dragMode: WidgetDragMode, permissions: Array<WidgetPermission>, network: Array<string>, };
+export type HostCompatibility = { state: HostCompatibilityState, currentVersion: string, minHostVersion: string | null,
+/**
+ * True only when a debug build explicitly bypassed an incompatible version.
+ */
+allowedByOverride: boolean, };
+export type HostCompatibilityState = "compatible" | "host_too_old" | "undeclared";
 export type PackageAuthor = string | { name: string, email: string | null, url: string | null, };
 export type PackageRepository = string | { type: string, url: string, directory: string | null, };
 export type PackageManifest = { name: string, version: string, description: string, author: PackageAuthor | null, repository: PackageRepository | null, license: string | null, files: Array<string>, };
@@ -100,7 +110,7 @@ export type RegistryEntry = {
  */
 publishedAt: string, package: PackageManifest, config: WidgetConfig, files: Array<FileDigest>, };
 export type Registry = { widgets: Array<RegistryEntry>, };
-export type CommunityEntry = { entry: RegistryEntry, installed: boolean, idConflict: boolean, supported: boolean, };
+export type CommunityEntry = { entry: RegistryEntry, installed: boolean, idConflict: boolean, supported: boolean, hostCompatibility: HostCompatibility, };
 export type CommunitySnapshot = { commit: string, widgets: Array<CommunityEntry>, };
 export type CachedCommunitySnapshot = { snapshot: CommunitySnapshot,
 /**
@@ -108,7 +118,12 @@ export type CachedCommunitySnapshot = { snapshot: CommunitySnapshot,
  */
 checkedAt: number, };
 export type DownloadCount = { package: string, weekly: number | null, error: string | null, };
-export type LocalWidgetDetails = { config: WidgetConfig, description: string | null, preview: string | null, };
+export type LocalWidgetDetails = { config: WidgetConfig, compatibility: HostCompatibility, description: string | null, preview: string | null, };
+export type DiagnosticSource = "error" | "unhandled_rejection" | "console_error" | "resource_error" | "csp_violation" | "host_api";
+export type WidgetDiagnostic = { sequence: number, receivedAt: string, widget: string, revision: number, source: DiagnosticSource, message: string, stack: string | null, filename: string | null, line: number | null, column: number | null, };
+export type DiagnosticsReport = { sessionId: string, widget: string, revision: number | null, after: number, nextAfter: number, dropped: number, collectorReady: boolean, enabled: boolean, running: boolean, compatibility: HostCompatibility, diagnostics: Array<WidgetDiagnostic>, };
+export type DiagnosticSummary = { count: number, dropped: number, collectorReady: boolean, };
+export type WidgetDiagnosticSummary = { widget: string, count: number, dropped: number, collectorReady: boolean, latestAt: string | null, };
 export type DisplayInfo = {
 /**
  * Stable identifier stored in frames and settings.

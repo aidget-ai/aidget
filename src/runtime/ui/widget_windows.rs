@@ -57,7 +57,9 @@ fn sync_widgets_inner(app: &AppHandle) -> Result<()> {
     let state = app.state::<UiState>();
     let store = Store::new(state.root.lock().unwrap().clone());
     let board = store.load_board()?;
-    let ids = enabled_widget_ids(&store, &board);
+    let all_ids: HashSet<_> = store.widget_ids()?.into_iter().collect();
+    state.diagnostics.lock().unwrap().retain(&all_ids);
+    let ids = enabled_widget_ids(&store, &board, state.allow_incompatible_widgets)?;
     let active: HashSet<_> = ids.iter().cloned().collect();
     retain_widget_revisions(
         &mut state.loaded.lock().unwrap(),
@@ -162,13 +164,28 @@ fn sync_widgets_inner(app: &AppHandle) -> Result<()> {
     Ok(())
 }
 
-fn enabled_widget_ids(store: &Store, board: &Board) -> Vec<String> {
-    board
-        .widgets
-        .keys()
-        .filter(|id| store.load_meta(id).is_ok_and(|meta| meta.enabled))
-        .cloned()
-        .collect()
+fn enabled_widget_ids(
+    store: &Store,
+    board: &Board,
+    allow_incompatible: bool,
+) -> Result<Vec<String>> {
+    let mut ids = Vec::new();
+    for id in board.widgets.keys() {
+        let Ok(meta) = store.load_meta(id) else {
+            continue;
+        };
+        if meta.enabled
+            && crate::widgets::package::HostCompatibility::evaluate(
+                &meta.config,
+                env!("CARGO_PKG_VERSION"),
+                allow_incompatible,
+            )?
+            .permits_runtime()
+        {
+            ids.push(id.clone());
+        }
+    }
+    Ok(ids)
 }
 
 fn build_window(
@@ -303,7 +320,16 @@ pub fn widget_payload(app: &AppHandle, window: &WebviewWindow) -> Option<WidgetS
     let id = label.strip_prefix("widget-")?;
     let store = Store::new(app.state::<UiState>().root.lock().unwrap().clone());
     let meta = store.load_meta(id).ok()?;
-    let _ = app;
+    if !crate::widgets::package::HostCompatibility::evaluate(
+        &meta.config,
+        env!("CARGO_PKG_VERSION"),
+        app.state::<UiState>().allow_incompatible_widgets,
+    )
+    .ok()?
+    .permits_runtime()
+    {
+        return None;
+    }
     let surface = widget_surface(&store, id);
     Some(WidgetState {
         id: id.to_string(),

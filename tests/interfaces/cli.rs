@@ -125,6 +125,64 @@ fn create_and_update_accept_drag_mode_and_reject_unknown_modes() {
 }
 
 #[test]
+fn cli_accepts_minimum_host_and_debug_compatibility_override_options() {
+    assert!(Cli::try_parse_from([
+        "aidget",
+        "widget",
+        "create",
+        "note",
+        "--min-host-version",
+        "1.2.3",
+    ])
+    .is_ok());
+    assert!(Cli::try_parse_from([
+        "aidget",
+        "--allow-incompatible-widgets",
+        "ui",
+        "--background",
+    ])
+    .is_ok());
+}
+
+#[test]
+fn diagnostics_cli_accepts_revision_cursor_and_limit() {
+    assert!(Cli::try_parse_from([
+        "aidget",
+        "widget",
+        "diagnostics",
+        "note",
+        "--revision",
+        "3",
+        "--after",
+        "7",
+        "--limit",
+        "25",
+        "--json",
+    ])
+    .is_ok());
+}
+
+#[test]
+fn diagnostics_do_not_start_a_missing_gui() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_aidget"))
+        .args([
+            "--home",
+            temp.path().to_str().unwrap(),
+            "--json",
+            "widget",
+            "diagnostics",
+            "note",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["code"], "ui_not_running");
+    assert!(!temp.path().join("run/ui.sock").exists());
+}
+
+#[test]
 fn json_is_available_for_agent_write_and_discovery_commands() {
     assert!(Cli::try_parse_from(["aidget", "widget", "create", "note", "--json"]).is_ok());
     assert!(Cli::try_parse_from([
