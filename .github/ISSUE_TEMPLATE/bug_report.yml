@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Read [CONTRIBUTING.md](https://github.com/aidget-ai/aidget/blob/main/CONTRIBUTING.md) before submitting.
+        Read [docs/contributing.md](https://github.com/aidget-ai/aidget/blob/main/docs/contributing.md) before submitting.
 
         Keep this short and in your own words. Use Remove credentials, account identifiers, private widget contents and personal data from logs or screenshots.
   - type: textarea

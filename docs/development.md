@@ -7,15 +7,22 @@
 - pnpm 12
 - The platform WebView and packaging dependencies described in the README
 
-`pnpm dev` keeps development data and its IPC socket under `.aidget/` by default.
-Override it with `pnpm dev --home <directory>`. This lets development and installed copies run
-alongside each other with separate system-tray icons. On macOS, Cargo launches
-the executable from a minimal `aidget-dev.app` beside the compiled binary so the
-system can display its menu-bar icon.
+## Architecture
 
-Debug builds disable their `aidget-dev` autostart entry on GUI startup and keep
-the setting unavailable. Release builds use `aidget` and refresh an enabled entry
-with the current executable and absolute `--home`, preserving disabled autostart.
+```mermaid
+flowchart LR
+    A["Agent"]
+    A -->|"Reads Skill"| S["~/.aidget/skills"]
+    A -->|"Calls MCP"| M["aidget mcp"]
+    A -->|"Calls CLI"| C["aidget"]
+    M --> U["aidget ui"]
+    C --> U
+    U --> W["widgets"]
+```
+
+The GUI owns widget windows and display APIs. CLI widget reads and writes can
+run offline through the filesystem; MCP forwards requests to the resident GUI.
+See `AGENTS.md` for module boundaries and the cross-layer command contract.
 
 ## Agent integrations
 
@@ -36,19 +43,34 @@ MCP writes preserve neighbors and back up the original file under
 `skills/aidget` entry without a backup. Removing a link preserves its target;
 the source and directories containing it cannot be removed or replaced.
 
-## Pull requests
+## Interfaces
 
-Keep each pull request to one behavior change. Record the exact verification
-commands and platforms tested, plus anything not tested.
+| MCP tool             | Purpose                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `aidget_list`        | List widgets, revisions, board revision, positions, broken entries, compatibility and diagnostics summaries. |
+| `aidget_get`         | Read one widget's metadata, HTML, CSS, `agents.md`, compatibility and current position.                      |
+| `aidget_create`      | Create a widget with HTML, CSS, permissions, the minimum host version and author guidance.                   |
+| `aidget_update`      | Replace files or metadata using revision compare-and-swap.                                                   |
+| `aidget_patch`       | Atomically replace the inner HTML of one or more `data-aidget-region` targets.                               |
+| `aidget_move`        | Move or resize with board revision CAS when the user asks.                                                   |
+| `aidget_screenshot`  | Capture the rendered widget as PNG and wait briefly for readiness.                                           |
+| `aidget_diagnostics` | Read session-scoped widget runtime errors without starting the GUI.                                          |
+| `aidget_delete`      | Move a widget to the trash.                                                                                  |
+| `aidget_guide`       | Read the complete Markdown authoring guide.                                                                  |
 
-Open a pull request only after a required Contribution Proposal has been
-accepted with `lgtmi` and recorded in `.github/APPROVED_CONTRIBUTORS`, and the
-change has a reproducible verification record. CI and a reviewer other than the
-author must both accept the current head.
-
-Record the reviewed SHA before merging. Do not merge by moving a branch after
-review. If the head changes, rerun the relevant checks and obtain a new review
-before merging that SHA.
+```text
+aidget [--home DIR] [--json] <command> [options]
+aidget ui [--background]
+aidget mcp
+aidget widget list|show|create|update|patch|delete|diagnostics
+aidget board show|move
+aidget displays
+aidget screenshot <id> [--scale N] [--out FILE]
+aidget doctor
+aidget guide
+aidget community list --json
+aidget community install @aidget-community/<id> --json
+```
 
 ## Contributor approval automation
 
@@ -60,43 +82,67 @@ repository with Contents write access. The approval workflow uses the
 
 ## Local checks
 
+Run the checks that cover the change:
+
 ```bash
 pnpm install --frozen-lockfile
 pnpm check
 pnpm test
+pnpm typegen --check
 cargo fmt --check
 AIDGET_CHECK_TARGET=1 cargo check --lib
 cargo test
 ```
 
 `pnpm check` runs Vite+ formatting, linting and type checks with automatic fixes.
-CI uses `pnpm exec vp check` without fixes. Builds and tests use the Vite and
+CI runs `pnpm exec vp check` without fixes. Builds and tests use the Vite and
 Vitest versions bundled with Vite+.
 
-`widgets/registry.json` is the reviewed community content snapshot used by the
-bundled-widget consistency test. The running app fetches its catalog from the
-community repository's main branch. To update a bundled widget, bump its community
-package version, regenerate the community registry, then copy the package and
-registry snapshot here together.
+`pnpm dev` keeps development data and its IPC socket under `.aidget/` by default.
+Override it with `pnpm dev --home <directory>`. This lets development and installed copies run
+alongside each other with separate system-tray icons. On macOS, Cargo launches
+the executable from a minimal `aidget-dev.app` beside the compiled binary so the
+system can display its menu-bar icon.
+
+Debug builds enforce `minHostVersion` by default. To test a widget that declares
+a newer host version, pass `--allow-incompatible-widgets` to `ui`, a CLI
+installation, or `mcp`. Release builds ignore the option. It skips only the
+host-version check; malformed configuration, platform and permission checks
+still apply.
+
+Debug builds disable their `aidget-dev` autostart entry on GUI startup and keep
+the setting unavailable. Release builds use `aidget` and refresh an enabled entry
+with the current executable and absolute `--home`, preserving disabled autostart.
+
+`widgets/registry.json` is a filtered reviewed snapshot containing entries for
+the packages actually bundled under `widgets/`; it is not a copy of the full
+community catalogue. The running app fetches its catalogue from the community
+repository's main branch. To update a bundled widget, bump its community package
+version, regenerate the community registry, then copy the package and its
+matching registry entry here together.
+
+Verify that copied snapshot with:
+
+```bash
+pnpm exec vp test run tests/scripts/widgets/builtin.test.mjs
+```
 
 The cross-target library check compiles platform-gated Rust paths without the
 platform bundler. It is not a runtime test.
 
-Run the app against a throwaway data directory:
+Run runtime checks against a throwaway data directory:
 
 ```bash
 cargo run -- --home /tmp/aidget-dev ui --background
 cargo run -- --home /tmp/aidget-dev doctor
 ```
 
-When the workspace is running under Codex Desktop's macOS Seatbelt sandbox,
-launching `pnpm dev` or a GUI build directly is unsupported: Seatbelt denies
-LaunchServices and WindowServer access, and AppKit aborts at
-`_RegisterApplication` before Tauri or application code starts. Run GUI
-development outside that sandbox, such as through approved escalated execution
-or a normal terminal.
+When running under Codex Desktop's macOS Seatbelt sandbox, launching
+`pnpm dev` or a GUI build directly is unsupported: Seatbelt denies LaunchServices
+and WindowServer access, and AppKit aborts at `_RegisterApplication` before
+Tauri or application code starts. Run GUI development outside that sandbox.
 
-Never use a real agent configuration or `~/.aidget` as test data.
+Never use a real Agent configuration or `~/.aidget` as test data.
 
 ## Version model
 

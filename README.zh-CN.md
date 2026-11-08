@@ -95,18 +95,6 @@
 
 ## 开发
 
-### 工作原理
-
-```mermaid
-flowchart LR
-    A["Agent"]
-    A -->|"读取 Skill"| S["~/.aidget/skills"]
-    A -->|"调用 MCP"| M["aidget mcp"]
-    A -->|"调用 CLI"| C["aidget"]
-    M --> U["aidget ui"]
-    U --> W["widgets"]
-```
-
 ### 环境要求
 
 - Rust 1.92 或更高版本
@@ -139,40 +127,11 @@ pnpm build:debug       # 生成 debug 应用包
 ```bash
 pnpm check
 pnpm test
-cargo fmt --check
-AIDGET_CHECK_TARGET=1 cargo check --lib
-cargo test
 ```
 
-### MCP 服务
-
-| 工具                | 用途                                                       |
-|---------------------|------------------------------------------------------------|
-| `aidget_list`       | 列出小组件、revision、看板 revision、位置、损坏项和显示器名称。 |
-| `aidget_get`        | 读取单个小组件的元数据、HTML、CSS、`agents.md` 和当前位置。    |
-| `aidget_create`     | 创建包含 HTML、CSS、权限和作者说明的小组件。                  |
-| `aidget_update`     | 基于 revision CAS 整体替换文件或元数据。                    |
-| `aidget_patch`      | 原子替换一个或多个 `data-aidget-region` 的内部 HTML。       |
-| `aidget_move`       | 在用户要求时以 boardRevision CAS 移动或缩放小组件。         |
-| `aidget_screenshot` | 将渲染后的小组件截为 PNG，并等待页面就绪。                   |
-| `aidget_delete`     | 将小组件移动到回收站。                                      |
-| `aidget_guide`      | 读取完整的 Markdown 创作规范。                              |
-
-### CLI 程序
-
-```text
-aidget [--home DIR] <command> [options]
-aidget ui [--background]
-aidget mcp
-aidget widget list|show|create|update|patch|delete
-aidget board show|move
-aidget displays
-aidget screenshot <id> [--scale N] [--out FILE]
-aidget doctor
-aidget guide
-aidget community list --json
-aidget community install @aidget-community/<id> --json
-```
+详细的架构、MCP/CLI 接口、运行时检查和仓库专属工作流见
+[docs/development.md](docs/development.md)。贡献规则和 PR 要求见
+[docs/contributing.md](docs/contributing.md)。
 
 ## 数据目录
 

@@ -95,18 +95,6 @@ Community widgets are maintained in [aidget-ai/widgets](https://github.com/aidge
 
 ## Development
 
-### How it works
-
-```mermaid
-flowchart LR
-    A["Agent"]
-    A -->|"Reads Skill"| S["~/.aidget/skills"]
-    A -->|"Calls MCP"| M["aidget mcp"]
-    A -->|"Calls CLI"| C["aidget"]
-    M --> U["aidget ui"]
-    U --> W["widgets"]
-```
-
 ### Requirements
 
 - Rust 1.92 or newer
@@ -139,40 +127,11 @@ pnpm build:debug       # debug app bundle
 ```bash
 pnpm check
 pnpm test
-cargo fmt --check
-AIDGET_CHECK_TARGET=1 cargo check --lib
-cargo test
 ```
 
-### MCP service
-
-| Tool | Purpose |
-| --- | --- |
-| `aidget_list` | List widgets, revisions, board revision, positions, broken entries, and display names. |
-| `aidget_get` | Read one widget's metadata, HTML, CSS, `agents.md`, and current position. |
-| `aidget_create` | Create a widget with HTML, CSS, permissions, and author guidance. |
-| `aidget_update` | Replace files or metadata using revision compare-and-swap. |
-| `aidget_patch` | Atomically replace the inner HTML of one or more `data-aidget-region` targets. |
-| `aidget_move` | Move or resize with board revision CAS when the user asks. |
-| `aidget_screenshot` | Capture the rendered widget as PNG and wait briefly for readiness. |
-| `aidget_delete` | Move a widget to the trash. |
-| `aidget_guide` | Read the complete Markdown authoring guide. |
-
-### CLI
-
-```text
-aidget [--home DIR] <command> [options]
-aidget ui [--background]
-aidget mcp
-aidget widget list|show|create|update|patch|delete
-aidget board show|move
-aidget displays
-aidget screenshot <id> [--scale N] [--out FILE]
-aidget doctor
-aidget guide
-aidget community list --json
-aidget community install @aidget-community/<id> --json
-```
+Detailed architecture, interfaces, runtime checks and repository-specific
+workflows are in [docs/development.md](docs/development.md). Contribution rules
+and PR requirements are in [docs/contributing.md](docs/contributing.md).
 
 ## Data directory
 

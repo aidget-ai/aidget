@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Read [CONTRIBUTING.md](https://github.com/aidget-ai/aidget/blob/main/CONTRIBUTING.md) before submitting.
+        Read [docs/contributing.md](https://github.com/aidget-ai/aidget/blob/main/docs/contributing.md) before submitting.
 
         Issues are open to everyone. Use this form to agree on a change before opening a pull request. Admins can reply with `lgtmi` to add the Issue author to the pull request allowlist.
 
@@ -53,5 +53,5 @@ body:
       options:
         - label: I understand the code I propose and can explain its behavior.
           required: true
-        - label: I will follow CONTRIBUTING.md and will not tag releases.
+        - label: I will follow docs/contributing.md and will not tag releases.
           required: true

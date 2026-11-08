@@ -60,22 +60,11 @@ agent explicitly acting for one.
 
 ## Verification
 
-Run the checks that cover your change:
-
-```bash
-pnpm install --frozen-lockfile
-pnpm check
-pnpm test
-cargo fmt --check
-AIDGET_CHECK_TARGET=1 cargo check --lib
-cargo test
-```
-
-Use `--home /tmp/aidget-<name>` for runtime checks. Never test against the real
-`~/.aidget` or a live Agent configuration.
-
-Platform-specific behavior must be tested on that platform and named in the pull
-request. A cross-target `cargo check --lib` is not a runtime test.
+Run the checks described in
+[development.md](development.md#local-checks) that cover your change.
+Include the exact commands and platforms in the pull request, and list anything
+you could not test. Platform-specific behavior needs a runtime check on that
+platform.
 
 ## Pull requests
 
@@ -85,8 +74,14 @@ request. A cross-target `cargo check --lib` is not a runtime test.
 - Include a test that fails without the fix when fixing behavior.
 - Update the README or `docs/` when the observable behavior or workflow changes.
 - List checks that were not run instead of omitting them.
+- Open the pull request only after the Contribution Proposal recorded in
+  `.github/APPROVED_CONTRIBUTORS` has received `lgtmi` and the change has a
+  reproducible verification record.
+- CI and a reviewer other than the author must both accept the current head.
+- Record the reviewed SHA before merging. If the head changes, rerun the relevant
+  checks and obtain a new review before merging the new SHA.
 
 ## Security
 
 Do not open a public Issue for a security vulnerability. Follow
-[SECURITY.md](SECURITY.md).
+[SECURITY.md](../SECURITY.md).
