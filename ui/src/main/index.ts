@@ -16,6 +16,7 @@ import {
   Settings,
   Trash,
   UsersRound,
+  X,
 } from 'lucide';
 
 import type { Language, UpdateSnapshot } from '../types/rust';
@@ -159,6 +160,10 @@ const integrationStatuses = document.querySelectorAll<HTMLElement>('.integration
 const views = new Map<string, WidgetView>();
 const deletedViews = new Map<string, DeletedWidgetView>();
 const windowApi = getCurrentWindow();
+const windowControls = document.querySelector<HTMLElement>('[data-window-controls]')!;
+const windowClose = windowControls.querySelector<HTMLButtonElement>(
+  '[data-window-action="close"]',
+)!;
 const platform = /Macintosh|Mac OS X/.test(navigator.userAgent)
   ? 'macos'
   : /Windows/.test(navigator.userAgent)
@@ -252,6 +257,8 @@ function applyLocaleStatic() {
   githubTokenInput.placeholder = t('githubTokenPlaceholder');
   githubTokenLink.setAttribute('aria-label', t('githubTokenCreate'));
   githubTokenLink.title = t('githubTokenCreate');
+  windowClose.setAttribute('aria-label', t('close'));
+  windowClose.title = t('close');
   document.title = 'aidget';
 }
 
@@ -1359,9 +1366,16 @@ document.querySelectorAll<HTMLElement>('[data-drag-region]').forEach((region) =>
     if (event.button !== 0 || (event.target as Element).closest('button')) {
       return;
     }
-    void windowApi.startDragging();
+    void windowApi.startDragging().catch((error: unknown) => showFault(String(error)));
   });
 });
+
+if (platform !== 'macos') {
+  windowControls.hidden = false;
+  windowClose.addEventListener('click', () => {
+    void windowApi.close().catch((error: unknown) => showFault(String(error)));
+  });
+}
 
 autoStart.setAttribute('aria-checked', 'false');
 
@@ -1374,6 +1388,7 @@ createIcons({
     ServerCog,
     Settings,
     UsersRound,
+    X,
   },
 });
 applyTheme(theme);

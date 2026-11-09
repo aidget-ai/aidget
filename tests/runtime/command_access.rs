@@ -8,7 +8,7 @@ use tauri::{
     ipc::{CallbackFn, InvokeBody},
     test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY},
     webview::InvokeRequest,
-    WebviewWindowBuilder,
+    Manager, WebviewWindowBuilder,
 };
 
 #[test]
@@ -147,6 +147,23 @@ fn built_capabilities_deny_cross_role_commands_even_without_the_native_guard() {
                 get_ipc_response(&window, request(command)).is_ok(),
                 "ACL blocked {command} from {label}"
             );
+        }
+    }
+    for label in ["widget-note", "other", "main"] {
+        let window = app.get_webview_window(label).unwrap();
+        for command in [
+            "plugin:window|minimize",
+            "plugin:window|toggle_maximize",
+            "plugin:window|close",
+        ] {
+            let mut invoke = request(command);
+            invoke.body = InvokeBody::Json(serde_json::json!({}));
+            let result = get_ipc_response(&window, invoke);
+            if label == "main" && command == "plugin:window|close" {
+                assert!(result.is_ok(), "ACL blocked {command}: {result:?}");
+            } else {
+                assert!(result.is_err(), "ACL allowed {command} from {label}");
+            }
         }
     }
 }

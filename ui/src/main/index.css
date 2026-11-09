@@ -202,17 +202,13 @@ select:focus-visible {
   flex: none;
   align-items: center;
   gap: 8px;
-  padding: 0 16px;
+  padding: 0 24px;
   user-select: none;
   -webkit-user-select: none;
 }
 
 body[data-platform='macos'] .brand-bar {
   padding-left: 96px;
-}
-
-body:is([data-platform='windows'], [data-platform='linux']) .brand-bar {
-  display: none;
 }
 
 [data-drag-region] {
@@ -224,8 +220,8 @@ body:is([data-platform='windows'], [data-platform='linux']) .brand-bar {
 
 .brand-mark {
   display: block;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   flex: none;
   background: currentColor;
   -webkit-mask: url('../../../icons/tray-template.svg') center / contain no-repeat;
@@ -245,9 +241,6 @@ body:is([data-platform='windows'], [data-platform='linux']) .brand-bar {
   padding: 0 12px 18px;
 }
 
-body:is([data-platform='windows'], [data-platform='linux']) .navigation {
-  padding-top: 16px;
-}
 .nav-group {
   display: grid;
   gap: 3px;
@@ -324,8 +317,42 @@ body:is([data-platform='windows'], [data-platform='linux']) .navigation {
   user-select: none;
   -webkit-user-select: none;
 }
-.update-header-action {
-  margin-left: auto;
+.header-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  margin-inline-start: auto;
+}
+.window-controls {
+  display: flex;
+}
+.window-controls[hidden] {
+  display: none;
+}
+.window-controls button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.window-controls svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.8;
+}
+.window-controls button:hover {
+  background: var(--line);
+  color: var(--text);
+}
+.window-controls [data-window-action='close']:hover {
+  background: #d94f48;
+  color: white;
 }
 
 .breadcrumb {
@@ -1205,14 +1232,18 @@ body:is([data-platform='windows'], [data-platform='linux']) .navigation {
 .default-display-control select {
   max-inline-size: 260px;
 }
+.github-token-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 320px);
+  align-items: start;
+}
 .github-token-control {
   display: grid;
-  justify-items: end;
+  min-inline-size: 0;
   gap: 6px;
 }
 .github-token-row .setting-copy {
   min-width: 0;
-  flex: 1;
 }
 .github-token-heading {
   display: flex;
@@ -1239,6 +1270,7 @@ body:is([data-platform='windows'], [data-platform='linux']) .navigation {
 .github-token-form,
 .github-token-configured {
   display: flex;
+  min-inline-size: 0;
   min-height: 30px;
   align-items: center;
   justify-content: flex-end;
@@ -1250,7 +1282,8 @@ body:is([data-platform='windows'], [data-platform='linux']) .navigation {
   display: none;
 }
 .github-token-input {
-  inline-size: min(240px, 42vw);
+  inline-size: 240px;
+  min-inline-size: 0;
   height: 30px;
   padding: 0 10px;
   border: 1px solid var(--line);
@@ -1279,11 +1312,13 @@ body:is([data-platform='windows'], [data-platform='linux']) .navigation {
   -webkit-user-select: text;
 }
 .github-token-error {
+  min-inline-size: 0;
   margin: 0;
   color: var(--danger);
   font-size: 11px;
   line-height: 1.5;
   text-align: end;
+  overflow-wrap: anywhere;
 }
 /* Buttons centre their own label; a plain text span in the same row does not,
    so without `align-items` the status sits at the top of a stretched box. */
@@ -1338,12 +1373,12 @@ body:is([data-platform='windows'], [data-platform='linux']) .navigation {
     inline-size: 100%;
     justify-items: start;
   }
+  .github-token-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .github-token-form,
   .github-token-configured {
     justify-content: flex-start;
-  }
-  .github-token-input {
-    inline-size: min(240px, calc(100vw - 120px));
   }
   .github-token-error {
     text-align: start;

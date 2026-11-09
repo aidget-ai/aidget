@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   listen: vi.fn(async (_event: string, _handler: EventCallback<MainState>) => () => {}),
   openUrl: vi.fn(async () => {}),
+  startDragging: vi.fn(async () => {}),
+  close: vi.fn(async () => {}),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
@@ -22,7 +24,8 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: mocks.openUrl }));
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({
-    startDragging: vi.fn(async () => {}),
+    startDragging: mocks.startDragging,
+    close: mocks.close,
   }),
 }));
 vi.mock('@tauri-apps/plugin-autostart', () => ({
@@ -146,17 +149,73 @@ beforeEach(() => {
   mocks.invoke.mockReset();
   mocks.listen.mockClear();
   mocks.openUrl.mockReset().mockResolvedValue(undefined);
+  mocks.startDragging.mockClear();
+  mocks.close.mockReset().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Linux' });
   vi.mocked(enable).mockClear();
   vi.mocked(isEnabled).mockReset().mockResolvedValue(false);
   prepareDocument();
 });
 
 describe('window chrome', () => {
-  it('leaves window controls to the native title bar', async () => {
-    await loadMain(state('integrations'));
+  it.each(['Linux', 'Windows'])(
+    'only shows a close button after the update action on %s',
+    async (userAgent) => {
+      Object.defineProperty(navigator, 'userAgent', { configurable: true, value: userAgent });
+      await loadMain(state('integrations'));
 
-    expect(document.querySelector('[data-window-controls]')).toBeNull();
-    expect(document.querySelector('[data-window-action]')).toBeNull();
+      const controls = document.querySelector<HTMLElement>('[data-window-controls]')!;
+      expect(controls.hidden).toBe(false);
+      expect(controls.previousElementSibling?.hasAttribute('data-update-header')).toBe(true);
+      expect(controls.closest('.page-header')).not.toBeNull();
+      expect(
+        [...controls.querySelectorAll('button')].map((button) => button.dataset.windowAction),
+      ).toEqual(['close']);
+    },
+  );
+
+  it('keeps native controls on macOS', async () => {
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Macintosh' });
+    await loadMain(state('integrations'));
+    expect(document.querySelector<HTMLElement>('[data-window-controls]')!.hidden).toBe(true);
+  });
+
+  it.each(['Linux', 'Windows'])(
+    'closes the %s window without starting a drag',
+    async (userAgent) => {
+      Object.defineProperty(navigator, 'userAgent', { configurable: true, value: userAgent });
+      await loadMain(state('integrations'));
+      const button = document.querySelector<HTMLButtonElement>('[data-window-action="close"]')!;
+      button.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true }));
+      button.click();
+      await vi.waitFor(() => expect(mocks.close).toHaveBeenCalledOnce());
+      expect(mocks.startDragging).not.toHaveBeenCalled();
+      document
+        .querySelector('.brand-bar')!
+        .dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true }));
+      expect(mocks.startDragging).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('localizes the close button when the language changes', async () => {
+    await loadMain(state('general'));
+    const close = document.querySelector<HTMLButtonElement>('[data-window-action="close"]')!;
+    expect(close.getAttribute('aria-label')).toBe('Close');
+
+    const language = document.querySelector<HTMLSelectElement>('[data-language]')!;
+    language.value = 'zh-CN';
+    language.dispatchEvent(new Event('change'));
+    await vi.waitFor(() => expect(close.getAttribute('aria-label')).toBe('关闭'));
+    expect(close.title).toBe('关闭');
+  });
+
+  it('shows window operation failures', async () => {
+    mocks.close.mockRejectedValueOnce(new Error('cannot close window'));
+    await loadMain(state('integrations'));
+    document.querySelector<HTMLButtonElement>('[data-window-action="close"]')!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-fault]')?.textContent).toContain('cannot close window');
+    });
   });
 });
 
@@ -532,6 +591,7 @@ describe('main window navigation', () => {
 
   it('keeps a failed GitHub token input available for correction', async () => {
     const initial = state('general');
+    const detail = `GET https://api.github.com/repos/${'long-path-'.repeat(50)}: HTTP 401 Unauthorized`;
     mocks.invoke.mockImplementation((command: string) => {
       if (command === 'main_state') {
         return Promise.resolve(initial);
@@ -540,7 +600,7 @@ describe('main window navigation', () => {
         return Promise.resolve(true);
       }
       if (command === 'set_github_token') {
-        return Promise.reject(new Error('GET https://api.github.com/repos: HTTP 401 Unauthorized'));
+        return Promise.reject(new Error(detail));
       }
       return Promise.resolve();
     });
@@ -561,6 +621,13 @@ describe('main window navigation', () => {
     });
     expect(form.hidden).toBe(false);
     expect(input.value).toBe('ghp_invalid1234567890abcdefghijkl');
+    expect(input.disabled).toBe(false);
+    const error = document.querySelector<HTMLElement>('[data-github-token-error]')!;
+    expect(error.textContent).toContain(detail);
+    expect(error.getAttribute('role')).toBe('alert');
+    input.value = 'corrected-token';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(error.hidden).toBe(true);
   });
 
   it('requires removal before a configured GitHub token can be replaced', async () => {

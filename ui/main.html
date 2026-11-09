@@ -59,16 +59,28 @@
             <span class="breadcrumb-divider">/</span>
             <strong data-current-page></strong>
           </div>
-          <button class="text-button update-header-action" type="button" data-update-header hidden>
-            <i
-              class="update-action-icon"
-              data-lucide="arrow-up"
-              data-update-icon
-              aria-hidden="true"
+          <div class="header-actions">
+            <button
+              class="text-button update-header-action"
+              type="button"
+              data-update-header
               hidden
-            ></i>
-            <span data-update-label data-message="updateAction"></span>
-          </button>
+            >
+              <i
+                class="update-action-icon"
+                data-lucide="arrow-up"
+                data-update-icon
+                aria-hidden="true"
+                hidden
+              ></i>
+              <span data-update-label data-message="updateAction"></span>
+            </button>
+            <div class="window-controls" data-window-controls hidden>
+              <button type="button" data-window-action="close">
+                <i data-lucide="x" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
         </header>
 
         <section
