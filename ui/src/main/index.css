@@ -211,7 +211,7 @@ body[data-platform='macos'] .brand-bar {
   padding-left: 96px;
 }
 
-body[data-platform='windows'] .brand-bar {
+body:is([data-platform='windows'], [data-platform='linux']) .brand-bar {
   display: none;
 }
 
@@ -238,42 +238,6 @@ body[data-platform='windows'] .brand-bar {
   letter-spacing: -0.02em;
 }
 
-.window-controls {
-  display: none;
-  margin-left: auto;
-  gap: 3px;
-}
-
-body[data-platform='linux'] .window-controls {
-  display: flex;
-}
-
-.window-controls button {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.window-controls svg {
-  width: 14px;
-  height: 14px;
-  stroke-width: 1.8;
-}
-.window-controls button:hover {
-  background: var(--line);
-  color: var(--text);
-}
-.window-controls [data-window-action='close']:hover {
-  background: #d94f48;
-  color: white;
-}
-
 .navigation {
   display: grid;
   align-content: start;
@@ -281,7 +245,7 @@ body[data-platform='linux'] .window-controls {
   padding: 0 12px 18px;
 }
 
-body[data-platform='windows'] .navigation {
+body:is([data-platform='windows'], [data-platform='linux']) .navigation {
   padding-top: 16px;
 }
 .nav-group {

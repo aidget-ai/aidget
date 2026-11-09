@@ -11,14 +11,11 @@ import {
   ExternalLink,
   Info,
   LayoutGrid,
-  Minus,
   RotateCcw,
   ServerCog,
   Settings,
-  Square,
   Trash,
   UsersRound,
-  X,
 } from 'lucide';
 
 import type { Language, UpdateSnapshot } from '../types/rust';
@@ -255,9 +252,6 @@ function applyLocaleStatic() {
   githubTokenInput.placeholder = t('githubTokenPlaceholder');
   githubTokenLink.setAttribute('aria-label', t('githubTokenCreate'));
   githubTokenLink.title = t('githubTokenCreate');
-  document.querySelectorAll<HTMLButtonElement>('[data-window-action]').forEach((button) => {
-    button.setAttribute('aria-label', t(button.dataset.windowAction as MessageKey));
-  });
   document.title = 'aidget';
 }
 
@@ -1369,19 +1363,6 @@ document.querySelectorAll<HTMLElement>('[data-drag-region]').forEach((region) =>
   });
 });
 
-document.querySelectorAll<HTMLButtonElement>('[data-window-action]').forEach((button) => {
-  button.addEventListener('click', () => {
-    const action = button.dataset.windowAction;
-    const command =
-      action === 'minimize'
-        ? windowApi.minimize()
-        : action === 'maximize'
-          ? windowApi.toggleMaximize()
-          : windowApi.close();
-    void command.catch((error: unknown) => showFault(String(error)));
-  });
-});
-
 autoStart.setAttribute('aria-checked', 'false');
 
 createIcons({
@@ -1390,12 +1371,9 @@ createIcons({
     ExternalLink,
     Info,
     LayoutGrid,
-    Minus,
     ServerCog,
     Settings,
-    Square,
     UsersRound,
-    X,
   },
 });
 applyTheme(theme);

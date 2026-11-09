@@ -170,8 +170,6 @@ const messages = {
     deleteFailed: 'Could not delete widget',
     restoreFailed: 'Could not restore widget',
     mainNavigation: 'Main navigation',
-    minimize: 'Minimize',
-    maximize: 'Maximize',
     close: 'Close',
   },
   'zh-CN': {
@@ -337,8 +335,6 @@ const messages = {
     deleteFailed: '无法删除小组件',
     restoreFailed: '无法恢复小组件',
     mainNavigation: '主导航',
-    minimize: '最小化',
-    maximize: '最大化',
     close: '关闭',
   },
 } as const;

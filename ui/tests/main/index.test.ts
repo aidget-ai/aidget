@@ -22,10 +22,7 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: mocks.openUrl }));
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({
-    close: vi.fn(async () => {}),
-    minimize: vi.fn(async () => {}),
     startDragging: vi.fn(async () => {}),
-    toggleMaximize: vi.fn(async () => {}),
   }),
 }));
 vi.mock('@tauri-apps/plugin-autostart', () => ({
@@ -44,11 +41,9 @@ vi.mock('lucide', () => {
     ExternalLink: icon,
     Info: icon,
     LayoutGrid: icon,
-    Minus: icon,
     RotateCcw: icon,
     ServerCog: icon,
     Settings: icon,
-    Square: icon,
     Trash: icon,
     UsersRound: icon,
     X: icon,
@@ -154,6 +149,15 @@ beforeEach(() => {
   vi.mocked(enable).mockClear();
   vi.mocked(isEnabled).mockReset().mockResolvedValue(false);
   prepareDocument();
+});
+
+describe('window chrome', () => {
+  it('leaves window controls to the native title bar', async () => {
+    await loadMain(state('integrations'));
+
+    expect(document.querySelector('[data-window-controls]')).toBeNull();
+    expect(document.querySelector('[data-window-action]')).toBeNull();
+  });
 });
 
 describe('launch at login', () => {

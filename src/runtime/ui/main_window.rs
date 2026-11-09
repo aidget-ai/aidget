@@ -89,8 +89,6 @@ pub fn show_main_now(app: &AppHandle) -> Result<()> {
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .traffic_light_position(tauri::LogicalPosition::new(24.0, 26.0))
         .hidden_title(true);
-    #[cfg(target_os = "linux")]
-    let builder = builder.decorations(false);
     let window = builder.build()?;
     prepare_main(&window)?;
 
